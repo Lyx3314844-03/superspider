@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PySpider - 智能爬虫控制台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        header h1 { color: #11998e; display: flex; align-items: center; gap: 10px; }
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .metric-card {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #11998e;
+            margin: 10px 0;
+        }
+        .metric-label { color: #666; font-size: 14px; }
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .panel {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .panel h2 { color: #333; margin-bottom: 15px; border-bottom: 2px solid #11998e; padding-bottom: 10px; }
+        .input-group { margin-bottom: 15px; }
+        .input-group label { display: block; margin-bottom: 5px; color: #555; }
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            width: 100%;
+        }
+        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        .task-card {
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-pending { background: #ffeaa7; color: #d63031; }
+        .badge-running { background: #74b9ff; color: #0984e3; }
+        .badge-done { background: #55efc4; color: #00b894; }
+        .progress {
+            width: 100%;
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            transition: width 0.3s;
+        }
+        .terminal {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry { margin-bottom: 5px; }
+        .log-info { color: #4ec9b0; }
+        .log-warn { color: #ce9178; }
+        .log-error { color: #f48771; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🐍 PySpider 控制台</h1>
+        </header>
+        
+        <div class="dashboard">
+            <div class="metric-card">
+                <div class="metric-label">总任务</div>
+                <div class="metric-value" id="total">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">进行中</div>
+                <div class="metric-value" id="active">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">已完成</div>
+                <div class="metric-value" id="done">0</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">成功率</div>
+                <div class="metric-value" id="rate">100%</div>
+            </div>
+        </div>
+        
+        <div class="content-grid">
+            <div class="panel">
+                <h2>🎯 新建任务</h2>
+                <form id="form">
+                    <div class="input-group">
+                        <label>任务名称</label>
+                        <input type="text" id="name" required placeholder="MySpider">
+                    </div>
+                    <div class="input-group">
+                        <label>目标 URL</label>
+                        <input type="url" id="url" required placeholder="https://example.com">
+                    </div>
+                    <div class="input-group">
+                        <label>类型</label>
+                        <select id="type">
+                            <option value="basic">基础爬虫</option>
+                            <option value="async">异步爬虫</option>
+                            <option value="browser">浏览器自动化</option>
+                            <option value="ai">AI 提取</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>并发数</label>
+                        <input type="number" id="workers" value="10" min="1" max="100">
+                    </div>
+                    <button type="submit" class="btn">启动任务</button>
+                </form>
+            </div>
+            
+            <div class="panel">
+                <h2>📊 任务队列</h2>
+                <div id="tasks"></div>
+            </div>
+        </div>
+        
+        <div class="panel" style="margin-top:20px;">
+            <h2>📋 执行日志</h2>
+            <div class="terminal" id="terminal">
+                <div class="log-entry log-info">[INFO] PySpider 控制台就绪</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const tasks = [];
+        let tid = 0;
+        
+        function log(msg, level = 'info') {
+            const t = document.getElementById('terminal');
+            const e = document.createElement('div');
+            e.className = `log-entry log-${level}`;
+            e.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            t.appendChild(e);
+            t.scrollTop = t.scrollHeight;
+        }
+        
+        document.getElementById('form').addEventListener('submit', e => {
+            e.preventDefault();
+            const task = {
+                id: ++tid,
+                name: document.getElementById('name').value,
+                url: document.getElementById('url').value,
+                type: document.getElementById('type').value,
+                workers: parseInt(document.getElementById('workers').value),
+                status: 'pending',
+                progress: 0
+            };
+            tasks.push(task);
+            log(`任务 "${task.name}" 已创建`, 'info');
+            render();
+            update();
+            
+            setTimeout(() => {
+                task.status = 'running';
+                const int = setInterval(() => {
+                    task.progress += Math.random() * 15;
+                    if (task.progress >= 100) {
+                        task.progress = 100;
+                        task.status = 'done';
+                        clearInterval(int);
+                        log(`任务 "${task.name}" 完成`, 'info');
+                    }
+                    render();
+                    update();
+                }, 800);
+            }, 500);
+            
+            e.target.reset();
+        });
+        
+        function render() {
+            document.getElementById('tasks').innerHTML = tasks.map(t => `
+                <div class="task-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <strong>${t.name}</strong>
+                        <span class="badge badge-${t.status}">${t.status}</span>
+                    </div>
+                    <small style="color:#666;">${t.url} | ${t.workers} workers</small>
+                    <div class="progress">
+                        <div class="progress-bar" style="width:${Math.min(t.progress, 100)}%"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function update() {
+            document.getElementById('total').textContent = tasks.length;
+            document.getElementById('active').textContent = tasks.filter(t => t.status === 'running').length;
+            document.getElementById('done').textContent = tasks.filter(t => t.status === 'done').length;
+            const r = tasks.length > 0 ? Math.round(tasks.filter(t => t.status === 'done').length / tasks.length * 100) : 100;
+            document.getElementById('rate').textContent = r + '%';
+        }
+        
+        update();
+    </script>
+</body>
+</html>

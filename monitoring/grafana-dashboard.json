@@ -1,0 +1,123 @@
+{
+  "dashboard": {
+    "title": "SuperSpider 监控仪表板",
+    "tags": ["spider", "crawler"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "总请求数",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total[5m]))",
+            "legendFormat": "Requests/s"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "错误率",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100",
+            "legendFormat": "Error Rate %"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "P95 延迟",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "P95 Latency"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "任务统计",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(tasks_total)",
+            "legendFormat": "总任务"
+          },
+          {
+            "expr": "sum(tasks_running)",
+            "legendFormat": "运行中"
+          },
+          {
+            "expr": "sum(tasks_completed)",
+            "legendFormat": "已完成"
+          },
+          {
+            "expr": "sum(tasks_failed)",
+            "legendFormat": "失败"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 16, "x": 8, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "爬虫吞吐量",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(pages_crawled_total[5m])",
+            "legendFormat": "Pages/s"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "下载带宽",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(bytes_downloaded_total[5m]) * 8",
+            "legendFormat": "Bandwidth bps"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "工作节点状态",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "worker_status",
+            "legendFormat": "Workers"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+      },
+      {
+        "id": 8,
+        "title": "资源使用",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "avg(container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100",
+            "legendFormat": "Memory %"
+          },
+          {
+            "expr": "avg(rate(container_cpu_usage_seconds_total[5m])) * 100",
+            "legendFormat": "CPU %"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32}
+      }
+    ],
+    "refresh": "30s",
+    "version": 1
+  }
+}

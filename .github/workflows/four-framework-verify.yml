@@ -1,0 +1,268 @@
+name: Four Framework Verify
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  verify-env:
+    name: Verify Aggregate Environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pyspider/requirements.txt
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: gospider/go.sum
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Chrome
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          install-dependencies: true
+
+      - name: Add Chrome to PATH
+        shell: bash
+        run: |
+          echo "$(dirname '${{ steps.setup-chrome.outputs.chrome-path }}')" >> "$GITHUB_PATH"
+
+      - name: Install FFmpeg
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Prepare aggregate verify directories
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          mkdir -p downloads
+          mkdir -p gospider/outputs gospider/artifacts gospider/downloads gospider/media
+          mkdir -p rustspider/artifacts
+
+      - name: Install PySpider dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pip install --upgrade pip 2>&1 | tee artifacts/verify-env-pip-upgrade.log
+          pip install -r pyspider/requirements.txt 2>&1 | tee artifacts/verify-env-pip-install.log
+
+      - name: Run root release guard tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest tests -p no:cacheprovider 2>&1 | tee artifacts/root-tests.log
+
+      - name: Run aggregate verify_env
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_env.py --json 2>&1 | tee artifacts/verify-env.json
+
+      - name: Run root version check
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_version.py --json 2>&1 | tee artifacts/verify-version.json
+
+      - name: Run root smoke test
+        shell: bash
+        run: |
+          set -o pipefail
+          python smoke_test.py --json 2>&1 | tee artifacts/smoke-test.json
+
+      - name: Upload aggregate verify artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-env-logs
+          path: |
+            artifacts/verify-env.json
+            artifacts/verify-version.json
+            artifacts/smoke-test.json
+            artifacts/root-tests.log
+            artifacts/verify-env-pip-upgrade.log
+            artifacts/verify-env-pip-install.log
+
+  javaspider:
+    name: Verify JavaSpider
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: javaspider
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Prepare artifact directory
+        run: mkdir -p artifacts
+
+      - name: Run Maven verify
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn verify 2>&1 | tee artifacts/mvn-verify.log
+
+      - name: Upload JavaSpider logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: javaspider-test-logs
+          path: javaspider/artifacts/
+
+  pyspider:
+    name: Verify PySpider
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pyspider
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pyspider/requirements.txt
+
+      - name: Prepare artifact directory
+        run: mkdir -p artifacts
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pip install --upgrade pip 2>&1 | tee artifacts/pip-upgrade.log
+          pip install -r requirements.txt 2>&1 | tee artifacts/pip-install.log
+          pip install -e ".[dev]" 2>&1 | tee artifacts/pip-install-dev.log
+
+      - name: Run pytest with coverage
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest --cov=pyspider --cov-report=xml:coverage.xml --cov-report=term-missing 2>&1 | tee artifacts/pytest.log
+
+      - name: Upload PySpider logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyspider-test-logs
+          path: |
+            pyspider/artifacts/
+            pyspider/coverage.xml
+
+  gospider:
+    name: Verify GoSpider
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gospider
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: gospider/go.sum
+
+      - name: Prepare artifact directory
+        run: mkdir -p artifacts
+
+      - name: Run Go tests
+        shell: bash
+        run: |
+          set -o pipefail
+          go test ./... 2>&1 | tee artifacts/go-test.log
+
+      - name: Upload GoSpider logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gospider-test-logs
+          path: gospider/artifacts/
+
+  rustspider:
+    name: Verify RustSpider
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rustspider
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Prepare artifact directory
+        run: mkdir -p artifacts
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rustspider/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rustspider/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run Cargo tests
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test 2>&1 | tee artifacts/cargo-test.log
+
+      - name: Run Cargo fmt check
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fmt --check 2>&1 | tee artifacts/cargo-fmt.log
+
+      - name: Run Cargo clippy
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets -- -D warnings 2>&1 | tee artifacts/cargo-clippy.log
+
+      - name: Upload RustSpider logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustspider-test-logs
+          path: rustspider/artifacts/

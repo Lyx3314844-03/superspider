@@ -1,0 +1,215 @@
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Validate And Release
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pyspider/requirements.txt
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: gospider/go.sum
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Chrome
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          install-dependencies: true
+
+      - name: Add Chrome to PATH
+        shell: bash
+        run: |
+          echo "$(dirname '${{ steps.setup-chrome.outputs.chrome-path }}')" >> "$GITHUB_PATH"
+
+      - name: Install FFmpeg
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Prepare release directories
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          mkdir -p downloads
+          mkdir -p gospider/outputs gospider/artifacts gospider/downloads gospider/media
+          mkdir -p pyspider/artifacts
+          mkdir -p javaspider/artifacts
+          mkdir -p rustspider/artifacts
+
+      - name: Install PySpider dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pip install --upgrade pip 2>&1 | tee artifacts/release-pip-upgrade.log
+          pip install -r pyspider/requirements.txt 2>&1 | tee artifacts/release-pip-install.log
+          pip install -e "./pyspider[dev]" 2>&1 | tee artifacts/release-pip-install-dev.log
+
+      - name: Run root tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest tests -p no:cacheprovider 2>&1 | tee artifacts/root-tests.log
+
+      - name: Run aggregate verify_env
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_env.py --json 2>&1 | tee artifacts/verify-env.json
+
+      - name: Run root version check
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_version.py --json 2>&1 | tee artifacts/verify-version.json
+
+      - name: Run root smoke test
+        shell: bash
+        run: |
+          set -o pipefail
+          python smoke_test.py --json 2>&1 | tee artifacts/smoke-test.json
+
+      - name: Run JavaSpider verify
+        shell: bash
+        working-directory: javaspider
+        run: |
+          set -o pipefail
+          mvn -q verify 2>&1 | tee artifacts/mvn-verify.log
+
+      - name: Run PySpider tests with coverage
+        shell: bash
+        working-directory: pyspider
+        run: |
+          set -o pipefail
+          python -m pytest --cov=pyspider --cov-report=xml --cov-report=term-missing 2>&1 | tee artifacts/pytest.log
+
+      - name: Run GoSpider tests
+        shell: bash
+        working-directory: gospider
+        run: |
+          set -o pipefail
+          go test ./... 2>&1 | tee artifacts/go-test.log
+
+      - name: Run RustSpider tests
+        shell: bash
+        working-directory: rustspider
+        run: |
+          set -o pipefail
+          cargo test 2>&1 | tee artifacts/cargo-test.log
+
+      - name: Run RustSpider fmt check
+        shell: bash
+        working-directory: rustspider
+        run: |
+          set -o pipefail
+          cargo fmt --check 2>&1 | tee artifacts/cargo-fmt.log
+
+      - name: Run RustSpider clippy
+        shell: bash
+        working-directory: rustspider
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets -- -D warnings 2>&1 | tee artifacts/cargo-clippy.log
+
+      - name: Generate release summary
+        shell: bash
+        run: |
+          cat <<'EOF' > artifacts/release-summary.md
+          # Release Validation Summary
+
+          - Ref: ${{ github.ref }}
+          - Commit: ${{ github.sha }}
+          - Workflow: ${{ github.workflow }}
+          - Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          ## Gates
+
+          - Root pytest suite
+          - Aggregate environment verification
+          - Root version consistency check
+          - Root smoke tests
+          - JavaSpider Maven verify gate
+          - PySpider pytest suite with coverage
+          - GoSpider test suite
+          - RustSpider cargo test suite
+          - RustSpider cargo fmt check
+          - RustSpider cargo clippy gate
+
+          ## Artifacts
+
+          - artifacts/root-tests.log
+          - artifacts/verify-env.json
+          - artifacts/verify-version.json
+          - artifacts/smoke-test.json
+          - artifacts/release-pip-install-dev.log
+          - javaspider/artifacts/mvn-verify.log
+          - pyspider/artifacts/pytest.log
+          - pyspider/coverage.xml
+          - gospider/artifacts/go-test.log
+          - rustspider/artifacts/cargo-test.log
+          - rustspider/artifacts/cargo-fmt.log
+          - rustspider/artifacts/cargo-clippy.log
+          EOF
+
+      - name: Upload release validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-validation
+          path: |
+            artifacts/release-summary.md
+            artifacts/root-tests.log
+            artifacts/verify-env.json
+            artifacts/verify-version.json
+            artifacts/smoke-test.json
+            artifacts/release-pip-upgrade.log
+            artifacts/release-pip-install.log
+            artifacts/release-pip-install-dev.log
+            javaspider/artifacts/mvn-verify.log
+            pyspider/artifacts/pytest.log
+            pyspider/coverage.xml
+            gospider/artifacts/go-test.log
+            rustspider/artifacts/cargo-test.log
+            rustspider/artifacts/cargo-fmt.log
+            rustspider/artifacts/cargo-clippy.log
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file artifacts/release-summary.md

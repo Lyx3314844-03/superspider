@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+*.pyc
+
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Go
+*.exe
+*.test
+*.out
+go.sum
+
+# Java
+target/
+*.class
+*.jar
+*.war
+.mvn/
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# 通用
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 测试数据
+test_*.db
+*.pkl
+*.png
+
+# 文档 (保留核心文档)
+*_REPORT.md
+*_COMPLETE.md
+*_ENHANCEMENT.md
+*_PLAN.md
+*_GUIDE.md
+*_SUMMARY.md
+*_ANALYSIS.md
+*_CHECK.md
+*_STATUS.md
+*_FIX.md
+*.md.bak

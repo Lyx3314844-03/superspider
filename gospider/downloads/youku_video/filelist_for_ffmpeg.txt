@@ -1,0 +1,4 @@
+file 'C:/Users/Administrator/spider/gospider/downloads/youku_video/video_segment_000.mp4'
+file 'C:/Users/Administrator/spider/gospider/downloads/youku_video/video_segment_001.mp4'
+file 'C:/Users/Administrator/spider/gospider/downloads/youku_video/video_segment_002.mp4'
+file 'C:/Users/Administrator/spider/gospider/downloads/youku_video/video_segment_003.mp4'

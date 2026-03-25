@@ -1,0 +1,59 @@
+# Code Scalpel Project Structure Configuration
+# Enforces consistent code organization and documentation standards
+
+project_config:
+  name: "code-scalpel"
+  type: "python-library"
+  strictness: high
+  auto_fix: false  # Require manual review for production library
+  
+  # File location rules - where different file types belong
+  file_locations:
+    # Core modules
+    core_module: "src/code_scalpel/"
+    submodule: "src/code_scalpel/*/"
+    
+    # Specific component types
+    policy_file: ".code-scalpel/policies/"
+    rego_policy: ".code-scalpel/policies/"
+    
+    # Analysis engines
+    pdg_tool: "src/code_scalpel/pdg_tools/"
+    graph_engine: "src/code_scalpel/graph_engine/"
+    ir_component: "src/code_scalpel/ir/"
+    symbolic_execution: "src/code_scalpel/symbolic_execution_tools/"
+    
+    # Integrations
+    ai_integration: "src/code_scalpel/integrations/"
+    mcp_server: "src/code_scalpel/mcp/"
+    
+    # Language support
+    parser: "src/code_scalpel/code_parsers/"
+    polyglot_analyzer: "src/code_scalpel/polyglot/"
+    
+    # Governance & security
+    policy_engine: "src/code_scalpel/policy_engine/"
+    governance: "src/code_scalpel/governance/"
+    security_tool: "src/code_scalpel/security/"
+    
+    # Testing
+    unit_test: "tests/unit/"
+    integration_test: "tests/integration/"
+    e2e_test: "tests/e2e/"
+    benchmark: "benchmarks/"
+    
+    # Documentation
+    api_docs: "docs/api/"
+    guide: "docs/guides/"
+    feature_doc: "docs/features/"
+    testing_doc: "docs/testing/"
+    summary: "docs/summaries/"
+    
+    # Examples
+    example_code: "examples/"
+    example_policy: "examples/policy_examples/"
+    
+    # Configuration
+    config_file: "config/"
+    docker_file: "./"  # Dockerfile in root
+    ci_config: ".github/workflows/"

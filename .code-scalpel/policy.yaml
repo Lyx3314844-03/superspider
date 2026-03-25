@@ -1,0 +1,33 @@
+# Code Scalpel Policy Configuration
+# Learn more: https://github.com/3D-Tech-Solutions/code-scalpel/blob/main/docs/policy_engine_guide.md
+
+version: "1.0.0"
+
+# Policy enforcement mode
+enforcement: "warn"  # Options: "warn", "block", "disabled"
+
+# Security rules
+security:
+  # Block SQL injection attempts
+  sql_injection: true
+
+  # Block command injection attempts
+  command_injection: true
+
+  # Block path traversal attempts
+  path_traversal: true
+
+  # Block XSS attempts
+  xss: true
+
+# Change budgeting - limit blast radius
+budgeting:
+  enabled: false
+  max_files_per_session: 10
+  max_lines_per_file: 500
+  max_total_changes: 1000
+
+# Audit trail
+audit:
+  enabled: true
+  log_file: ".code-scalpel/audit.log"

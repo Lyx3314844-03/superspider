@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JavaSpider - 爬虫管理控制台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        header h1 { color: #f5576c; display: flex; align-items: center; gap: 10px; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #f5576c;
+            margin: 10px 0;
+        }
+        .stat-label { color: #666; font-size: 14px; }
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .card h2 { color: #333; margin-bottom: 15px; border-bottom: 2px solid #f5576c; padding-bottom: 10px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; color: #555; font-weight: 500; }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .btn:hover { opacity: 0.9; }
+        .task-item {
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            background: #f9f9f9;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-running { background: #74b9ff; color: #0984e3; }
+        .status-completed { background: #55efc4; color: #00b894; }
+        .status-failed { background: #fab1a0; color: #d63031; }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        .log-console {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        .log-line { margin-bottom: 5px; }
+        .log-info { color: #4ec9b0; }
+        .log-error { color: #f48771; }
+        .log-success { color: #6a9955; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>☕ JavaSpider 控制台</h1>
+        </header>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">总任务数</div>
+                <div class="stat-value" id="totalTasks">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">运行中</div>
+                <div class="stat-value" id="runningTasks">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">已完成</div>
+                <div class="stat-value" id="completedTasks">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">成功率</div>
+                <div class="stat-value" id="successRate">100%</div>
+            </div>
+        </div>
+        
+        <div class="main-grid">
+            <div class="card">
+                <h2>🚀 提交任务</h2>
+                <form id="taskForm">
+                    <div class="form-group">
+                        <label>任务名称</label>
+                        <input type="text" id="taskName" required placeholder="输入任务名称">
+                    </div>
+                    <div class="form-group">
+                        <label>目标 URL</label>
+                        <input type="url" id="targetUrl" required placeholder="https://example.com">
+                    </div>
+                    <div class="form-group">
+                        <label>爬虫类型</label>
+                        <select id="crawlerType">
+                            <option value="http">HTTP 爬虫</option>
+                            <option value="browser">浏览器爬虫</option>
+                            <option value="video">视频下载</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>线程数</label>
+                        <input type="number" id="threadCount" value="5" min="1" max="50">
+                    </div>
+                    <button type="submit" class="btn">提交任务</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <h2>📋 任务列表</h2>
+                <div id="taskList"></div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>📝 实时日志</h2>
+            <div class="log-console" id="logConsole">
+                <div class="log-line log-info">[系统] JavaSpider 控制台已启动</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let tasks = [];
+        let taskId = 0;
+        
+        function addLog(msg, type = 'info') {
+            const console = document.getElementById('logConsole');
+            const line = document.createElement('div');
+            line.className = `log-line log-${type}`;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            console.appendChild(line);
+            console.scrollTop = console.scrollHeight;
+        }
+        
+        document.getElementById('taskForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const task = {
+                id: ++taskId,
+                name: document.getElementById('taskName').value,
+                url: document.getElementById('targetUrl').value,
+                type: document.getElementById('crawlerType').value,
+                threads: parseInt(document.getElementById('threadCount').value),
+                status: 'running',
+                progress: 0
+            };
+            tasks.push(task);
+            addLog(`任务 "${task.name}" 已提交`, 'info');
+            updateTaskList();
+            updateStats();
+            
+            // 模拟执行
+            const interval = setInterval(() => {
+                task.progress += 10;
+                if (task.progress >= 100) {
+                    task.status = 'completed';
+                    clearInterval(interval);
+                    addLog(`任务 "${task.name}" 完成`, 'success');
+                }
+                updateTaskList();
+                updateStats();
+            }, 1000);
+            
+            this.reset();
+        });
+        
+        function updateTaskList() {
+            const list = document.getElementById('taskList');
+            list.innerHTML = tasks.map(t => `
+                <div class="task-item">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <strong>${t.name}</strong>
+                        <span class="status-badge status-${t.status}">${t.status}</span>
+                    </div>
+                    <div style="font-size:12px;color:#666;">URL: ${t.url} | 线程：${t.threads}</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width:${t.progress}%"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function updateStats() {
+            document.getElementById('totalTasks').textContent = tasks.length;
+            document.getElementById('runningTasks').textContent = tasks.filter(t => t.status === 'running').length;
+            document.getElementById('completedTasks').textContent = tasks.filter(t => t.status === 'completed').length;
+            const rate = tasks.length > 0 ? Math.round(tasks.filter(t => t.status === 'completed').length / tasks.length * 100) : 100;
+            document.getElementById('successRate').textContent = rate + '%';
+        }
+    </script>
+</body>
+</html>

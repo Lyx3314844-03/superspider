@@ -1,0 +1,59 @@
+# Development Governance Policies
+# These policies govern AI agent behavior during development
+# to enforce best practices, architectural consistency, and project management discipline
+
+version: "1.0"
+policy_type: "development_governance"
+description: |
+  Meta-policies that govern how AI agents should approach development tasks.
+  These policies ensure consistency, quality, and adherence to project standards.
+
+policies:
+  # ============================================================================
+  # DOCUMENTATION POLICIES
+  # ============================================================================
+  
+  - name: mandatory-readme-for-new-modules
+    category: documentation
+    severity: HIGH
+    action: DENY
+    description: |
+      Every new module directory must have a README.md file explaining its purpose,
+      architecture, and usage patterns. READMEs must be placed IN the module directory,
+      not in a separate docs folder.
+    rule: |
+      package code_scalpel.dev_governance
+      
+      default allow = false
+      
+      # Check if operation creates a new module directory
+      creates_new_module {
+        input.operation.type == "create_directory"
+        input.operation.path contains "src/"
+        contains(input.operation.path, "__init__.py")
+      }
+      
+      # Check if README.md is included in the same operation
+      includes_readme {
+        some i
+        input.operation.files[i].path == concat("/", [input.operation.path, "README.md"])
+      }
+      
+      # Deny if creating module without README
+      allow {
+        not creates_new_module
+      }
+      
+      allow {
+        creates_new_module
+        includes_readme
+      }
+    
+    remediation: |
+      When creating a new module directory, always include a README.md that contains:
+      1. Overview - What this module does
+      2. Architecture - Key components and their relationships
+      3. Integration - How it connects to the rest of the system
+      4. Usage Examples - Common patterns with code samples
+      5. Configuration - Required setup or config files
+      6. Best Practices - Do's and don'ts

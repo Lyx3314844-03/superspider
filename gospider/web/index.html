@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoSpider - 爬虫控制台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        header h1 {
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .stat-value {
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+        }
+        
+        .task-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .task-item {
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            background: #f9f9f9;
+        }
+        
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .task-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-pending {
+            background: #ffeaa7;
+            color: #d63031;
+        }
+        
+        .status-running {
+            background: #74b9ff;
+            color: #0984e3;
+        }
+        
+        .status-completed {
+            background: #55efc4;
+            color: #00b894;
+        }
+        
+        .status-failed {
+            background: #fab1a0;
+            color: #d63031;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+        }
+        
+        .log-output {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        
+        .log-line {
+            margin-bottom: 5px;
+        }
+        
+        .log-info { color: #4ec9b0; }
+        .log-warning { color: #ce9178; }
+        .log-error { color: #f48771; }
+        .log-success { color: #6a9955; }
+        
+        .chart-container {
+            height: 200px;
+            margin-top: 15px;
+        }
+        
+        .worker-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        
+        .worker-card {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .worker-status {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        
+        .worker-online { background: #00b894; }
+        .worker-offline { background: #d63031; }
+        
+        .alert-box {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        
+        .alert-info {
+            background: #d6eaf8;
+            color: #2874a6;
+            border-left: 4px solid #3498db;
+        }
+        
+        .alert-warning {
+            background: #fdebd0;
+            color: #b9770e;
+            border-left: 4px solid #f39c12;
+        }
+        
+        .alert-error {
+            background: #fadbd8;
+            color: #922b21;
+            border-left: 4px solid #e74c3c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+                </svg>
+                GoSpider 控制台
+            </h1>
+        </header>
+        
+        <!-- 告警区域 -->
+        <div id="alerts"></div>
+        
+        <!-- 统计卡片 -->
+        <div class="dashboard">
+            <div class="card">
+                <h2>📊 系统状态</h2>
+                <div class="stat-item">
+                    <span>运行时间</span>
+                    <span class="stat-value" id="uptime">00:00:00</span>
+                </div>
+                <div class="stat-item">
+                    <span>总任务数</span>
+                    <span class="stat-value" id="totalTasks">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>成功率</span>
+                    <span class="stat-value" id="successRate">0%</span>
+                </div>
+                <div class="stat-item">
+                    <span>吞吐量</span>
+                    <span class="stat-value" id="throughput">0 任务/秒</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>📈 实时统计</h2>
+                <div class="stat-item">
+                    <span>待处理</span>
+                    <span class="stat-value" id="pendingTasks">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>运行中</span>
+                    <span class="stat-value" id="runningTasks">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>已完成</span>
+                    <span class="stat-value" id="completedTasks">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>失败</span>
+                    <span class="stat-value" id="failedTasks">0</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>👥 工作节点</h2>
+                <div class="worker-grid" id="workerGrid">
+                    <div class="worker-card">
+                        <span class="worker-status worker-online"></span>
+                        <div>Worker-1</div>
+                        <small>CPU: 45%</small>
+                    </div>
+                    <div class="worker-card">
+                        <span class="worker-status worker-online"></span>
+                        <div>Worker-2</div>
+                        <small>CPU: 32%</small>
+                    </div>
+                    <div class="worker-card">
+                        <span class="worker-status worker-offline"></span>
+                        <div>Worker-3</div>
+                        <small>离线</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 任务提交和任务列表 -->
+        <div class="dashboard">
+            <div class="card">
+                <h2>🚀 提交新任务</h2>
+                <form id="taskForm">
+                    <div class="form-group">
+                        <label>任务名称</label>
+                        <input type="text" id="taskName" placeholder="输入任务名称" required>
+                    </div>
+                    <div class="form-group">
+                        <label>目标 URL</label>
+                        <input type="url" id="targetUrl" placeholder="https://example.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label>爬虫类型</label>
+                        <select id="crawlerType">
+                            <option value="http">HTTP 爬虫</option>
+                            <option value="browser">浏览器爬虫</option>
+                            <option value="video">视频下载</option>
+                            <option value="api">API 爬虫</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>并发数</label>
+                        <input type="number" id="concurrent" value="5" min="1" max="50">
+                    </div>
+                    <div class="form-group">
+                        <label>优先级</label>
+                        <select id="priority">
+                            <option value="1">低</option>
+                            <option value="5" selected>中</option>
+                            <option value="10">高</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-success">提交任务</button>
+                    <button type="button" class="btn btn-danger" onclick="cancelAllTasks()">取消所有</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <h2>📋 任务列表</h2>
+                <div class="task-list" id="taskList">
+                    <!-- 任务列表将通过 JavaScript 动态生成 -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- 日志输出 -->
+        <div class="card">
+            <h2>📝 实时日志</h2>
+            <div class="log-output" id="logOutput">
+                <div class="log-line log-info">[系统] GoSpider 控制台已启动...</div>
+                <div class="log-line log-info">[系统] 等待任务提交...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 全局状态
+        let tasks = [];
+        let taskIdCounter = 0;
+        let startTime = Date.now();
+        
+        // 更新运行时间
+        function updateUptime() {
+            const now = Date.now();
+            const diff = now - startTime;
+            const hours = Math.floor(diff / 3600000);
+            const minutes = Math.floor((diff % 3600000) / 60000);
+            const seconds = Math.floor((diff % 60000) / 1000);
+            document.getElementById('uptime').textContent = 
+                `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+        setInterval(updateUptime, 1000);
+        
+        // 添加日志
+        function addLog(message, type = 'info') {
+            const logOutput = document.getElementById('logOutput');
+            const logLine = document.createElement('div');
+            logLine.className = `log-line log-${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            logLine.textContent = `[${timestamp}] ${message}`;
+            logOutput.appendChild(logLine);
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+        
+        // 显示告警
+        function showAlert(message, type = 'info') {
+            const alertsDiv = document.getElementById('alerts');
+            const alertBox = document.createElement('div');
+            alertBox.className = `alert-box alert-${type}`;
+            alertBox.textContent = message;
+            alertsDiv.appendChild(alertBox);
+            setTimeout(() => alertBox.remove(), 5000);
+        }
+        
+        // 提交任务
+        document.getElementById('taskForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const task = {
+                id: ++taskIdCounter,
+                name: document.getElementById('taskName').value,
+                url: document.getElementById('targetUrl').value,
+                type: document.getElementById('crawlerType').value,
+                concurrent: parseInt(document.getElementById('concurrent').value),
+                priority: parseInt(document.getElementById('priority').value),
+                status: 'pending',
+                progress: 0,
+                startTime: Date.now()
+            };
+            
+            tasks.push(task);
+            addLog(`任务 "${task.name}" 已提交 (ID: ${task.id})`, 'info');
+            showAlert(`任务 "${task.name}" 提交成功！`, 'success');
+            
+            // 模拟任务执行
+            setTimeout(() => startTask(task), 1000);
+            
+            // 重置表单
+            this.reset();
+            updateTaskList();
+            updateStats();
+        });
+        
+        // 开始任务
+        function startTask(task) {
+            task.status = 'running';
+            addLog(`任务 "${task.name}" 开始执行...`, 'info');
+            updateTaskList();
+            
+            // 模拟进度更新
+            const interval = setInterval(() => {
+                task.progress += Math.random() * 20;
+                if (task.progress >= 100) {
+                    task.progress = 100;
+                    task.status = 'completed';
+                    clearInterval(interval);
+                    addLog(`任务 "${task.name}" 完成！`, 'success');
+                    showAlert(`任务 "${task.name}" 完成！`, 'success');
+                }
+                updateTaskList();
+                updateStats();
+            }, 1000);
+        }, 1000);
+        
+        // 取消任务
+        function cancelTask(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (task) {
+                task.status = 'failed';
+                addLog(`任务 "${task.name}" 已取消`, 'warning');
+                updateTaskList();
+                updateStats();
+            }
+        }
+        
+        // 取消所有任务
+        function cancelAllTasks() {
+            tasks.forEach(task => {
+                if (task.status === 'running' || task.status === 'pending') {
+                    task.status = 'failed';
+                }
+            });
+            addLog('所有任务已取消', 'warning');
+            updateTaskList();
+            updateStats();
+        }
+        
+        // 更新任务列表
+        function updateTaskList() {
+            const taskList = document.getElementById('taskList');
+            taskList.innerHTML = '';
+            
+            tasks.slice().reverse().forEach(task => {
+                const taskItem = document.createElement('div');
+                taskItem.className = 'task-item';
+                taskItem.innerHTML = `
+                    <div class="task-header">
+                        <strong>${task.name}</strong>
+                        <span class="task-status status-${task.status}">${task.status.toUpperCase()}</span>
+                    </div>
+                    <div style="font-size: 12px; color: #666;">
+                        URL: ${task.url} | 类型：${task.type} | 并发：${task.concurrent}
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${task.progress}%"></div>
+                    </div>
+                    <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <small>进度：${Math.round(task.progress)}%</small>
+                        ${task.status === 'running' ? `<button onclick="cancelTask(${task.id})" style="padding: 4px 12px; border: none; background: #ff7675; color: white; border-radius: 3px; cursor: pointer;">取消</button>` : ''}
+                    </div>
+                `;
+                taskList.appendChild(taskItem);
+            });
+        }
+        
+        // 更新统计
+        function updateStats() {
+            const total = tasks.length;
+            const pending = tasks.filter(t => t.status === 'pending').length;
+            const running = tasks.filter(t => t.status === 'running').length;
+            const completed = tasks.filter(t => t.status === 'completed').length;
+            const failed = tasks.filter(t => t.status === 'failed').length;
+            const successRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+            const uptime = (Date.now() - startTime) / 1000;
+            const throughput = uptime > 0 ? (completed / uptime).toFixed(2) : 0;
+            
+            document.getElementById('totalTasks').textContent = total;
+            document.getElementById('pendingTasks').textContent = pending;
+            document.getElementById('runningTasks').textContent = running;
+            document.getElementById('completedTasks').textContent = completed;
+            document.getElementById('failedTasks').textContent = failed;
+            document.getElementById('successRate').textContent = `${successRate}%`;
+            document.getElementById('throughput').textContent = `${throughput} 任务/秒`;
+        }
+        
+        // 初始化
+        updateStats();
+        addLog('控制台初始化完成', 'success');
+    </script>
+</body>
+</html>

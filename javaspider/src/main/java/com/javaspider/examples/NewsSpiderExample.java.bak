@@ -1,0 +1,90 @@
+package com.javaspider.examples;
+
+import com.javaspider.core.Spider;
+import com.javaspider.model.Page;
+import com.javaspider.model.Site;
+import com.javaspider.pipeline.CsvFilePipeline;
+import com.javaspider.pipeline.JsonFilePipeline;
+import com.javaspider.processor.PageProcessor;
+
+import java.util.List;
+
+/**
+ * 新闻爬虫示例
+ * 爬取新闻标题、链接和发布时间
+ */
+public class NewsSpiderExample {
+
+    public static void main(String[] args) {
+        // 创建爬虫
+        Spider spider = Spider.create(new NewsProcessor())
+                .site(Site.create()
+                        .addStartUrl("https://news.ycombinator.com/")
+                        .withSleepTime(500)
+                        .withRetryTimes(3)
+                        .addUrlExcludePattern(".*item.*")) // 排除详情页
+                .threadCount(5)
+                .addPipeline(new JsonFilePipeline("output/news"))
+                .addPipeline(new CsvFilePipeline("output/news",
+                        new String[]{"title", "link", "score", "author", "time"}))
+                .name("News Spider")
+                .build();
+        spider.start();
+    }
+
+    /**
+     * 新闻页面处理器
+     */
+    static class NewsProcessor implements PageProcessor {
+        private final Site site = Site.create();
+
+        @Override
+        public void process(Page page) {
+            // 提取新闻列表
+            List<org.jsoup.nodes.Element> items = page.getHtmlParser()
+                    .cssElements("tr.athing");
+
+            for (org.jsoup.nodes.Element item : items) {
+                String title = item.selectFirst(".titleline a").text();
+                String link = item.selectFirst(".titleline a").attr("href");
+                String id = item.attr("id");
+
+                // 获取分数和作者（在下一行）
+                org.jsoup.nodes.Element subtext = item.parent()
+                        .selectFirst("tr:nth-child(2) .subtext");
+                
+                String score = subtext != null ? subtext.selectFirst(".score").text() : "0";
+                String author = subtext != null ? subtext.selectFirst(".hnuser").text() : "";
+                String time = subtext != null ? subtext.selectFirst(".age").attr("title") : "";
+
+                // 保存数据
+                page.putField("title", title);
+                page.putField("link", link);
+                page.putField("score", score);
+                page.putField("author", author);
+                page.putField("time", time);
+
+                // 如果是外部链接，添加到爬取队列
+                if (link != null && !link.startsWith("item?") && !link.isEmpty()) {
+                    page.addTargetRequest(new com.javaspider.model.Request(link));
+                }
+            }
+
+            // 爬取下一页
+            String nextPage = page.cssFirst("a.morelink");
+            if (nextPage != null) {
+                String moreLink = page.getHtmlParser()
+                        .cssAttrFirst("a.morelink", "href");
+                if (moreLink != null) {
+                    page.addTargetRequest(new com.javaspider.model.Request(
+                            "https://news.ycombinator.com/" + moreLink));
+                }
+            }
+        }
+
+        @Override
+        public Site getSite() {
+            return site;
+        }
+    }
+}

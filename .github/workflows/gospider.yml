@@ -1,0 +1,114 @@
+name: GoSpider CI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        go-version: [1.21, 1.22]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+    
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Download dependencies
+      run: go mod download
+    
+    - name: Build
+      run: go build -v ./cmd/gospider/...
+    
+    - name: Test
+      run: go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.txt
+        flags: unittests
+    
+    - name: Lint
+      uses: golangci/golangci-lint-action@v4
+      with:
+        version: latest
+        args: --timeout=5m
+  
+  cross-compile:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    strategy:
+      matrix:
+        include:
+          - os: windows
+            arch: amd64
+          - os: linux
+            arch: amd64
+          - os: darwin
+            arch: amd64
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+    
+    - name: Cross compile
+      run: |
+        GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o gospider-${{ matrix.os }}-${{ matrix.arch }} ./cmd/gospider/main_enhanced.go
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: gospider-${{ matrix.os }}-${{ matrix.arch }}
+        path: gospider-${{ matrix.os }}-${{ matrix.arch }}*
+  
+  docker:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build and push
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile
+        push: true
+        tags: |
+          gospider:latest
+          gospider:${{ github.sha }}
+        platforms: linux/amd64,linux/arm64

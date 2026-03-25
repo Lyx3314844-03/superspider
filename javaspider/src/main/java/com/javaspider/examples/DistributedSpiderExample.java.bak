@@ -1,0 +1,97 @@
+package com.javaspider.examples;
+
+import com.javaspider.core.Spider;
+import com.javaspider.distributed.RedisScheduler;
+import com.javaspider.model.Page;
+import com.javaspider.model.Site;
+import com.javaspider.pipeline.ConsolePipeline;
+import com.javaspider.pipeline.DatabasePipeline;
+import com.javaspider.processor.PageProcessor;
+
+/**
+ * 分布式爬虫示例
+ * 使用 Redis 实现分布式爬取
+ */
+public class DistributedSpiderExample {
+
+    public static void main(String[] args) {
+        // 创建 Redis 调度器
+        RedisScheduler scheduler = new RedisScheduler("localhost", 6379, "distributed-spider");
+
+        // 创建爬虫
+        Spider spider = Spider.create(new BookProcessor())
+                .site(Site.create()
+                        .addStartUrl("https://books.toscrape.com/")
+                        .setSleepTime(1000)
+                        .setRetryTimes(3))
+                .threadCount(5)
+                .addPipeline(new ConsolePipeline())
+                .addPipeline(new DatabasePipeline(
+                        "jdbc:mysql://localhost:3306/spider_db?useSSL=false&serverTimezone=UTC",
+                        "root",
+                        "password",
+                        "books"))
+                .name("Distributed Book Spider")
+                .build();
+
+        spider.setScheduler(scheduler);
+        spider.start();
+    }
+
+    /**
+     * 图书页面处理器
+     */
+    static class BookProcessor implements PageProcessor {
+        private final Site site = Site.create();
+
+        @Override
+        public void process(Page page) {
+            // 检查是否是列表页
+            if (page.getUrl().contains("catalogue")) {
+                // 列表页：提取所有图书链接
+                for (String link : page.css("article.product_pod h3 a")) {
+                    String href = page.getHtmlParser()
+                            .cssAttrFirst("article.product_pod h3 a", "href");
+                    if (href != null) {
+                        String fullUrl = page.getUrl().replaceAll("index.html$", "") + href;
+                        page.addTargetRequest(new com.javaspider.model.Request(fullUrl));
+                    }
+                }
+
+                // 爬取下一页
+                String nextLink = page.cssFirst("li.next a");
+                if (nextLink != null) {
+                    String nextPage = page.getHtmlParser()
+                            .cssAttrFirst("li.next a", "href");
+                    if (nextPage != null) {
+                        page.addTargetRequest(new com.javaspider.model.Request(
+                                page.getUrl().replaceAll("page-\\d+/.*", "") + nextPage));
+                    }
+                }
+            } else {
+                // 详情页：提取图书信息
+                String title = page.cssFirst("div.product_main h1");
+                String price = page.cssFirst("p.price_color");
+                String availability = page.cssFirst("p.instock.availability");
+                String description = page.cssFirst("#product_description + p");
+                String upc = page.xpathFirst("//table[contains(@class, 'table-striped')]//tr[th='UPC']/td");
+                String rating = page.getHtmlParser()
+                        .cssElementFirst("p.star-rating")
+                        .className()
+                        .replaceAll("star-rating ", "");
+
+                page.putField("title", title);
+                page.putField("price", price);
+                page.putField("availability", availability);
+                page.putField("description", description);
+                page.putField("upc", upc);
+                page.putField("rating", rating);
+            }
+        }
+
+        @Override
+        public Site getSite() {
+            return site;
+        }
+    }
+}

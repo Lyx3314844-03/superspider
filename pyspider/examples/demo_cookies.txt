@@ -1,0 +1,6 @@
+# Netscape HTTP Cookie File
+# Generated at 2026-03-20T21:48:14.443229
+
+example.com	FALSE	/	FALSE	1774018094	session_id	abc123
+example.com	FALSE	/	FALSE	0	preferences	dark_mode
+.example.com	TRUE	/admin	FALSE	0	user_id	12345

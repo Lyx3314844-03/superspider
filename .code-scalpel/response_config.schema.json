@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Code Scalpel Response Configuration Schema",
+  "description": "Configure MCP tool response output verbosity for token efficiency. Controls which metadata/tool data fields are included in responses - independent of tier.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Code Scalpel version this config is for"
+    },
+    "description": {
+      "type": "string"
+    },
+    "global": {
+      "type": "object",
+      "description": "Global settings applied to all tools unless overridden",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "enum": ["minimal", "standard", "verbose", "debug"],
+          "description": "Default output profile. minimal=~50-100 tokens, standard=~100-500, verbose=~500-2000, debug=unlimited"
+        },
+        "exclude_empty_arrays": { "type": "boolean" },
+        "exclude_empty_objects": { "type": "boolean" },
+        "exclude_null_values": { "type": "boolean" },
+        "exclude_default_values": { "type": "boolean" }
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "description": "Named output profiles. 'profile' in global or tool_overrides refers to these names.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "envelope": {
+            "type": "object",
+            "properties": {
+              "include": {
+                "type": "array",
+                "description": "Envelope metadata fields to include",
+                "items": {
+                  "type": "string",
+                  "enum": ["tier", "tool_version", "tool_id", "request_id", "capabilities", "duration_ms", "error", "upgrade_hints"]
+                }
+              }
+            }
+          },
+          "common_exclusions": {
+            "type": "array",
+            "description": "Fields to exclude from all tool responses at this profile level",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "tool_overrides": {
+      "type": "object",
+      "description": "Per-tool configuration. Keys are tool names (e.g., analyze_code, security_scan).",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "properties": {
+              "profile": {
+                "type": "string",
+                "enum": ["minimal", "standard", "verbose", "debug"]
+              },
+              "exclude_fields": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Fields to always exclude from this tool's response"
+              },
+              "include_only": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Whitelist mode: only include these fields"
+              },
+              "include_on_error": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Extra fields included only when the tool returns an error"
+              },
+              "exclude_when_tier": {
+                "type": "object",
+                "description": "Tier-conditional exclusions. Keys are tier names (community, pro, enterprise); values are arrays of field names to exclude at that tier. Useful for suppressing heavy metadata on lower tiers.",
+                "properties": {
+                  "community": { "type": "array", "items": { "type": "string" } },
+                  "pro":       { "type": "array", "items": { "type": "string" } },
+                  "enterprise":{ "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+# Runtime audit logs
+audit.log
+autonomy_audit/
+
+# Policy override responses (generated at runtime)
+override_response.json
+
+# Signed manifest (optional - commit if using tamper resistance)
+# policy.manifest.json

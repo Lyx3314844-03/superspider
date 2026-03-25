@@ -1,0 +1,142 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"time"
+	"gospider/dynamic"
+	"gospider/parser"
+)
+
+type Video struct {
+	Title    string
+	Duration string
+	Channel  string
+	URL      string
+}
+
+func main() {
+	playlistURL := "https://www.youtube.com/watch?v=tr5yZ2TzXaY&list=PLRuPQZBVD6vV89UKIzUwZFUhDx9DjXLxc"
+
+	fmt.Println("╔═══════════════════════════════════════════════════════════╗")
+	fmt.Println("║           YouTube 播放列表爬虫                             ║")
+	fmt.Println("╚═══════════════════════════════════════════════════════════╝")
+	fmt.Println()
+	fmt.Printf("播放列表 URL: %s\n\n", playlistURL)
+
+	// 创建动态爬虫（使用浏览器）
+	crawler := dynamic.NewDynamicCrawler(false, 60*time.Second)
+	defer crawler.Close()
+
+	// 导航到播放列表
+	fmt.Println("正在加载播放列表页面...")
+	if err := crawler.Navigate(playlistURL); err != nil {
+		log.Fatalf("导航失败：%v", err)
+	}
+
+	// 等待页面加载
+	fmt.Println("等待视频列表加载...")
+	time.Sleep(5 * time.Second)
+
+	// 滚动加载所有视频
+	fmt.Println("滚动加载所有视频...")
+	crawler.ScrollAndLoad(1000, 10)
+	time.Sleep(3 * time.Second)
+
+	// 获取页面 HTML
+	html, err := crawler.GetContent()
+	if err != nil {
+		log.Fatalf("获取内容失败：%v", err)
+	}
+
+	// 解析视频列表
+	videos := parsePlaylist(html)
+
+	fmt.Println()
+	fmt.Println("═══════════════════════════════════════════════════════════")
+	fmt.Println("                      爬取结果                              ")
+	fmt.Println("═══════════════════════════════════════════════════════════")
+	fmt.Printf("共找到 %d 个视频\n\n", len(videos))
+
+	// 打印结果
+	for i, video := range videos {
+		fmt.Printf("%d. %s\n", i+1, video.Title)
+		fmt.Printf("   时长：%s\n", video.Duration)
+		fmt.Printf("   频道：%s\n", video.Channel)
+		fmt.Printf("   链接：%s\n\n", video.URL)
+	}
+
+	// 保存到文件
+	saveToFile(videos)
+}
+
+func parsePlaylist(html string) []Video {
+	var videos []Video
+	p := parser.NewHTMLParser(html)
+	seen := make(map[string]bool)
+
+	// YouTube 播放列表视频项
+	elements := p.CSS("ytd-playlist-video-renderer")
+	
+	for _, _ = range elements {
+		// 提取标题
+		titles := p.CSS("#video-title")
+		for _, title := range titles {
+			if title == "" || seen[title] {
+				continue
+			}
+			seen[title] = true
+
+			video := Video{
+				Title: title,
+			}
+
+			videos = append(videos, video)
+		}
+		break
+	}
+
+	// 备用方法：直接提取所有视频标题
+	if len(videos) == 0 {
+		fmt.Println("使用备用选择器重新解析...")
+		allTitles := p.CSS("a#video-title")
+		for _, title := range allTitles {
+			if title == "" || seen[title] {
+				continue
+			}
+			seen[title] = true
+			videos = append(videos, Video{
+				Title: title,
+			})
+		}
+	}
+
+	return videos
+}
+
+func saveToFile(videos []Video) {
+	filename := "youtube_playlist_result.txt"
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Printf("创建文件失败：%v", err)
+		return
+	}
+	defer file.Close()
+
+	file.WriteString("YouTube 播放列表视频列表\n")
+	file.WriteString("═══════════════════════════════════════════════════════════\n\n")
+	file.WriteString(fmt.Sprintf("播放列表 URL: https://www.youtube.com/watch?v=tr5yZ2TzXaY&list=PLRuPQZBVD6vV89UKIzUwZFUhDx9DjXLxc\n"))
+	file.WriteString(fmt.Sprintf("爬取时间：%s\n", time.Now().Format("2006-01-02 15:04:05")))
+	file.WriteString(fmt.Sprintf("视频总数：%d\n\n", len(videos)))
+	file.WriteString("═══════════════════════════════════════════════════════════\n\n")
+
+	for i, video := range videos {
+		file.WriteString(fmt.Sprintf("%d. %s\n", i+1, video.Title))
+		file.WriteString(fmt.Sprintf("   时长：%s\n", video.Duration))
+		file.WriteString(fmt.Sprintf("   频道：%s\n", video.Channel))
+		file.WriteString(fmt.Sprintf("   链接：%s\n\n", video.URL))
+	}
+
+	fmt.Printf("结果已保存到：%s\n", filename)
+}

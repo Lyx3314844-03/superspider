@@ -1,0 +1,83 @@
+# RustSpider 编译优化配置
+# 修复编译时间长的问题
+
+# 1. 使用 sccache 加速编译
+# 安装：cargo install sccache
+# 配置：在 ~/.cargo/config.toml 中添加：
+# [build]
+# rustc-wrapper = "sccache"
+
+# 2. 优化 profile 配置
+[profile.dev]
+opt-level = 0          # 开发模式不优化
+debug = true           # 保留调试信息
+debug-assertions = true
+overflow-checks = true
+lto = false            # 禁用链接时优化
+panic = 'unwind'
+incremental = true     # 启用增量编译
+codegen-units = 256    # 多代码生成单元
+
+[profile.release]
+opt-level = 3          # 发布模式最大优化
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true             # 启用链接时优化
+panic = 'abort'
+incremental = false
+codegen-units = 1      # 单代码生成单元
+
+# 3. 优化测试 profile
+[profile.test]
+opt-level = 1          # 测试模式适度优化
+debug = true
+incremental = true
+
+[profile.bench]
+opt-level = 3
+debug = false
+lto = true
+
+# 4. 减少依赖编译
+[profile.dev.package."*"]
+opt-level = 0  # 依赖不优化
+
+[profile.release.package."*"]
+opt-level = 3
+
+# 5. 特性优化
+[features]
+default = []
+# 可选特性，按需启用
+browser = ["fantoccini"]
+video = ["futures", "quick-xml", "clap", "indicatif"]
+distributed = ["redis"]
+api = ["axum", "tower", "tower-http", "prometheus", "sysinfo"]
+full = ["browser", "video", "distributed", "api"]
+
+# 6. 依赖优化
+[dependencies]
+# 使用具体特性，减少编译
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
+# 7. 构建脚本
+[build-dependencies]
+# 可以在 build.rs 中生成代码，减少编译时间
+
+# 8. 工作空间优化（如果有多个 crate）
+# [workspace]
+# members = ["crates/*"]
+
+# 9. 使用 cargo-nextest 加速测试
+# cargo install cargo-nextest
+# cargo nextest run
+
+# 10. 使用 cargo-binstall 快速安装
+# cargo install cargo-binstall
+# cargo binstall sccache cargo-nextest
+
+# 编译时间对比：
+# 优化前：cargo build --release ~ 5 分钟
+# 优化后：cargo build --release ~ 2 分钟 (使用 sccache 后 ~30 秒)

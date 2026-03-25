@@ -1,0 +1,70 @@
+name: RustSpider Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'rustspider/**'
+      - '.github/workflows/rustspider-quality.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'rustspider/**'
+      - '.github/workflows/rustspider-quality.yml'
+  workflow_dispatch:
+
+jobs:
+  rust-quality:
+    name: RustSpider Test, Fmt, And Clippy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rustspider
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Prepare artifact directory
+        run: mkdir -p artifacts
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rustspider/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rustspider/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run Cargo tests
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test 2>&1 | tee artifacts/cargo-test.log
+
+      - name: Run Cargo fmt check
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fmt --check 2>&1 | tee artifacts/cargo-fmt.log
+
+      - name: Run Cargo clippy
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets -- -D warnings 2>&1 | tee artifacts/cargo-clippy.log
+
+      - name: Upload RustSpider quality logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustspider-quality-logs
+          path: |
+            rustspider/artifacts/cargo-test.log
+            rustspider/artifacts/cargo-fmt.log
+            rustspider/artifacts/cargo-clippy.log

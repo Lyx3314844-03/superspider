@@ -1,0 +1,92 @@
+{
+  "$schema": "./response_config.schema.json",
+  "version": "1.4.0",
+  "description": "MCP response configuration - controls output verbosity for all tools independent of tier. Edit 'global.profile' to adjust detail level: minimal, standard, verbose, or debug.",
+  "global": {
+    "profile": "minimal",
+    "exclude_empty_arrays": true,
+    "exclude_empty_objects": true,
+    "exclude_null_values": true,
+    "exclude_default_values": true
+  },
+  "profiles": {
+    "minimal": {
+      "description": "Default. Bare minimum for LLM understanding - maximum token efficiency (~50-100 tokens per response). Escalate to standard, verbose, or debug when more detail is needed.",
+      "envelope": {
+        "include": []
+      },
+      "common_exclusions": [
+        "server_version",
+        "request_id",
+        "duration_ms",
+        "capabilities"
+      ]
+    },
+    "standard": {
+      "description": "Balanced output with essential metadata (~100-500 tokens). Good for most interactive AI workflows that benefit from error context.",
+      "envelope": {
+        "include": ["error", "upgrade_hints"]
+      },
+      "common_exclusions": [
+        "server_version",
+        "request_id"
+      ]
+    },
+    "verbose": {
+      "description": "Detailed output with full metadata (~500-2000 tokens). Use when debugging tool behaviour or investigating unexpected results.",
+      "envelope": {
+        "include": ["error", "upgrade_hints", "duration_ms"]
+      },
+      "common_exclusions": [
+        "server_version"
+      ]
+    },
+    "debug": {
+      "description": "Full output including all metadata (unlimited tokens). Use for development and integration testing only.",
+      "envelope": {
+        "include": ["tier", "tool_version", "tool_id", "request_id", "capabilities", "duration_ms", "error", "upgrade_hints"]
+      },
+      "common_exclusions": []
+    }
+  },
+  "tool_overrides": {
+    "_comment": "Per-tool field exclusions to control output size. Not tier-based - purely for token efficiency. Remove entries to include more detail for specific tools.",
+    "_comment_exclude_when_tier": "Use 'exclude_when_tier' inside any tool override to suppress fields at specific tiers. Keys are community/pro/enterprise; values are arrays of field names. Layered with 'exclude_fields' for fine-grained control.",
+    "analyze_code": {
+      "exclude_fields": ["raw_ast", "token_positions"],
+      "include_on_error": ["parser_warnings", "sanitization_report", "error_location", "suggested_fix"]
+    },
+    "security_scan": {
+      "exclude_fields": ["scan_metadata", "parser_warnings", "constraint_dump", "solver_statistics"]
+    },
+    "extract_code": {
+      "exclude_fields": ["extraction_metadata", "ast_node_ids"],
+      "include_on_error": ["parser_warnings", "error_location", "suggested_fix"]
+    },
+    "symbolic_execute": {
+      "exclude_fields": ["solver_statistics", "constraint_dump", "z3_model_dump", "path_conditions_raw", "concolic_results"]
+    },
+    "generate_unit_tests": {
+      "exclude_fields": ["generation_metadata", "symbolic_paths_raw"]
+    },
+    "crawl_project": {
+      "exclude_fields": ["crawl_statistics", "file_hashes", "parse_timings"]
+    },
+    "get_call_graph": {
+      "exclude_fields": ["graph_metadata", "edge_weights", "traversal_order"]
+    },
+    "simulate_refactor": {
+      "exclude_fields": ["simulation_metadata", "ast_diff_raw"]
+    },
+    "scan_dependencies": {
+      "exclude_fields": ["scan_metadata", "api_response_raw"]
+    },
+    "update_symbol": {
+      "exclude_fields": ["backup_metadata", "syntax_tree_diff"],
+      "include_on_error": ["parser_warnings", "error_location", "suggested_fix"]
+    },
+    "validate_paths": {
+      "exclude_fields": ["validation_metadata", "stat_results"]
+    }
+  }
+}

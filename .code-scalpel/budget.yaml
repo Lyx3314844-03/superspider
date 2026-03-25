@@ -1,0 +1,29 @@
+# Code Scalpel Change Budget Configuration
+# Learn more: https://github.com/3D-Tech-Solutions/code-scalpel/blob/main/docs/guides/change_budgeting.md
+
+version: "1.0.0"
+
+# Maximum changes allowed per session
+budgets:
+  # File-level limits
+  max_files_modified: 10
+  max_files_created: 5
+  max_files_deleted: 2
+
+  # Line-level limits (per file)
+  max_lines_added: 500
+  max_lines_deleted: 300
+  max_lines_modified: 400
+
+  # Total session limits
+  max_total_line_changes: 1000
+
+# Reset behavior
+reset:
+  # Options: "session", "daily", "manual"
+  mode: "session"
+
+# Exemptions (files that don't count against budget)
+exemptions:
+  - "tests/**/*.py"
+  - "docs/**/*.md"

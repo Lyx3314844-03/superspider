@@ -1,0 +1,44 @@
+{
+  "version": "1.0.0",
+  "governance": {
+    "blast_radius": {
+      "max_files_per_operation": 10,
+      "max_lines_changed": 500,
+      "max_functions_modified": 5,
+      "max_classes_modified": 3
+    },
+    "protected_paths": [
+      "src/security/**",
+      "src/auth/**",
+      "*.key",
+      "*.pem",
+      ".env"
+    ],
+    "allowed_operations": [
+      "analyze",
+      "extract",
+      "security_scan",
+      "get_file_context",
+      "get_symbol_references"
+    ],
+    "denied_operations": [
+      "delete_file",
+      "bulk_replace"
+    ]
+  },
+  "enforcement": {
+    "mode": "warn",
+    "fail_on_violation": false,
+    "log_violations": true
+  },
+  "audit": {
+    "enabled": true,
+    "log_file": ".code-scalpel/audit.log",
+    "include_diffs": true,
+    "cryptographic_signing": false
+  },
+  "integrity": {
+    "verify_on_startup": true,
+    "hash_algorithm": "sha256"
+  }
+}

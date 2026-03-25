@@ -1,0 +1,76 @@
+# pyspider 配置文件
+# 生成时间：2026-03-20
+
+# 爬虫配置
+spider:
+  name: "MySpider"
+  max_requests: 10000
+  max_depth: 5
+  retry_times: 3
+  request_timeout: 30
+  rate_limit: 5.0
+  thread_count: 5
+  enable_persistence: true
+  persistence_path: "data/queue.db"
+  log_level: "INFO"
+  log_file: "logs/spider.log"
+  log_max_size: "10MB"
+
+# 下载器配置
+downloader:
+  timeout: 30
+  retry_times: 3
+  pool_connections: 10
+  pool_maxsize: 50
+  rate_limit: 5.0
+  use_proxy: false
+  proxy_file: "proxies.txt"
+  use_cookie: true
+  cookie_file: "cookies.pkl"
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  verify_ssl: true
+  follow_redirects: true
+  max_redirects: 10
+
+# 反反爬配置
+antibot:
+  enable_tls_spoof: true
+  enable_browser_spoof: true
+  enable_captcha_solver: false
+  captcha_api_key: null
+  captcha_service: "2captcha"
+  stealth_mode: true
+  random_user_agent: true
+  random_referer: true
+  random_delay: true
+  min_delay: 1.0
+  max_delay: 5.0
+  night_mode: true
+  night_start_hour: 23
+  night_end_hour: 6
+
+# 代理配置
+proxy:
+  enabled: false
+  proxy_file: "proxies.txt"
+  validate_interval: 300
+  validate_timeout: 10
+  validate_url: "https://www.baidu.com"
+  min_success_rate: 0.8
+  max_failures: 10
+  auto_switch: true
+  proxy_sources: []
+
+# 媒体下载配置
+media:
+  output_dir: "downloads"
+  max_file_size: 2147483648
+  chunk_size: 8192
+  max_workers: 5
+  enable_resume: true
+  enable_hls: true
+  ffmpeg_path: null
+  download_images: true
+  download_videos: true
+  download_audios: true
+  download_subtitles: true

@@ -1,0 +1,33 @@
+{
+  "enforcement": {
+    "enabled": true,
+    "mode": "warn",
+    "override": {
+      "allowed": true,
+      "requireJustification": true,
+      "requireApproval": false,
+      "notifyChannel": null
+    }
+  },
+  "policies": {
+    "syntaxValidation": true,
+    "securityScan": true,
+    "changeBudget": true,
+    "customPolicies": true
+  },
+  "exclusions": {
+    "paths": [
+      "**/node_modules/**",
+      "**/.git/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/__pycache__/**"
+    ],
+    "operators": []
+  },
+  "audit": {
+    "logAllSaves": true,
+    "logReadOnly": false,
+    "destination": ".code-scalpel/audit.jsonl"
+  }
+}
