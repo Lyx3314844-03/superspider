@@ -1,0 +1,7 @@
+# Omega-Spider Cluster - Spider 目录忽略文件
+tasks.db
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.db
