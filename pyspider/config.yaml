@@ -1,76 +1,225 @@
-# pyspider 配置文件
-# 生成时间：2026-03-20
+# Enhanced pyspider Configuration
+# ==============================
 
-# 爬虫配置
 spider:
-  name: "MySpider"
-  max_requests: 10000
-  max_depth: 5
+  name: "Enhanced Pyspider"
+  version: "2.0.0"
+  max_requests: 50000
+  max_depth: 10
+  check_point_enabled: true
+  check_point_interval: 300
+  queue_persistence: "data/queue.db"
+  auto_resume: true
   retry_times: 3
-  request_timeout: 30
-  rate_limit: 5.0
-  thread_count: 5
-  enable_persistence: true
-  persistence_path: "data/queue.db"
-  log_level: "INFO"
-  log_file: "logs/spider.log"
-  log_max_size: "10MB"
+  retry_delay: 5
 
-# 下载器配置
 downloader:
-  timeout: 30
-  retry_times: 3
-  pool_connections: 10
-  pool_maxsize: 50
-  rate_limit: 5.0
-  use_proxy: false
-  proxy_file: "proxies.txt"
-  use_cookie: true
-  cookie_file: "cookies.pkl"
+  timeout: 60
+  pool_connections: 50
+  pool_maxsize: 100
+  connect_timeout: 30
+  read_timeout: 60
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  verify_ssl: true
+  enable_cookies: true
   follow_redirects: true
   max_redirects: 10
 
-# 反反爬配置
-antibot:
-  enable_tls_spoof: true
-  enable_browser_spoof: true
-  enable_captcha_solver: false
-  captcha_api_key: null
-  captcha_service: "2captcha"
-  stealth_mode: true
-  random_user_agent: true
-  random_referer: true
-  random_delay: true
-  min_delay: 1.0
-  max_delay: 5.0
-  night_mode: true
-  night_start_hour: 23
-  night_end_hour: 6
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_second: 10
+    burst: 20
 
-# 代理配置
+  # Concurrency
+  concurrency:
+    spider_threads: 16
+    downloader_threads: 32
+
+antibot:
+  enabled: true
+
+  # TLS指纹随机化
+  tls_spoofing: true
+
+  # 浏览器指纹
+  browser_fingerprint:
+    enabled: true
+    viewport_randomize: true
+    webgl_randomize: true
+    canvas_randomize: true
+
+  stealth:
+    enabled: true
+    webglVendor: "Intel Inc."
+    webglRenderer: "Intel Iris OpenGL Engine"
+
+  # 行为随机化
+  behavior_randomization:
+    mouse_movement: true
+    scroll_randomization: true
+    click_delay_range: [100, 500]
+
+  # 请求间隔
+  request_delay:
+    min: 1.0
+    max: 3.0
+    random: true
+
+  # User-Agent轮换
+  user_agent_rotation:
+    enabled: true
+    pool:
+      - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+      - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/119.0.0.0 Safari/537.36"
+      - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+      - "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+      - "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0"
+      - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15"
+
+  # 夜间模式
+  night_mode:
+    enabled: true
+    start: "23:00"
+    end: "06:00"
+    reduce_activity: 0.5
+
+  # 验证码处理
+  captcha:
+    enabled: true
+    providers:
+      - type: "2captcha"
+        api_key: "YOUR_API_KEY"
+      - type: "anticaptcha"
+        api_key: "YOUR_API_KEY"
+    auto_detect: true
+
 proxy:
   enabled: false
-  proxy_file: "proxies.txt"
-  validate_interval: 300
-  validate_timeout: 10
-  validate_url: "https://www.baidu.com"
-  min_success_rate: 0.8
-  max_failures: 10
-  auto_switch: true
-  proxy_sources: []
+  rotation: true
 
-# 媒体下载配置
+  # 代理验证
+  validation:
+    enabled: true
+    test_url: "https://www.baidu.com"
+    min_success_rate: 0.8
+    check_interval: 300
+
+  # 代理池
+  pool:
+    min_size: 10
+    max_size: 100
+
 media:
-  output_dir: "downloads"
-  max_file_size: 2147483648
-  chunk_size: 8192
-  max_workers: 5
-  enable_resume: true
-  enable_hls: true
-  ffmpeg_path: null
-  download_images: true
-  download_videos: true
-  download_audios: true
-  download_subtitles: true
+  downloads: "downloads"
+  resume: true
+
+  # 并发下载
+  concurrency:
+    max_parallel: 10
+
+  # 图片下载
+  images:
+    enabled: true
+    timeout: 120
+    retries: 3
+
+  # 视频下载
+  videos:
+    enabled: true
+    timeout: 600
+    retries: 2
+    ffmpeg_path: "ffmpeg"
+
+  # 音频下载
+  audio:
+    enabled: true
+    timeout: 300
+
+# AI 增强功能
+ai:
+  enabled: false
+
+  # AI 提取器
+  extractor:
+    provider: "openai"  # openai, anthropic, local
+    model: "gpt-4"
+    api_key: "YOUR_API_KEY"
+    base_url: "https://api.openai.com/v1"
+
+  # 自动内容识别
+  content_detection:
+    enabled: true
+
+  # 智能 XPath 生成
+  smart_xpath:
+    enabled: true
+
+# 分布式支持
+distributed:
+  enabled: false
+
+  # Redis 配置
+  redis:
+    host: "localhost"
+    port: 6379
+    db: 0
+    password: ""
+
+  # 任务队列
+  queue:
+    type: "redis"  # redis, rabbitmq, kafka
+
+  # 节点发现
+  discovery:
+    type: "manual"  # manual, consul, etcd
+    nodes:
+      - "localhost:6801"
+
+# 性能监控
+monitor:
+  enabled: true
+
+  # 指标收集
+  metrics:
+    - requests_total
+    - requests_success
+    - requests_failed
+    - response_time_avg
+    - bandwidth_usage
+    - memory_usage
+    - cpu_usage
+
+  # 监控端口
+  port: 9090
+
+  # 健康检查
+  health_check:
+    enabled: true
+    interval: 60
+
+# 存储配置
+storage:
+  # 主存储
+  primary:
+    type: "sqlite"
+    path: "data/spider.db"
+
+  # 文件存储
+  files:
+    type: "local"
+    base_path: "data/files"
+
+  # 缓存
+  cache:
+    enabled: true
+    type: "memory"
+    max_size_mb: 512
+    ttl: 3600
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/spider.log"
+  max_bytes: 10485760
+  backup_count: 5

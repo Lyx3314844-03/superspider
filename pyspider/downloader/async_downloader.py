@@ -1,248 +1,255 @@
 """
-高性能下载器
-使用 aiohttp 和连接池优化
+异步 HTTP 下载器 - 高性能 aiohttp 版本
+使用 asyncio 实现真正的异步并发，大幅提升爬取速度
 """
 
-import aiohttp
 import asyncio
 import time
-from typing import Dict, Optional, List
-from dataclasses import dataclass
-import threading
 import logging
+from typing import Optional, Dict, List
+import aiohttp
 
 from pyspider.core.models import Request, Response
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class DownloaderConfig:
-    """下载器配置"""
-    max_connections: int = 100  # 最大连接数
-    timeout: int = 30  # 超时时间
-    max_retries: int = 3  # 最大重试
-    retry_delay: float = 1.0  # 重试延迟
-    rate_limit: float = 0  # 频率限制
-    user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    enable_cookies: bool = True
-    follow_redirects: bool = True
-    verify_ssl: bool = True
-
-
 class AsyncHTTPDownloader:
-    """异步 HTTP 下载器"""
-    
-    def __init__(self, config: DownloaderConfig = None):
-        self.config = config or DownloaderConfig()
+    """异步 HTTP 下载器 - 高性能版本"""
+
+    def __init__(
+        self,
+        timeout: int = 30,
+        max_retries: int = 3,
+        max_concurrent: int = 100,
+        retry_delay: float = 1.0,
+        backoff_factor: float = 2.0,
+    ):
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.max_concurrent = max_concurrent
+        self.retry_delay = retry_delay
+        self.backoff_factor = backoff_factor
+        self._semaphore = asyncio.Semaphore(max_concurrent)
         self._session: Optional[aiohttp.ClientSession] = None
-        self._semaphore = asyncio.Semaphore(self.config.max_connections)
-        self._rate_limiter = RateLimiter(self.config.rate_limit) if self.config.rate_limit > 0 else None
-        self._stats = {
-            'requests': 0,
-            'success': 0,
-            'failed': 0,
-            'bytes_downloaded': 0,
-        }
-    
+        self._proxy_pool = None
+        self._incremental = None
+        self._robots_checker = None
+        self._user_agents: List[str] = []
+        self._ua_index = 0
+        self._rate_limit_lock = asyncio.Lock()
+        self._last_request_time = 0.0
+        self._min_request_interval = 0.0
+
     async def __aenter__(self):
-        connector = aiohttp.TCPConnector(
-            limit=self.config.max_connections,
-            ssl=self.config.verify_ssl,
-            enable_cleanup_closed=True,
-        )
-        
-        self._session = aiohttp.ClientSession(
-            connector=connector,
-            headers={'User-Agent': self.config.user_agent},
-            timeout=aiohttp.ClientTimeout(total=self.config.timeout),
-        )
+        await self._ensure_session()
         return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._session:
-            await self._session.close()
-    
-    async def download(self, request: Request) -> Optional[Response]:
-        """下载页面"""
-        async with self._semaphore:
-            if self._rate_limiter:
-                await self._rate_limiter.wait()
-            
-            self._stats['requests'] += 1
-            
-            for attempt in range(self.config.max_retries):
-                try:
-                    async with self._session.get(
-                        request.url,
-                        headers=request.headers or {},
-                        allow_redirects=self.config.follow_redirects,
-                        cookies=request.cookies if self.config.enable_cookies else None,
-                    ) as resp:
-                        text = await resp.text()
-                        content = await resp.read()
-                        
-                        self._stats['success'] += 1
-                        self._stats['bytes_downloaded'] += len(content)
-                        
-                        return Response(
-                            url=request.url,
-                            status_code=resp.status,
-                            headers=dict(resp.headers),
-                            content=content,
-                            text=text,
-                            request=request,
-                            duration=0,
-                            error=None
-                        )
-                        
-                except Exception as e:
-                    if attempt < self.config.max_retries - 1:
-                        await asyncio.sleep(self.config.retry_delay * (attempt + 1))
-                    else:
-                        self._stats['failed'] += 1
-                        logger.error(f"下载失败 {request.url}: {e}")
-                        return Response(
-                            url=request.url,
-                            status_code=0,
-                            headers={},
-                            content=b'',
-                            text='',
-                            request=request,
-                            duration=0,
-                            error=e
-                        )
-        
-        return None
-    
-    def get_stats(self) -> Dict:
-        """获取统计信息"""
-        return self._stats.copy()
 
+    async def __aexit__(self, *args):
+        await self.close()
 
-class RateLimiter:
-    """异步速率限制器"""
-    
-    def __init__(self, rate: float):
-        self.rate = rate
-        self.last_request = 0.0
-        self._lock = asyncio.Lock()
-    
-    async def wait(self):
-        async with self._lock:
-            now = time.time()
-            elapsed = now - self.last_request
-            min_interval = 1.0 / self.rate
-            
-            if elapsed < min_interval:
-                sleep_time = min_interval - elapsed
-                await asyncio.sleep(sleep_time)
-            
-            self.last_request = time.time()
-
-
-class ConnectionManager:
-    """连接管理器"""
-    
-    def __init__(self, max_connections: int = 100):
-        self.max_connections = max_connections
-        self._active_connections = 0
-        self._lock = threading.Lock()
-        self._sessions: Dict[str, aiohttp.ClientSession] = {}
-    
-    def get_session(self, domain: str) -> aiohttp.ClientSession:
-        """获取会话"""
-        if domain not in self._sessions:
+    async def _ensure_session(self):
+        """确保 session 已创建"""
+        if self._session is None or self._session.closed:
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
             connector = aiohttp.TCPConnector(
-                limit=self.max_connections,
+                limit=self.max_concurrent,
+                limit_per_host=10,
                 enable_cleanup_closed=True,
             )
-            self._sessions[domain] = aiohttp.ClientSession(connector=connector)
-        
-        return self._sessions[domain]
-    
-    async def close_all(self):
-        """关闭所有会话"""
-        for session in self._sessions.values():
-            await session.close()
-        self._sessions.clear()
+            self._session = aiohttp.ClientSession(
+                timeout=timeout,
+                connector=connector,
+                headers={
+                    "User-Agent": (
+                        self._user_agents[0] if self._user_agents else "pyspider/2.0"
+                    )
+                },
+            )
 
+    async def close(self):
+        """关闭 session"""
+        if self._session and not self._session.closed:
+            await self._session.close()
 
-class DownloadQueue:
-    """下载队列（优先级）"""
-    
-    def __init__(self, max_size: int = 100000):
-        self.max_size = max_size
-        self._queue = asyncio.PriorityQueue(maxsize=max_size)
-        self._seen = set()
-        self._lock = asyncio.Lock()
-    
-    async def put(self, url: str, priority: int = 0, request: Request = None):
-        """添加下载任务"""
-        async with self._lock:
-            if url in self._seen:
-                return False
-            
-            if self._queue.full():
-                return False
-            
-            self._seen.add(url)
-            await self._queue.put((-priority, url, request))
-            return True
-    
-    async def get(self) -> Optional[tuple]:
-        """获取下载任务"""
-        try:
-            priority, url, request = await asyncio.wait_for(self._queue.get(), timeout=1.0)
-            return (-priority, url, request)
-        except asyncio.TimeoutError:
+    def set_proxy_pool(self, proxy_pool) -> None:
+        self._proxy_pool = proxy_pool
+
+    def set_incremental(self, incremental) -> None:
+        self._incremental = incremental
+
+    def set_robots_checker(self, robots_checker) -> None:
+        self._robots_checker = robots_checker
+
+    def set_user_agents(self, user_agents: List[str]) -> None:
+        self._user_agents = user_agents
+
+    def set_min_request_interval(self, seconds: float) -> None:
+        self._min_request_interval = seconds
+
+    def _get_next_user_agent(self) -> Optional[str]:
+        if not self._user_agents:
             return None
-    
-    def size(self) -> int:
-        """队列大小"""
-        return self._queue.qsize()
+        ua = self._user_agents[self._ua_index % len(self._user_agents)]
+        self._ua_index += 1
+        return ua
 
+    def _effective_min_interval(self, url: Optional[str] = None) -> float:
+        interval = self._min_request_interval
+        if self._robots_checker and url:
+            try:
+                crawl_delay = self._robots_checker.get_crawl_delay(url)
+                if crawl_delay and crawl_delay > interval:
+                    interval = float(crawl_delay)
+            except Exception:
+                pass
+        return interval
 
-class BatchDownloader:
-    """批量下载器"""
-    
-    def __init__(self, config: DownloaderConfig = None):
-        self.config = config or DownloaderConfig()
-        self.downloader = AsyncHTTPDownloader(self.config)
-        self.queue = DownloadQueue()
-    
-    async def download_batch(self, urls: List[str], max_concurrent: int = 50) -> List[Response]:
-        """批量下载"""
-        results = []
-        semaphore = asyncio.Semaphore(max_concurrent)
-        
-        async def download_with_semaphore(url):
-            async with semaphore:
-                request = Request(url=url)
-                return await self.downloader.download(request)
-        
-        tasks = [download_with_semaphore(url) for url in urls]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        return [r for r in results if isinstance(r, Response)]
-    
-    async def download_with_progress(self, urls: List[str]) -> List[Response]:
-        """带进度显示的批量下载"""
-        from tqdm import tqdm
-        
-        results = []
-        semaphore = asyncio.Semaphore(self.config.max_connections)
-        
-        async def download_with_progress(url, pbar):
-            async with semaphore:
-                request = Request(url=url)
-                result = await self.downloader.download(request)
-                pbar.update(1)
-                return result
-        
-        with tqdm(total=len(urls), desc='Downloading') as pbar:
-            tasks = [download_with_progress(url, pbar) for url in urls]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        return [r for r in results if isinstance(r, Response)]
+    async def _apply_rate_limit(self, url: Optional[str] = None) -> None:
+        """速率限制 (异步)"""
+        min_interval = self._effective_min_interval(url)
+        if min_interval > 0:
+            async with self._rate_limit_lock:
+                elapsed = time.time() - self._last_request_time
+                if elapsed < min_interval:
+                    await asyncio.sleep(min_interval - elapsed)
+                self._last_request_time = time.time()
+
+    async def download(self, req: Request) -> Response:
+        """异步下载页面"""
+        start_time = time.time()
+
+        # robots.txt 检查
+        if self._robots_checker and not self._robots_checker.is_allowed(req.url):
+            logger.warning(f"robots.txt 禁止: {req.url}")
+            return Response(
+                url=req.url,
+                status_code=403,
+                headers={},
+                content=b"",
+                text="",
+                request=req,
+                duration=time.time() - start_time,
+                error=PermissionError(f"robots.txt forbids: {req.url}"),
+            )
+
+        # 速率限制
+        await self._apply_rate_limit(req.url)
+
+        # 构建请求头
+        headers = dict(req.headers)
+        if not headers.get("User-Agent") and self._user_agents:
+            headers["User-Agent"] = self._get_next_user_agent()
+
+        # 并发控制
+        async with self._semaphore:
+            return await self._do_download(req, headers, start_time)
+
+    async def _do_download(
+        self, req: Request, headers: Dict[str, str], start_time: float, attempt: int = 0
+    ) -> Response:
+        """执行下载 (带重试)"""
+        try:
+            await self._ensure_session()
+
+            # 代理设置
+            proxy = None
+            if self._proxy_pool:
+                p = self._proxy_pool.get_proxy()
+                if p:
+                    proxy = p.url
+
+            # 执行请求
+            async with self._session.request(
+                method=req.method,
+                url=req.url,
+                headers=headers,
+                data=req.body,
+                proxy=proxy,
+                allow_redirects=True,
+            ) as resp:
+                content = await resp.read()
+                text = await resp.text(errors="replace")
+                duration = time.time() - start_time
+
+                # 记录代理结果
+                if self._proxy_pool and proxy and p:
+                    if resp.status < 400:
+                        self._proxy_pool.record_success(p)
+                    else:
+                        self._proxy_pool.record_failure(p)
+
+                # 更新增量缓存
+                if self._incremental and resp.status == 200:
+                    etag = resp.headers.get("ETag")
+                    last_modified = resp.headers.get("Last-Modified")
+                    self._incremental.update_cache(
+                        req.url,
+                        etag=etag,
+                        last_modified=last_modified,
+                        content=content,
+                        status_code=resp.status,
+                    )
+
+                if (
+                    resp.status in {429, 500, 502, 503, 504}
+                    and attempt < self.max_retries
+                ):
+                    delay = self.retry_delay * (self.backoff_factor**attempt)
+                    retry_after = resp.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            delay = max(delay, float(retry_after))
+                        except ValueError:
+                            pass
+                    await asyncio.sleep(delay)
+                    return await self._do_download(
+                        req, headers, start_time, attempt + 1
+                    )
+
+                error = None
+                if resp.status >= 400:
+                    error = Exception(f"HTTP {resp.status}")
+
+                return Response(
+                    url=req.url,
+                    status_code=resp.status,
+                    headers=dict(resp.headers),
+                    content=content,
+                    text=text,
+                    request=req,
+                    duration=duration,
+                    error=error,
+                )
+
+        except asyncio.TimeoutError as e:
+            last_error = e
+        except aiohttp.ClientError as e:
+            last_error = e
+        except Exception as e:
+            last_error = e
+
+        # 重试逻辑
+        if attempt < self.max_retries:
+            delay = self.retry_delay * (self.backoff_factor**attempt)
+            logger.warning(
+                f"请求失败({attempt+1}/{self.max_retries}): {req.url}, {delay:.1f}s 后重试"
+            )
+            await asyncio.sleep(delay)
+            return await self._do_download(req, headers, start_time, attempt + 1)
+
+        return Response(
+            url=req.url,
+            status_code=0,
+            headers={},
+            content=b"",
+            text="",
+            request=req,
+            duration=time.time() - start_time,
+            error=last_error,
+        )
+
+    async def download_batch(self, requests: List[Request]) -> List[Response]:
+        """批量异步下载"""
+        tasks = [self.download(req) for req in requests]
+        return await asyncio.gather(*tasks, return_exceptions=True)

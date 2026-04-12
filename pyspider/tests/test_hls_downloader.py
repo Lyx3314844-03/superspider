@@ -193,7 +193,9 @@ def test_dash_downloader_supports_static_segment_template_urls(tmp_path):
     assert (tmp_path / "video-3.mp4").read_bytes() == b"INITAAABBBCCC"
 
 
-def test_dash_downloader_rounds_segment_template_count_up_for_partial_tail_segment(tmp_path):
+def test_dash_downloader_rounds_segment_template_count_up_for_partial_tail_segment(
+    tmp_path,
+):
     class FakeResponse:
         def __init__(self, text="", content=b""):
             self.text = text
@@ -242,7 +244,9 @@ def test_dash_downloader_rounds_segment_template_count_up_for_partial_tail_segme
     assert (tmp_path / "video-4.mp4").read_bytes() == b"INITAAABBBCCC"
 
 
-def test_dash_downloader_downloads_audio_track_and_muxes_with_video(tmp_path, monkeypatch):
+def test_dash_downloader_downloads_audio_track_and_muxes_with_video(
+    tmp_path, monkeypatch
+):
     class FakeResponse:
         def __init__(self, text=""):
             self.text = text
@@ -262,7 +266,9 @@ def test_dash_downloader_downloads_audio_track_and_muxes_with_video(tmp_path, mo
                                 "id": "video-1",
                                 "bandwidth": "1000",
                                 "initialization": "video-init.mp4",
-                                "segments": [{"media": "video-seg-1.m4s", "media_range": None}],
+                                "segments": [
+                                    {"media": "video-seg-1.m4s", "media_range": None}
+                                ],
                             }
                         ],
                     },
@@ -273,7 +279,9 @@ def test_dash_downloader_downloads_audio_track_and_muxes_with_video(tmp_path, mo
                                 "id": "audio-1",
                                 "bandwidth": "128",
                                 "initialization": "audio-init.mp4",
-                                "segments": [{"media": "audio-seg-1.m4s", "media_range": None}],
+                                "segments": [
+                                    {"media": "audio-seg-1.m4s", "media_range": None}
+                                ],
                             }
                         ],
                     },
@@ -297,7 +305,9 @@ def test_dash_downloader_downloads_audio_track_and_muxes_with_video(tmp_path, mo
 
     def fake_mux(video_file, audio_file, output_file):
         calls.append(("mux", video_file.name, audio_file.name, output_file.name))
-        output_file.write_bytes(video_file.read_bytes() + b"|" + audio_file.read_bytes())
+        output_file.write_bytes(
+            video_file.read_bytes() + b"|" + audio_file.read_bytes()
+        )
         return True
 
     monkeypatch.setattr(downloader.session, "get", fake_get)
@@ -310,7 +320,9 @@ def test_dash_downloader_downloads_audio_track_and_muxes_with_video(tmp_path, mo
     assert ("download", "video-1", "video") in calls
     assert ("download", "audio-1", "audio") in calls
     assert ("mux", "video.mp4", "audio.mp4", "video-5.mp4") in calls
-    assert (tmp_path / "video-5.mp4").read_bytes() == b"INIT-video-1SEG-video-1|INIT-audio-1SEG-audio-1"
+    assert (
+        tmp_path / "video-5.mp4"
+    ).read_bytes() == b"INIT-video-1SEG-video-1|INIT-audio-1SEG-audio-1"
     assert not (tmp_path / "video-5_temp").exists()
 
 
@@ -334,7 +346,9 @@ def test_dash_downloader_returns_false_when_audio_mux_fails(tmp_path, monkeypatc
                                 "id": "video-1",
                                 "bandwidth": "1000",
                                 "initialization": "video-init.mp4",
-                                "segments": [{"media": "video-seg-1.m4s", "media_range": None}],
+                                "segments": [
+                                    {"media": "video-seg-1.m4s", "media_range": None}
+                                ],
                             }
                         ],
                     },
@@ -345,7 +359,9 @@ def test_dash_downloader_returns_false_when_audio_mux_fails(tmp_path, monkeypatc
                                 "id": "audio-1",
                                 "bandwidth": "128",
                                 "initialization": "audio-init.mp4",
-                                "segments": [{"media": "audio-seg-1.m4s", "media_range": None}],
+                                "segments": [
+                                    {"media": "audio-seg-1.m4s", "media_range": None}
+                                ],
                             }
                         ],
                     },

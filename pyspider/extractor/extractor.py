@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any
 
 class AIExtractor:
     """AI 内容提取器"""
-    
+
     def __init__(
         self,
         api_key: str,
@@ -23,11 +23,13 @@ class AIExtractor:
         self.model = model
         self.timeout = timeout
         self.session = requests.Session()
-        self.session.headers.update({
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        })
-    
+        self.session.headers.update(
+            {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            }
+        )
+
     def extract(
         self,
         content: str,
@@ -43,20 +45,20 @@ class AIExtractor:
                 },
             ],
         }
-        
+
         try:
             resp = self.session.post(self.api_url, json=payload, timeout=self.timeout)
             resp.raise_for_status()
-            
+
             result = resp.json()
             if "choices" in result and len(result["choices"]) > 0:
                 content = result["choices"][0]["message"]["content"]
                 return json.loads(content)
         except Exception as e:
             print(f"AI extract error: {e}")
-        
+
         return None
-    
+
     def summarize(self, content: str, max_length: int = 200) -> Optional[str]:
         """总结内容"""
         payload = {
@@ -69,19 +71,19 @@ class AIExtractor:
             ],
             "max_tokens": 100,
         }
-        
+
         try:
             resp = self.session.post(self.api_url, json=payload, timeout=self.timeout)
             resp.raise_for_status()
-            
+
             result = resp.json()
             if "choices" in result and len(result["choices"]) > 0:
                 return result["choices"][0]["message"]["content"]
         except Exception as e:
             print(f"AI summarize error: {e}")
-        
+
         return None
-    
+
     def extract_keywords(self, content: str, max_keywords: int = 10) -> List[str]:
         """提取关键词"""
         payload = {
@@ -93,20 +95,20 @@ class AIExtractor:
                 },
             ],
         }
-        
+
         try:
             resp = self.session.post(self.api_url, json=payload, timeout=self.timeout)
             resp.raise_for_status()
-            
+
             result = resp.json()
             if "choices" in result and len(result["choices"]) > 0:
                 content = result["choices"][0]["message"]["content"]
                 return json.loads(content)
         except Exception as e:
             print(f"AI keyword extraction error: {e}")
-        
+
         return []
-    
+
     def classify(
         self,
         content: str,
@@ -123,19 +125,19 @@ class AIExtractor:
             ],
             "max_tokens": 10,
         }
-        
+
         try:
             resp = self.session.post(self.api_url, json=payload, timeout=self.timeout)
             resp.raise_for_status()
-            
+
             result = resp.json()
             if "choices" in result and len(result["choices"]) > 0:
                 return result["choices"][0]["message"]["content"].strip()
         except Exception as e:
             print(f"AI classification error: {e}")
-        
+
         return None
-    
+
     def analyze_sentiment(self, content: str) -> Optional[Dict[str, Any]]:
         """情感分析"""
         payload = {
@@ -147,20 +149,20 @@ class AIExtractor:
                 },
             ],
         }
-        
+
         try:
             resp = self.session.post(self.api_url, json=payload, timeout=self.timeout)
             resp.raise_for_status()
-            
+
             result = resp.json()
             if "choices" in result and len(result["choices"]) > 0:
                 content = result["choices"][0]["message"]["content"]
                 return json.loads(content)
         except Exception as e:
             print(f"AI sentiment analysis error: {e}")
-        
+
         return None
-    
+
     def translate(self, content: str, target_language: str) -> Optional[str]:
         """翻译"""
         payload = {
@@ -172,19 +174,19 @@ class AIExtractor:
                 },
             ],
         }
-        
+
         try:
             resp = self.session.post(self.api_url, json=payload, timeout=self.timeout)
             resp.raise_for_status()
-            
+
             result = resp.json()
             if "choices" in result and len(result["choices"]) > 0:
                 return result["choices"][0]["message"]["content"]
         except Exception as e:
             print(f"AI translation error: {e}")
-        
+
         return None
-    
+
     def answer_question(self, context: str, question: str) -> Optional[str]:
         """问答"""
         payload = {
@@ -196,15 +198,15 @@ class AIExtractor:
                 },
             ],
         }
-        
+
         try:
             resp = self.session.post(self.api_url, json=payload, timeout=self.timeout)
             resp.raise_for_status()
-            
+
             result = resp.json()
             if "choices" in result and len(result["choices"]) > 0:
                 return result["choices"][0]["message"]["content"]
         except Exception as e:
             print(f"AI Q&A error: {e}")
-        
+
         return None

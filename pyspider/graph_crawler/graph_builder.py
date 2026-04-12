@@ -10,7 +10,7 @@
 @date: 2026-03-20
 """
 
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List, Any, Optional
 from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
 import hashlib

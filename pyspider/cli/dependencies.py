@@ -84,21 +84,37 @@ def _check_python() -> DependencyStatus:
     return DependencyStatus("fail", "Python", f"{message} is below required 3.8")
 
 
-def _load_config_statuses(config_path: Optional[str]) -> tuple[ConfigLoader, list[DependencyStatus]]:
-    config_file = Path(config_path) if config_path else Path(ConfigLoader.DEFAULT_CONFIG_FILE)
+def _load_config_statuses(
+    config_path: Optional[str],
+) -> tuple[ConfigLoader, list[DependencyStatus]]:
+    config_file = (
+        Path(config_path) if config_path else Path(ConfigLoader.DEFAULT_CONFIG_FILE)
+    )
     loader = ConfigLoader(str(config_file))
     statuses: list[DependencyStatus] = []
 
     if config_file.exists():
-        statuses.append(DependencyStatus("ok", "Config file", str(config_file.resolve())))
+        statuses.append(
+            DependencyStatus("ok", "Config file", str(config_file.resolve()))
+        )
     elif config_path:
-        statuses.append(DependencyStatus("fail", "Config file", f"missing: {config_file}"))
+        statuses.append(
+            DependencyStatus("fail", "Config file", f"missing: {config_file}")
+        )
     else:
-        statuses.append(DependencyStatus("warn", "Config file", "config.yaml not found, using defaults"))
+        statuses.append(
+            DependencyStatus(
+                "warn",
+                "Config file",
+                "spider-framework.yaml fallback chain not found, using defaults",
+            )
+        )
 
     validation_errors = loader.validate()
     if validation_errors:
-        statuses.append(DependencyStatus("fail", "Config validation", "; ".join(validation_errors)))
+        statuses.append(
+            DependencyStatus("fail", "Config validation", "; ".join(validation_errors))
+        )
     else:
         statuses.append(DependencyStatus("ok", "Config validation", "passed"))
 
@@ -113,7 +129,9 @@ def _check_output_dir(output_dir: str) -> DependencyStatus:
             pass
         return DependencyStatus("ok", "Output directory", f"writable: {path.resolve()}")
     except Exception as exc:
-        return DependencyStatus("fail", "Output directory", f"not writable: {path} ({exc})")
+        return DependencyStatus(
+            "fail", "Output directory", f"not writable: {path} ({exc})"
+        )
 
 
 def _check_ffmpeg(ffmpeg_path: Optional[str]) -> list[DependencyStatus]:
@@ -125,14 +143,22 @@ def _check_ffmpeg(ffmpeg_path: Optional[str]) -> list[DependencyStatus]:
             detail = f"{detail} Configured path: {ffmpeg_path}"
         return [
             DependencyStatus("fail", "FFmpeg", detail),
-            DependencyStatus("warn", "ffprobe", "skipped because ffmpeg is unavailable"),
+            DependencyStatus(
+                "warn", "ffprobe", "skipped because ffmpeg is unavailable"
+            ),
         ]
 
-    ffmpeg_status = DependencyStatus("ok", "FFmpeg", f"available at {executor.ffmpeg_path}")
+    ffmpeg_status = DependencyStatus(
+        "ok", "FFmpeg", f"available at {executor.ffmpeg_path}"
+    )
     if executor.ffprobe_path:
-        ffprobe_status = DependencyStatus("ok", "ffprobe", f"available at {executor.ffprobe_path}")
+        ffprobe_status = DependencyStatus(
+            "ok", "ffprobe", f"available at {executor.ffprobe_path}"
+        )
     else:
-        ffprobe_status = DependencyStatus("warn", "ffprobe", "not found, metadata features may be unavailable")
+        ffprobe_status = DependencyStatus(
+            "warn", "ffprobe", "not found, metadata features may be unavailable"
+        )
 
     return [ffmpeg_status, ffprobe_status]
 
@@ -142,16 +168,24 @@ def _check_module(name: str, module_name: str, optional: bool) -> DependencyStat
         return DependencyStatus("ok", name, "module installed")
 
     level = "warn" if optional else "fail"
-    suffix = "optional feature unavailable" if optional else "required dependency missing"
+    suffix = (
+        "optional feature unavailable" if optional else "required dependency missing"
+    )
     return DependencyStatus(level, name, f"{module_name} not installed, {suffix}")
 
 
 def _check_redis_connection(redis_url: Optional[str]) -> DependencyStatus:
     if not redis_url:
-        return DependencyStatus("skip", "Redis connection", "not checked, use --redis-url to verify connectivity")
+        return DependencyStatus(
+            "skip",
+            "Redis connection",
+            "not checked, use --redis-url to verify connectivity",
+        )
 
     if not importlib.util.find_spec("redis"):
-        return DependencyStatus("fail", "Redis connection", "redis package is not installed")
+        return DependencyStatus(
+            "fail", "Redis connection", "redis package is not installed"
+        )
 
     try:
         import redis
@@ -160,8 +194,12 @@ def _check_redis_connection(redis_url: Optional[str]) -> DependencyStatus:
         response = client.ping()
         client.close()
         if response:
-            return DependencyStatus("ok", "Redis connection", f"ping succeeded: {redis_url}")
-        return DependencyStatus("fail", "Redis connection", f"unexpected ping response: {response}")
+            return DependencyStatus(
+                "ok", "Redis connection", f"ping succeeded: {redis_url}"
+            )
+        return DependencyStatus(
+            "fail", "Redis connection", f"unexpected ping response: {response}"
+        )
     except Exception as exc:
         return DependencyStatus("fail", "Redis connection", f"{redis_url} ({exc})")
 

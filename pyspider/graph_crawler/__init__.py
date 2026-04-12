@@ -14,7 +14,7 @@ from .node_traversal import NodeTraversal
 from .relation_extractor import RelationExtractor
 
 __all__ = [
-    'GraphBuilder',
-    'NodeTraversal',
-    'RelationExtractor',
+    "GraphBuilder",
+    "NodeTraversal",
+    "RelationExtractor",
 ]

@@ -1,105 +1,126 @@
 """
 pyspider - Python Web Crawler Framework
-功能完整的爬虫框架
+
+顶层包改为懒加载，避免导入一个符号时把所有子系统和可选依赖都立即拉起。
 """
+
+from __future__ import annotations
+
+import importlib
 
 __version__ = "1.0.0"
 __author__ = "pyspider team"
 
-# 核心模块
-from pyspider.core.spider import Spider
-from pyspider.core.models import Request, Response, Page
-from pyspider.downloader.downloader import HTTPDownloader
-from pyspider.parser.parser import HTMLParser, JSONParser
-
-# Scrapy 风格
-from pyspider.spider.spider import Spider as ScrapySpider, CrawlSpider, Rule, Item, Loader
-from pyspider.spider.spider import ItemPipeline, SpiderMiddleware, DownloaderMiddleware
-
-# 动态爬取
-from pyspider.dynamic.wait import DynamicWait, ScrollLoader, FormInteractor
-from pyspider.dynamic.enhanced import DynamicWaitEnhanced, ScrollLoaderEnhanced, FormInteractorEnhanced
-
-# 性能优化
-from pyspider.performance.limiter import RateLimiter, CircuitBreaker, ConnectionPool, AdaptiveRateLimiter
-from pyspider.core.multithread import WorkerPool, ConcurrentExecutor, AsyncExecutor
-
-# 分布式
-from pyspider.distributed.redis import RedisScheduler, DistributedSpider
-
-# Web 控制台
-from pyspider.web.console import WebConsole
-
-# 反反爬
-from pyspider.antibot.antibot import AntiBotHandler, CloudflareBypass, AkamaiBypass, CaptchaSolver
-
-# 媒体爬取
-from pyspider.media.downloader import MediaDownloader, MediaURLs, DownloadStats
-
-# 定时任务
-from pyspider.task.scheduler import Scheduler, TimedTask, CronTask, schedule_task
-
-# 验证码
-from pyspider.captcha.solver import CaptchaSolver as CaptchaSolverService
-
-# 代理
-from pyspider.proxy.proxy import ProxyPool, Proxy
-
-# 监控
-from pyspider.monitor.monitor import SpiderMonitor, SpiderStats
-Monitor = SpiderMonitor
-Stats = SpiderStats
-
-# AI 提取
-from pyspider.extractor.extractor import AIExtractor
-
-# 数据转换
-from pyspider.transformer.transformer import DataTransformer, DataValidator
+_EXPORTS = {
+    "Spider": ("pyspider.core.spider", "Spider"),
+    "Request": ("pyspider.core.models", "Request"),
+    "Response": ("pyspider.core.models", "Response"),
+    "Page": ("pyspider.core.models", "Page"),
+    "HTTPDownloader": ("pyspider.downloader.downloader", "HTTPDownloader"),
+    "HTMLParser": ("pyspider.parser.parser", "HTMLParser"),
+    "JSONParser": ("pyspider.parser.parser", "JSONParser"),
+    "ScrapySpider": ("pyspider.spider.spider", "Spider"),
+    "CrawlSpider": ("pyspider.spider.spider", "CrawlSpider"),
+    "Rule": ("pyspider.spider.spider", "Rule"),
+    "LinkExtractor": ("pyspider.spider.spider", "LinkExtractor"),
+    "Item": ("pyspider.spider.spider", "Item"),
+    "Loader": ("pyspider.spider.spider", "Loader"),
+    "FeedExporter": ("pyspider.spider.spider", "FeedExporter"),
+    "CrawlerProcess": ("pyspider.spider.spider", "CrawlerProcess"),
+    "ScrapyPlugin": ("pyspider.spider.spider", "ScrapyPlugin"),
+    "ItemPipeline": ("pyspider.spider.spider", "ItemPipeline"),
+    "SpiderMiddleware": ("pyspider.spider.spider", "SpiderMiddleware"),
+    "DownloaderMiddleware": ("pyspider.spider.spider", "DownloaderMiddleware"),
+    "DynamicWait": ("pyspider.dynamic.wait", "DynamicWait"),
+    "ScrollLoader": ("pyspider.dynamic.wait", "ScrollLoader"),
+    "FormInteractor": ("pyspider.dynamic.wait", "FormInteractor"),
+    "DynamicWaitEnhanced": ("pyspider.dynamic.enhanced", "DynamicWaitEnhanced"),
+    "ScrollLoaderEnhanced": ("pyspider.dynamic.enhanced", "ScrollLoaderEnhanced"),
+    "FormInteractorEnhanced": ("pyspider.dynamic.enhanced", "FormInteractorEnhanced"),
+    "RateLimiter": ("pyspider.performance.limiter", "RateLimiter"),
+    "CircuitBreaker": ("pyspider.performance.circuit_breaker", "CircuitBreaker"),
+    "ConnectionPool": ("pyspider.performance.limiter", "ConnectionPool"),
+    "AdaptiveRateLimiter": ("pyspider.performance.limiter", "AdaptiveRateLimiter"),
+    "WorkerPool": ("pyspider.core.multithread", "WorkerPool"),
+    "ConcurrentExecutor": ("pyspider.core.multithread", "ConcurrentExecutor"),
+    "AsyncExecutor": ("pyspider.core.multithread", "AsyncExecutor"),
+    "RedisScheduler": ("pyspider.distributed.redis", "RedisScheduler"),
+    "DistributedSpider": ("pyspider.distributed.redis", "DistributedSpider"),
+    "WebConsole": ("pyspider.web.console", "WebConsole"),
+    "AntiBotHandler": ("pyspider.antibot.antibot", "AntiBotHandler"),
+    "CloudflareBypass": ("pyspider.antibot.antibot", "CloudflareBypass"),
+    "AkamaiBypass": ("pyspider.antibot.antibot", "AkamaiBypass"),
+    "CaptchaSolver": ("pyspider.antibot.antibot", "CaptchaSolver"),
+    "MediaDownloader": ("pyspider.media.downloader", "MediaDownloader"),
+    "MediaURLs": ("pyspider.media.downloader", "MediaURLs"),
+    "DownloadStats": ("pyspider.media.downloader", "DownloadStats"),
+    "Scheduler": ("pyspider.task.scheduler", "Scheduler"),
+    "TimedTask": ("pyspider.task.scheduler", "TimedTask"),
+    "CronTask": ("pyspider.task.scheduler", "CronTask"),
+    "schedule_task": ("pyspider.task.scheduler", "schedule_task"),
+    "CaptchaSolverService": ("pyspider.captcha.solver", "CaptchaSolver"),
+    "ProxyPool": ("pyspider.proxy.proxy", "ProxyPool"),
+    "Proxy": ("pyspider.proxy.proxy", "Proxy"),
+    "Monitor": ("pyspider.monitor.monitor", "SpiderMonitor"),
+    "Stats": ("pyspider.monitor.monitor", "SpiderStats"),
+    "SpiderMonitor": ("pyspider.monitor.monitor", "SpiderMonitor"),
+    "SpiderStats": ("pyspider.monitor.monitor", "SpiderStats"),
+    "AIExtractor": ("pyspider.extractor.extractor", "AIExtractor"),
+    "DataTransformer": ("pyspider.transformer.transformer", "DataTransformer"),
+    "DataValidator": ("pyspider.transformer.transformer", "DataValidator"),
+    "RequestFingerprint": ("pyspider.core.contracts", "RequestFingerprint"),
+    "AutoscaledFrontier": ("pyspider.core.contracts", "AutoscaledFrontier"),
+    "FrontierConfig": ("pyspider.core.contracts", "FrontierConfig"),
+    "MiddlewareChain": ("pyspider.core.contracts", "MiddlewareChain"),
+    "FileArtifactStore": ("pyspider.core.contracts", "FileArtifactStore"),
+    "ObservabilityCollector": ("pyspider.core.contracts", "ObservabilityCollector"),
+    "FailureClassifier": ("pyspider.core.contracts", "FailureClassifier"),
+    "RuntimeSessionPool": ("pyspider.core.contracts", "SessionPool"),
+    "ProxyPolicy": ("pyspider.core.contracts", "ProxyPolicy"),
+    "IncrementalCrawler": ("pyspider.core.incremental", "IncrementalCrawler"),
+}
 
 __all__ = [
-    # 核心
-    'Spider', 'Request', 'Response', 'Page',
-    'HTTPDownloader', 'HTMLParser', 'JSONParser',
-    
-    # Scrapy 风格
-    'ScrapySpider', 'CrawlSpider', 'Rule', 'Item', 'Loader',
-    'ItemPipeline', 'SpiderMiddleware', 'DownloaderMiddleware',
-    
-    # 动态爬取
-    'DynamicWait', 'ScrollLoader', 'FormInteractor',
-    'DynamicWaitEnhanced', 'ScrollLoaderEnhanced', 'FormInteractorEnhanced',
-    
-    # 性能优化
-    'RateLimiter', 'CircuitBreaker', 'ConnectionPool', 'AdaptiveRateLimiter',
-    'WorkerPool', 'ConcurrentExecutor', 'AsyncExecutor',
-    
-    # 分布式
-    'RedisScheduler', 'DistributedSpider',
-    
-    # Web 控制台
-    'WebConsole',
-    
-    # 反反爬
-    'AntiBotHandler', 'CloudflareBypass', 'AkamaiBypass', 'CaptchaSolver',
-    
-    # 媒体爬取
-    'MediaDownloader', 'MediaURLs', 'DownloadStats',
-    
-    # 定时任务
-    'Scheduler', 'TimedTask', 'CronTask', 'schedule_task',
-    
-    # 验证码
-    'CaptchaSolverService',
-    
-    # 代理
-    'ProxyPool', 'Proxy',
-    
-    # 监控
-    'Monitor', 'Stats',
-    
-    # AI 提取
-    'AIExtractor',
-    
-    # 数据转换
-    'DataTransformer', 'DataValidator',
+    "Spider",
+    "Request",
+    "Response",
+    "Page",
+    "HTTPDownloader",
+    "HTMLParser",
+    "JSONParser",
+    "ScrapySpider",
+    "CrawlSpider",
+    "Rule",
+    "LinkExtractor",
+    "Item",
+    "Loader",
+    "FeedExporter",
+    "CrawlerProcess",
+    "ScrapyPlugin",
+    "RequestFingerprint",
+    "AutoscaledFrontier",
+    "FrontierConfig",
+    "MiddlewareChain",
+    "FileArtifactStore",
+    "ObservabilityCollector",
+    "FailureClassifier",
+    "RuntimeSessionPool",
+    "ProxyPolicy",
+    "IncrementalCrawler",
 ]
+
+
+def __getattr__(name: str):
+    target = _EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(f"module 'pyspider' has no attribute {name!r}")
+
+    module_name, attr_name = target
+    module = importlib.import_module(module_name)
+    value = getattr(module, attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(list(globals().keys()) + __all__)

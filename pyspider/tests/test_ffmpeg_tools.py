@@ -25,7 +25,9 @@ def test_take_screenshots_batch_uses_hh_mm_ss_timestamps(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tools, "take_screenshot", fake_take_screenshot)
 
-    outputs = tools.take_screenshots_batch("video.mp4", str(tmp_path), interval=60, width=320)
+    outputs = tools.take_screenshots_batch(
+        "video.mp4", str(tmp_path), interval=60, width=320
+    )
 
     assert outputs == [
         str(tmp_path / "screenshot_0000.jpg"),
@@ -102,7 +104,15 @@ def test_add_watermark_uses_video_as_main_overlay_input():
         def __init__(self):
             self.calls = []
 
-        def run(self, args, input_file=None, output_file=None, overwrite=True, capture_progress=False, progress_callback=None):
+        def run(
+            self,
+            args,
+            input_file=None,
+            output_file=None,
+            overwrite=True,
+            capture_progress=False,
+            progress_callback=None,
+        ):
             self.calls.append(
                 {
                     "args": args,
@@ -141,7 +151,9 @@ def test_add_watermark_uses_video_as_main_overlay_input():
 
 
 def test_find_ffprobe_uses_same_directory_as_ffmpeg(monkeypatch):
-    executor = FFmpegExecutor(ffmpeg_path="C:\\tools\\ffmpeg\\bin\\ffmpeg.exe", ffprobe_path="ffprobe.exe")
+    executor = FFmpegExecutor(
+        ffmpeg_path="C:\\tools\\ffmpeg\\bin\\ffmpeg.exe", ffprobe_path="ffprobe.exe"
+    )
 
     expected = os.path.join("C:\\tools\\ffmpeg\\bin", "ffprobe.exe")
 

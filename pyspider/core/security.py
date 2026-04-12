@@ -1,214 +1,296 @@
 """
-URL 验证和安全模块 - 修复版
-修复 SSRF 漏洞，添加 URL 白名单验证
+URL 验证和输入安全模块。
 """
 
+from __future__ import annotations
+
+import html
+import ipaddress
 import re
 import socket
-import ipaddress
-from typing import Optional, List, Set
+from dataclasses import asdict, dataclass, field
+from typing import Dict, List, Optional, Set
 from urllib.parse import urlparse
-from dataclasses import dataclass
 
 
 @dataclass
 class SecurityConfig:
-    """安全配置"""
+    enable_ssrf_protection: bool = True
+    enable_input_sanitization: bool = True
+    enable_url_validation: bool = True
+    max_redirects: int = 5
+    timeout_seconds: int = 30
     allowed_domains: Optional[List[str]] = None
     blocked_domains: Optional[List[str]] = None
-    allowed_schemes: Set[str] = None
+    allowed_protocols: List[str] = field(default_factory=lambda: ["http", "https"])
+    allowed_schemes: Optional[Set[str]] = None
+    allowed_hosts: Optional[List[str]] = None
+    allowed_ports: Optional[List[int]] = None
     max_url_length: int = 2048
     block_private_ips: bool = True
-    
+    decode_html_entities: bool = False
+    max_input_length: int = 10000
+
     def __post_init__(self):
-        if self.allowed_schemes is None:
-            self.allowed_schemes = {'http', 'https'}
+        if self.allowed_schemes is not None:
+            self.allowed_protocols = list(self.allowed_schemes)
+        else:
+            self.allowed_schemes = set(self.allowed_protocols)
+        self.allowed_schemes = set(self.allowed_protocols)
+
+    def validate(self) -> bool:
+        return (
+            self.max_redirects >= 0
+            and self.timeout_seconds >= 0
+            and self.max_url_length > 0
+        )
+
+    def to_dict(self) -> Dict[str, object]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, object]) -> "SecurityConfig":
+        return cls(**data)
 
 
 class URLValidator:
-    """URL 验证器 - 防止 SSRF 攻击"""
-    
-    def __init__(self, config: Optional[SecurityConfig] = None):
+    METADATA_HOSTS = {"169.254.169.254", "168.63.129.16", "metadata.google.internal"}
+
+    def __init__(
+        self,
+        config: Optional[SecurityConfig] = None,
+        allowed_protocols: Optional[List[str]] = None,
+        allowed_hosts: Optional[List[str]] = None,
+        allowed_ports: Optional[List[int]] = None,
+        max_length: Optional[int] = None,
+        allowed_domains: Optional[List[str]] = None,
+        blocked_domains: Optional[List[str]] = None,
+    ):
         self.config = config or SecurityConfig()
+        if allowed_protocols is not None:
+            self.config.allowed_protocols = list(allowed_protocols)
+        if allowed_hosts is not None:
+            self.config.allowed_hosts = list(allowed_hosts)
+        if allowed_ports is not None:
+            self.config.allowed_ports = list(allowed_ports)
+        if max_length is not None:
+            self.config.max_url_length = max_length
+        if allowed_domains is not None:
+            self.config.allowed_domains = list(allowed_domains)
+        if blocked_domains is not None:
+            self.config.blocked_domains = list(blocked_domains)
         self._blocked_ips: Set[str] = set()
-    
+
     def validate(self, url: str) -> bool:
-        """验证 URL"""
-        if not url or not isinstance(url, str):
+        if not self.config.enable_url_validation or not isinstance(url, str) or not url:
             return False
-        
-        # 检查长度
         if len(url) > self.config.max_url_length:
             return False
-        
-        # 解析 URL
+        if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\r\n]", url):
+            return False
+        if any(ch in url for ch in ["<", ">", '"']):
+            return False
+
         try:
             parsed = urlparse(url)
         except Exception:
             return False
-        
-        # 检查协议
-        if parsed.scheme not in self.config.allowed_schemes:
+
+        if parsed.scheme.lower() not in {
+            scheme.lower() for scheme in self.config.allowed_protocols
+        }:
             return False
-        
-        # 检查域名
-        domain = parsed.netloc.split(':')[0]  # 移除端口
-        if not domain:
+
+        hostname = parsed.hostname
+        if not hostname:
             return False
-        
-        # 检查域名白名单
-        if self.config.allowed_domains:
-            if not self._domain_matches(domain, self.config.allowed_domains):
-                return False
-        
-        # 检查域名黑名单
-        if self.config.blocked_domains:
-            if self._domain_matches(domain, self.config.blocked_domains):
-                return False
-        
-        # 检查 IP 地址（防止 SSRF）
-        if self.config.block_private_ips:
-            if not self._check_ip_security(domain):
-                return False
-        
+
+        if hostname in self.METADATA_HOSTS:
+            return False
+
+        if self.config.allowed_hosts and not self._domain_matches(
+            hostname, self.config.allowed_hosts
+        ):
+            return False
+        if self.config.allowed_domains and not self._domain_matches(
+            hostname, self.config.allowed_domains
+        ):
+            return False
+        if self.config.blocked_domains and self._domain_matches(
+            hostname, self.config.blocked_domains
+        ):
+            return False
+
+        if (
+            parsed.port
+            and self.config.allowed_ports
+            and parsed.port not in self.config.allowed_ports
+        ):
+            return False
+
+        if self.config.block_private_ips and not self._check_ip_security(hostname):
+            return False
+
         return True
-    
+
     def _domain_matches(self, domain: str, domain_list: List[str]) -> bool:
-        """检查域名是否匹配列表"""
-        domain = domain.lower()
+        normalized = domain.lower()
         for pattern in domain_list:
             pattern = pattern.lower()
-            if domain == pattern or domain.endswith('.' + pattern):
+            if normalized == pattern or normalized.endswith("." + pattern):
                 return True
         return False
-    
-    def _check_ip_security(self, domain: str) -> bool:
-        """检查 IP 地址安全性"""
+
+    def _check_ip_security(self, hostname: str) -> bool:
         try:
-            # 解析域名获取 IP
-            ip_addresses = socket.getaddrinfo(domain, None)
-            
-            for family, _, _, _, sockaddr in ip_addresses:
-                ip_str = sockaddr[0]
-                
-                # 检查是否是私有 IP
-                if self._is_private_ip(ip_str):
-                    return False
-                
-                # 检查是否在黑名单中
-                if ip_str in self._blocked_ips:
-                    return False
-            
-            return True
-            
+            ip = ipaddress.ip_address(hostname)
+            return not self._is_private_ip(ip.exploded)
+        except ValueError:
+            pass
+
+        try:
+            addresses = socket.getaddrinfo(hostname, None)
         except socket.gaierror:
-            # DNS 解析失败，允许（可能是内部域名）
-            return True
+            return not hostname.endswith(".invalid")
         except Exception:
-            return True
-    
+            return False
+
+        for _, _, _, _, sockaddr in addresses:
+            ip_str = sockaddr[0]
+            if self._is_private_ip(ip_str) or ip_str in self._blocked_ips:
+                return False
+        return True
+
     def _is_private_ip(self, ip_str: str) -> bool:
-        """检查是否是私有 IP 地址"""
         try:
             ip = ipaddress.ip_address(ip_str)
-            
-            # 检查是否是私有地址
-            if ip.is_private:
-                return True
-            
-            # 检查是否是回环地址
-            if ip.is_loopback:
-                return True
-            
-            # 检查是否是链路本地地址
-            if ip.is_link_local:
-                return True
-            
-            # 检查是否是保留地址
-            if ip.is_reserved:
-                return True
-            
-            # 检查是否是组播地址
-            if ip.is_multicast:
-                return True
-            
-            return False
-            
         except ValueError:
             return False
-    
+        if ip.version == 6 and ip in ipaddress.ip_network("2001:db8::/32"):
+            return False
+        return (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_unspecified
+        )
+
     def add_blocked_ip(self, ip: str) -> None:
-        """添加被阻止的 IP"""
         self._blocked_ips.add(ip)
-    
+
     def clear_blocked_ips(self) -> None:
-        """清除被阻止的 IP 列表"""
         self._blocked_ips.clear()
 
 
 class InputSanitizer:
-    """输入清理器 - 防止 XSS 注入"""
-    
-    # HTML 标签正则
-    HTML_TAG_PATTERN = re.compile(r'<[^>]+>')
-    # 脚本标签正则
-    SCRIPT_PATTERN = re.compile(r'<script[^>]*>.*?</script>', re.DOTALL | re.IGNORECASE)
-    # 事件处理器正则
-    EVENT_HANDLER_PATTERN = re.compile(r'on\w+\s*=\s*["\'][^"\']*["\']', re.IGNORECASE)
-    
+    SCRIPT_PATTERN = re.compile(r"<script[^>]*>.*?</script>", re.IGNORECASE | re.DOTALL)
+    TAG_PATTERN = re.compile(r"<[^>]+>")
+    EVENT_PATTERN = re.compile(r"on\w+\s*=\s*(['\"]).*?\1", re.IGNORECASE)
+    CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+    def __init__(self, decode_html_entities: bool = False, max_length: int = 10000):
+        self.decode_html_entities = decode_html_entities
+        self.max_length = max_length
+
+    def sanitize_string(self, value: str) -> str:
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            value = str(value)
+
+        value = value.replace("\x00", "")
+        value = self.CONTROL_PATTERN.sub("", value)
+
+        lowered = value.lower()
+        if any(
+            token in lowered
+            for token in [
+                "javascript:",
+                "data:text/html",
+                "<script",
+                "onerror=",
+                "onload=",
+            ]
+        ):
+            value = self.SCRIPT_PATTERN.sub("", value)
+            value = self.EVENT_PATTERN.sub("", value)
+            value = self.TAG_PATTERN.sub("", value)
+            if any(token in value.lower() for token in ["script", "alert"]):
+                value = ""
+
+        value = self.SCRIPT_PATTERN.sub("", value)
+        value = self.EVENT_PATTERN.sub("", value)
+        value = self.TAG_PATTERN.sub("", value)
+        value = value.replace(";", "")
+
+        if len(value) > self.max_length:
+            value = value[: self.max_length]
+
+        if self.decode_html_entities:
+            value = html.unescape(value)
+
+        return value
+
+    def sanitize_dict(self, data: Dict[str, object]) -> Dict[str, object]:
+        sanitized: Dict[str, object] = {}
+        for key, value in data.items():
+            if isinstance(value, dict):
+                sanitized[key] = self.sanitize_dict(value)
+            elif isinstance(value, list):
+                sanitized[key] = self.sanitize_list(value)
+            else:
+                sanitized[key] = self.sanitize_string(
+                    value if value is not None else ""
+                )
+        return sanitized
+
+    def sanitize_list(self, data: List[object]) -> List[object]:
+        cleaned: List[object] = []
+        for value in data:
+            if isinstance(value, dict):
+                nested = self.sanitize_dict(value)
+                if nested:
+                    cleaned.append(nested)
+            else:
+                sanitized = self.sanitize_string(value if value is not None else "")
+                if sanitized:
+                    cleaned.append(sanitized)
+        return cleaned
+
     @classmethod
-    def sanitize_html(cls, html: str, remove_scripts: bool = True) -> str:
-        """清理 HTML"""
-        if not html:
-            return ''
-        
-        # 移除脚本标签
+    def sanitize_html(cls, html_text: str, remove_scripts: bool = True) -> str:
+        if not html_text:
+            return ""
+        cleaned = html_text
         if remove_scripts:
-            html = cls.SCRIPT_PATTERN.sub('', html)
-        
-        # 移除事件处理器
-        html = cls.EVENT_HANDLER_PATTERN.sub('', html)
-        
-        return html
-    
+            cleaned = cls.SCRIPT_PATTERN.sub("", cleaned)
+        cleaned = cls.EVENT_PATTERN.sub("", cleaned)
+        return cleaned
+
     @classmethod
-    def strip_tags(cls, html: str) -> str:
-        """移除所有 HTML 标签"""
-        if not html:
-            return ''
-        return cls.HTML_TAG_PATTERN.sub('', html)
-    
+    def strip_tags(cls, html_text: str) -> str:
+        if not html_text:
+            return ""
+        return cls.TAG_PATTERN.sub("", html_text)
+
     @classmethod
     def sanitize_url(cls, url: str) -> str:
-        """清理 URL"""
         if not url:
-            return ''
-        
-        # 移除空白字符
-        url = url.strip()
-        
-        # 移除 javascript: 协议
-        if url.lower().startswith('javascript:'):
-            return ''
-        
-        # 移除 data: 协议
-        if url.lower().startswith('data:'):
-            return ''
-        
-        return url
-    
+            return ""
+        normalized = url.strip()
+        lowered = normalized.lower()
+        if lowered.startswith("javascript:") or lowered.startswith("data:"):
+            return ""
+        return normalized
+
     @classmethod
     def sanitize_filename(cls, filename: str) -> str:
-        """清理文件名"""
         if not filename:
-            return ''
-        
-        # 移除危险字符
+            return ""
         dangerous_chars = '<>:"/\\|？*'
+        sanitized = filename
         for char in dangerous_chars:
-            filename = filename.replace(char, '_')
-        
-        # 移除控制字符
-        filename = ''.join(c for c in filename if ord(c) >= 32)
-        
-        return filename.strip()
+            sanitized = sanitized.replace(char, "_")
+        sanitized = "".join(c for c in sanitized if ord(c) >= 32)
+        return sanitized.strip()

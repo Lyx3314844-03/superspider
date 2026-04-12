@@ -8,12 +8,12 @@ import json
 import threading
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 
 class Stats:
     """统计信息"""
-    
+
     def __init__(self, name: str = "pyspider"):
         self.name = name
         self.start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -22,7 +22,7 @@ class Stats:
         self.items_scraped = 0
         self.bytes_downloaded = 0
         self.start_timestamp = time.time()
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         duration = time.time() - self.start_timestamp
@@ -40,34 +40,34 @@ class Stats:
 
 class WebConsole:
     """Web 控制台"""
-    
+
     def __init__(self, port: int = 8080, stats: Stats = None):
         self.port = port
         self.stats = stats or Stats()
         self.server: Optional[HTTPServer] = None
         self.thread: Optional[threading.Thread] = None
         self.spiders: Dict[str, Dict[str, Any]] = {}
-    
+
     def start(self) -> None:
         """启动 Web 控制台"""
         handler = self._create_handler()
         self.server = HTTPServer(("0.0.0.0", self.port), handler)
-        
+
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
-        
+
         print(f"Web Console started at http://0.0.0.0:{self.port}")
-    
+
     def stop(self) -> None:
         """停止 Web 控制台"""
         if self.server:
             self.server.shutdown()
             self.server = None
-    
+
     def _create_handler(self) -> type:
         """创建请求处理器"""
         console = self
-        
+
         class ConsoleHandler(BaseHTTPRequestHandler):
             def do_GET(self):
                 if self.path == "/api/stats":
@@ -78,20 +78,20 @@ class WebConsole:
                     self._send_html()
                 else:
                     self.send_error(404)
-            
+
             def _send_json(self, data: Dict[str, Any]):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps(data).encode())
-            
+
             def _send_html(self):
                 html = self._generate_html()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
                 self.wfile.write(html.encode())
-            
+
             def _generate_html(self):
                 stats = console.stats.to_dict()
                 return f"""
@@ -138,12 +138,12 @@ class WebConsole:
 </body>
 </html>
 """
-            
+
             def log_message(self, format, *args):
                 pass  # 禁用日志
-        
+
         return ConsoleHandler
-    
+
     def update_stats(
         self,
         pages_scraped: int = None,
@@ -160,20 +160,20 @@ class WebConsole:
             self.stats.items_scraped = items_scraped
         if bytes_downloaded is not None:
             self.stats.bytes_downloaded = bytes_downloaded
-    
+
     def record_page(self, bytes_downloaded: int = 0) -> None:
         """记录页面"""
         self.stats.pages_scraped += 1
         self.stats.bytes_downloaded += bytes_downloaded
-    
+
     def record_item(self) -> None:
         """记录物品"""
         self.stats.items_scraped += 1
-    
+
     def record_error(self) -> None:
         """记录错误"""
         self.stats.pages_failed += 1
-    
+
     def register_spider(self, name: str, spider_info: Dict[str, Any]) -> None:
         """注册爬虫"""
         self.spiders[name] = {
@@ -181,7 +181,7 @@ class WebConsole:
             "status": "running",
             "info": spider_info,
         }
-    
+
     def unregister_spider(self, name: str) -> None:
         """注销爬虫"""
         if name in self.spiders:
@@ -190,19 +190,19 @@ class WebConsole:
 
 class ConsoleMiddleware:
     """控制台中间件（Scrapy 风格）"""
-    
+
     def __init__(self, console: WebConsole):
         self.console = console
-    
+
     def process_request(self, request, spider):
         """处理请求"""
         pass
-    
+
     def process_response(self, request, response, spider):
         """处理响应"""
         self.console.record_page(len(response.content))
         return response
-    
+
     def process_exception(self, request, exception, spider):
         """处理异常"""
         self.console.record_error()

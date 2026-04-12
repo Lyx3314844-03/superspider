@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import logging
 import sys
 import types
@@ -17,7 +18,9 @@ def test_resolve_download_url_falls_back_to_generic_download_url():
         download_url="https://media.example.com/download?id=1",
     )
 
-    download_url = video_downloader.resolve_download_url(video, requested_quality=None, logger=logging.getLogger(__name__))
+    download_url = video_downloader.resolve_download_url(
+        video, requested_quality=None, logger=logging.getLogger(__name__)
+    )
 
     assert download_url == "https://media.example.com/download?id=1"
 
@@ -42,6 +45,131 @@ def test_resolve_download_url_rejects_unavailable_quality(caplog):
     assert "请求的质量不可用" in caplog.text
 
 
+def test_multimedia_command_uses_platform_spider_and_outputs_summary(
+    monkeypatch, tmp_path, capsys
+):
+    class FakeItem:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def to_dict(self):
+            return dict(self.payload)
+
+    class FakeSpider:
+        def __init__(self):
+            self.saved = False
+
+        def crawl_videos(self):
+            return [FakeItem({"title": "Fixture Video"})]
+
+        def crawl_images(self):
+            return [FakeItem({"title": "Fixture Image"})]
+
+        def crawl_audios(self):
+            return []
+
+        def save_metadata(self):
+            self.saved = True
+
+        def download_all(self, max_workers=3):
+            return {"success": 1, "failed": 0, "workers": max_workers}
+
+    fake_spider = FakeSpider()
+    monkeypatch.setattr(
+        video_downloader,
+        "create_multimedia_spider",
+        lambda urls, output_dir="downloads": fake_spider,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "pyspider",
+            "multimedia",
+            "https://v.youku.com/v_show/id_demo.html",
+            "--output-dir",
+            str(tmp_path),
+            "--download",
+        ],
+    )
+
+    exit_code = video_downloader.main()
+    output = capsys.readouterr().out
+    payload = json.loads(output[output.index("{") :])
+
+    assert exit_code == 0
+    assert fake_spider.saved is True
+    assert payload["command"] == "multimedia"
+    assert payload["counts"] == {"videos": 1, "images": 1, "audios": 0}
+    assert payload["download"]["workers"] == 3
+
+
+def test_drm_command_reports_manifest_protection(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "pyspider",
+            "drm",
+            "--content",
+            '#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://license",KEYFORMAT="com.apple.streamingkeydelivery"',
+        ],
+    )
+
+    exit_code = video_downloader.main()
+    output = capsys.readouterr().out
+    payload = json.loads(output[output.index("{") :])
+
+    assert exit_code == 0
+    assert payload["command"] == "drm"
+    assert payload["drm_info"]["is_drm_protected"] is True
+    assert payload["drm_info"]["drm_type"] in {"fairplay", "sample-aes"}
+    assert payload["downloadable"] is False
+
+
+def test_artifact_command_uses_artifact_dir_auto_discovery(monkeypatch, tmp_path, capsys):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "page.html").write_text("<html></html>", encoding="utf-8")
+    (artifact_dir / "network.json").write_text('{"video":"ok"}', encoding="utf-8")
+
+    class FakeParser:
+        def parse(self, url):
+            raise AssertionError("artifact path should be used")
+
+        def parse_artifacts(self, page_url, html="", artifact_texts=None):
+            return VideoData(
+                title="Artifact Video",
+                video_id="artifact-1",
+                platform="generic-artifact",
+                mp4_url="https://media.example.com/video.mp4",
+            )
+
+    monkeypatch.setattr(video_downloader, "UniversalParser", lambda: FakeParser())
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "pyspider",
+            "artifact",
+            "--url",
+            "https://example.com/watch/1",
+            "--artifact-dir",
+            str(artifact_dir),
+        ],
+    )
+
+    exit_code = video_downloader.main()
+    output = capsys.readouterr().out
+    payload = json.loads(output[output.index("{"):])
+
+    assert exit_code == 0
+    assert payload["command"] == "artifact"
+    assert payload["html_file"].endswith("page.html")
+    assert payload["network_file"].endswith("network.json")
+    assert payload["video"]["title"] == "Artifact Video"
+
+
 def test_convert_gif_uses_output_file_instead_of_extracting_frames(monkeypatch):
     calls = []
 
@@ -54,7 +182,9 @@ def test_convert_gif_uses_output_file_instead_of_extracting_frames(monkeypatch):
             calls.append(("extract_frames", args, kwargs))
             return ["frame_000001.jpg"]
 
-    monkeypatch.setattr(video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools())
+    monkeypatch.setattr(
+        video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools()
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -71,7 +201,16 @@ def test_convert_avi_uses_generic_video_conversion(monkeypatch):
     calls = []
 
     class FakeTools:
-        def convert_format(self, input_file, output_file, output_format="mp4", video_codec="libx264", audio_codec="aac", crf=23, preset="medium"):
+        def convert_format(
+            self,
+            input_file,
+            output_file,
+            output_format="mp4",
+            video_codec="libx264",
+            audio_codec="aac",
+            crf=23,
+            preset="medium",
+        ):
             calls.append(
                 (
                     "convert_format",
@@ -86,7 +225,9 @@ def test_convert_avi_uses_generic_video_conversion(monkeypatch):
             )
             return True
 
-    monkeypatch.setattr(video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools())
+    monkeypatch.setattr(
+        video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools()
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -97,7 +238,16 @@ def test_convert_avi_uses_generic_video_conversion(monkeypatch):
 
     assert exit_code == 0
     assert calls == [
-        ("convert_format", "input.flv", "output.avi", "avi", "libx264", "aac", 23, "medium")
+        (
+            "convert_format",
+            "input.flv",
+            "output.avi",
+            "avi",
+            "libx264",
+            "aac",
+            23,
+            "medium",
+        )
     ]
 
 
@@ -105,11 +255,15 @@ def test_screenshot_batch_defaults_output_directory(monkeypatch):
     calls = []
 
     class FakeTools:
-        def take_screenshots_batch(self, input_file, output_dir, interval=60, width=None):
+        def take_screenshots_batch(
+            self, input_file, output_dir, interval=60, width=None
+        ):
             calls.append((input_file, output_dir, interval, width))
             return [str(Path(output_dir) / "screenshot_0000.jpg")]
 
-    monkeypatch.setattr(video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools())
+    monkeypatch.setattr(
+        video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools()
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -124,10 +278,14 @@ def test_screenshot_batch_defaults_output_directory(monkeypatch):
 
 def test_screenshot_batch_returns_non_zero_when_no_images_are_generated(monkeypatch):
     class FakeTools:
-        def take_screenshots_batch(self, input_file, output_dir, interval=60, width=None):
+        def take_screenshots_batch(
+            self, input_file, output_dir, interval=60, width=None
+        ):
             return []
 
-    monkeypatch.setattr(video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools())
+    monkeypatch.setattr(
+        video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools()
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -141,10 +299,14 @@ def test_screenshot_batch_returns_non_zero_when_no_images_are_generated(monkeypa
 
 def test_screenshot_batch_rejects_non_positive_interval(monkeypatch):
     class FakeTools:
-        def take_screenshots_batch(self, input_file, output_dir, interval=60, width=None):
+        def take_screenshots_batch(
+            self, input_file, output_dir, interval=60, width=None
+        ):
             raise AssertionError("should not be called")
 
-    monkeypatch.setattr(video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools())
+    monkeypatch.setattr(
+        video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools()
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -156,7 +318,9 @@ def test_screenshot_batch_rejects_non_positive_interval(monkeypatch):
     assert exit_code == 1
 
 
-def test_download_with_convert_gif_uses_create_gif_after_hls_download(monkeypatch, tmp_path):
+def test_download_with_convert_gif_uses_create_gif_after_hls_download(
+    monkeypatch, tmp_path
+):
     calls = []
 
     class FakeParser:
@@ -191,7 +355,9 @@ def test_download_with_convert_gif_uses_create_gif_after_hls_download(monkeypatc
 
     monkeypatch.setattr(video_downloader, "UniversalParser", lambda: FakeParser())
     monkeypatch.setattr(video_downloader, "HLSDownloader", FakeDownloader)
-    monkeypatch.setattr(video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools())
+    monkeypatch.setattr(
+        video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools()
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -209,11 +375,22 @@ def test_download_with_convert_gif_uses_create_gif_after_hls_download(monkeypatc
     exit_code = video_downloader.main()
 
     assert exit_code == 0
-    assert ("hls_download", "https://media.example.com/playlist.m3u8", "video-1") in calls
-    assert ("create_gif", str(tmp_path / "video-1.ts"), str(tmp_path / "video-1.gif"), 10) in calls
+    assert (
+        "hls_download",
+        "https://media.example.com/playlist.m3u8",
+        "video-1",
+    ) in calls
+    assert (
+        "create_gif",
+        str(tmp_path / "video-1.ts"),
+        str(tmp_path / "video-1.gif"),
+        10,
+    ) in calls
 
 
-def test_download_with_convert_gif_uses_create_gif_after_direct_mp4_download(monkeypatch, tmp_path):
+def test_download_with_convert_gif_uses_create_gif_after_direct_mp4_download(
+    monkeypatch, tmp_path
+):
     calls = []
 
     class FakeParser:
@@ -248,7 +425,9 @@ def test_download_with_convert_gif_uses_create_gif_after_direct_mp4_download(mon
             return True
 
     monkeypatch.setattr(video_downloader, "UniversalParser", lambda: FakeParser())
-    monkeypatch.setattr(video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools())
+    monkeypatch.setattr(
+        video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools()
+    )
     monkeypatch.setitem(
         sys.modules,
         "requests",
@@ -271,10 +450,17 @@ def test_download_with_convert_gif_uses_create_gif_after_direct_mp4_download(mon
     exit_code = video_downloader.main()
 
     assert exit_code == 0
-    assert ("create_gif", str(tmp_path / "video-2.mp4"), str(tmp_path / "video-2.gif"), 10) in calls
+    assert (
+        "create_gif",
+        str(tmp_path / "video-2.mp4"),
+        str(tmp_path / "video-2.gif"),
+        10,
+    ) in calls
 
 
-def test_download_returns_non_zero_when_post_download_conversion_fails(monkeypatch, tmp_path):
+def test_download_returns_non_zero_when_post_download_conversion_fails(
+    monkeypatch, tmp_path
+):
     class FakeParser:
         def parse(self, url):
             return VideoData(
@@ -297,7 +483,9 @@ def test_download_returns_non_zero_when_post_download_conversion_fails(monkeypat
 
     monkeypatch.setattr(video_downloader, "UniversalParser", lambda: FakeParser())
     monkeypatch.setattr(video_downloader, "HLSDownloader", FakeDownloader)
-    monkeypatch.setattr(video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools())
+    monkeypatch.setattr(
+        video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools()
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -317,7 +505,9 @@ def test_download_returns_non_zero_when_post_download_conversion_fails(monkeypat
     assert exit_code == 1
 
 
-def test_dash_download_with_convert_gif_uses_create_gif_after_dash_download(monkeypatch, tmp_path):
+def test_dash_download_with_convert_gif_uses_create_gif_after_dash_download(
+    monkeypatch, tmp_path
+):
     calls = []
 
     class FakeParser:
@@ -344,7 +534,9 @@ def test_dash_download_with_convert_gif_uses_create_gif_after_dash_download(monk
 
     monkeypatch.setattr(video_downloader, "UniversalParser", lambda: FakeParser())
     monkeypatch.setattr(video_downloader, "DASHDownloader", FakeDownloader)
-    monkeypatch.setattr(video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools())
+    monkeypatch.setattr(
+        video_downloader, "create_ffmpeg_tools", lambda config_path=None: FakeTools()
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -362,5 +554,14 @@ def test_dash_download_with_convert_gif_uses_create_gif_after_dash_download(monk
     exit_code = video_downloader.main()
 
     assert exit_code == 0
-    assert ("dash_download", "https://media.example.com/manifest.mpd", "video-4") in calls
-    assert ("create_gif", str(tmp_path / "video-4.mp4"), str(tmp_path / "video-4.gif"), 10) in calls
+    assert (
+        "dash_download",
+        "https://media.example.com/manifest.mpd",
+        "video-4",
+    ) in calls
+    assert (
+        "create_gif",
+        str(tmp_path / "video-4.mp4"),
+        str(tmp_path / "video-4.gif"),
+        10,
+    ) in calls

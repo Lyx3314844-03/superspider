@@ -113,6 +113,67 @@ def test_create_task_requires_url():
     assert response.get_json()["error"] == "Task url is required"
 
 
+def test_health_is_public_but_api_routes_require_auth_when_token_is_configured():
+    api = SpiderAPI(auth_token="secret-token")
+    client = api.app.test_client()
+
+    health_response = client.get("/health")
+    stats_response = client.get("/api/v1/stats")
+
+    assert health_response.status_code == 200
+    assert stats_response.status_code == 401
+    assert stats_response.get_json()["error"] == "unauthorized"
+
+
+def test_api_routes_accept_bearer_token_when_auth_is_enabled():
+    api = SpiderAPI(auth_token="secret-token")
+    client = api.app.test_client()
+
+    response = client.get(
+        "/api/v1/stats",
+        headers={"Authorization": "Bearer secret-token"},
+    )
+
+    assert response.status_code == 200
+
+
+def test_graph_extract_returns_nodes_edges_and_stats():
+    api = SpiderAPI()
+    client = api.app.test_client()
+
+    response = client.post(
+        "/api/v1/graph/extract",
+        json={
+            "html": "<html><head><title>Py Graph API</title></head><body><a href='https://example.com/page'>Read</a><img src='https://example.com/image.png'/></body></html>"
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    data = payload["data"]
+    assert data["root_id"]
+    assert len(data["nodes"]) >= 3
+    assert len(data["edges"]) >= 2
+    assert data["stats"]["total_nodes"] >= 3
+
+
+def test_graph_extract_alias_route_matches_versioned_route():
+    api = SpiderAPI()
+    client = api.app.test_client()
+
+    response = client.post(
+        "/api/graph/extract",
+        json={
+            "html": "<html><head><title>Alias</title></head><body><a href='https://example.com'>A</a></body></html>"
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+
+
 def test_start_spider_returns_without_waiting_for_long_running_start():
     api = SpiderAPI()
     client = api.app.test_client()

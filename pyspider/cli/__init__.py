@@ -1,0 +1,3 @@
+"""
+CLI package for pyspider.
+"""
