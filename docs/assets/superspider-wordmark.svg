@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 320" role="img" aria-labelledby="title desc">
+  <title id="title">SuperSpider Wordmark</title>
+  <desc id="desc">The word SuperSpider in eleven different colors with a small spider and web motif.</desc>
+  <defs>
+    <linearGradient id="web" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.04"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="1400" height="320" rx="48" fill="#f8fafc"/>
+
+  <g fill="none" stroke="url(#web)" stroke-linecap="round">
+    <path d="M88 74c126 44 250 66 376 66s250-22 376-66" stroke-width="5"/>
+    <path d="M564 36v84" stroke-width="4"/>
+    <path d="M564 36l-72 52" stroke-width="3"/>
+    <path d="M564 36l72 52" stroke-width="3"/>
+    <path d="M564 68l-104 72" stroke-width="3"/>
+    <path d="M564 68l104 72" stroke-width="3"/>
+  </g>
+
+  <g filter="url(#shadow)" font-family="Segoe UI, Trebuchet MS, Arial, sans-serif" font-size="148" font-weight="800">
+    <text x="88" y="198" fill="#ff5f57" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">s</text>
+    <text x="172" y="198" fill="#ff8c42" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">u</text>
+    <text x="270" y="198" fill="#ffbe0b" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">p</text>
+    <text x="366" y="198" fill="#84cc16" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">e</text>
+    <text x="454" y="198" fill="#22c55e" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">r</text>
+    <text x="532" y="198" fill="#14b8a6" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">s</text>
+    <text x="616" y="198" fill="#06b6d4" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">p</text>
+    <text x="714" y="198" fill="#0ea5e9" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">i</text>
+    <text x="776" y="198" fill="#3b82f6" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">d</text>
+    <text x="880" y="198" fill="#8b5cf6" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">e</text>
+    <text x="968" y="198" fill="#ec4899" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">r</text>
+  </g>
+
+  <g transform="translate(738 60)">
+    <path d="M0 0v34" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round"/>
+    <ellipse cx="0" cy="46" rx="12" ry="10" fill="#111827"/>
+    <circle cx="0" cy="31" r="7" fill="#111827"/>
+    <path d="M-10 39l-16-8M10 39l16-8M-11 47l-18 0M11 47l18 0M-10 54l-16 8M10 54l16 8" fill="none" stroke="#111827" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="600" fill="#475569">
+    <text x="92" y="258">pyspider</text>
+    <text x="236" y="258">|</text>
+    <text x="268" y="258">gospider</text>
+    <text x="448" y="258">|</text>
+    <text x="480" y="258">rustspider</text>
+    <text x="710" y="258">|</text>
+    <text x="742" y="258">javaspider</text>
+  </g>
+</svg>
