@@ -49,6 +49,9 @@ Thumbs.db
 test_*.db
 *.pkl
 *.png
+.coverage
+pyspider/.coverage
+webmagic/
 artifacts/
 downloads/
 build/
