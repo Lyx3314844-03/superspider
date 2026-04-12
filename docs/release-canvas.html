@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SuperSpider Release Canvas</title>
+  <style>
+    :root {
+      --paper: #f7f3ea;
+      --ink: #18202b;
+      --muted: #5d6673;
+      --line: rgba(24, 32, 43, 0.12);
+      --py: #f15b5b;
+      --go: #ff9b3d;
+      --rs: #13a37f;
+      --java: #1778f2;
+      --gold: #f0c35b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(241, 91, 91, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(23, 120, 242, 0.18), transparent 26%),
+        radial-gradient(circle at bottom left, rgba(19, 163, 127, 0.14), transparent 24%),
+        linear-gradient(180deg, #fbf7ef 0%, #f3eee4 100%);
+      color: var(--ink);
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+    }
+
+    .page {
+      width: min(1380px, calc(100vw - 48px));
+      margin: 24px auto 40px;
+      padding: 28px;
+      border-radius: 30px;
+      background: rgba(255, 252, 246, 0.8);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 20px 50px rgba(24, 32, 43, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.65);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.35fr 0.95fr;
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    .hero-panel,
+    .hero-side,
+    .card,
+    .install-card,
+    .note {
+      border-radius: 26px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: 0 16px 35px rgba(24, 32, 43, 0.08);
+    }
+
+    .hero-panel {
+      padding: 34px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-panel::before {
+      content: "";
+      position: absolute;
+      inset: 18px;
+      border-radius: 22px;
+      border: 1px dashed rgba(24, 32, 43, 0.12);
+      pointer-events: none;
+    }
+
+    .hero-side {
+      padding: 28px;
+      display: grid;
+      gap: 16px;
+      align-content: start;
+      background:
+        linear-gradient(140deg, rgba(255,255,255,0.94), rgba(246, 241, 231, 0.92));
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(24, 32, 43, 0.05);
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: linear-gradient(90deg, var(--py), var(--go), var(--rs), var(--java));
+    }
+
+    .wordmark {
+      width: min(100%, 760px);
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: clamp(2.5rem, 5vw, 4.8rem);
+      line-height: 0.95;
+      letter-spacing: -0.05em;
+    }
+
+    .lead {
+      max-width: 66ch;
+      font-size: 1.08rem;
+      line-height: 1.72;
+      color: var(--muted);
+      margin: 0 0 22px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: white;
+    }
+
+    .pill.py { background: var(--py); }
+    .pill.go { background: var(--go); }
+    .pill.rs { background: var(--rs); }
+    .pill.java { background: var(--java); }
+
+    .hero-side h2 {
+      margin: 0;
+      font-size: 1.45rem;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+    }
+
+    .side-copy {
+      margin: 0;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    .side-list {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--ink);
+      line-height: 1.8;
+    }
+
+    .section {
+      margin-top: 28px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-title h2 {
+      margin: 0;
+      font-size: clamp(1.5rem, 2.4vw, 2.2rem);
+      letter-spacing: -0.04em;
+    }
+
+    .section-title p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 58ch;
+      line-height: 1.65;
+      text-align: right;
+    }
+
+    .framework-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      padding: 22px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::after {
+      content: "";
+      position: absolute;
+      inset: auto -40px -60px auto;
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      opacity: 0.12;
+      background: currentColor;
+      filter: blur(4px);
+    }
+
+    .card.py { color: var(--py); }
+    .card.go { color: var(--go); }
+    .card.rs { color: var(--rs); }
+    .card.java { color: var(--java); }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .card-head h3 {
+      margin: 0;
+      color: var(--ink);
+      font-size: 1.5rem;
+      letter-spacing: -0.04em;
+    }
+
+    .tag {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.88);
+      border: 1px solid var(--line);
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--ink);
+      white-space: nowrap;
+    }
+
+    .card p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .bullet-list {
+      margin: 0;
+      padding-left: 20px;
+      line-height: 1.75;
+      color: var(--ink);
+    }
+
+    .install-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .install-card {
+      padding: 22px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.95), rgba(248, 244, 236, 0.95));
+    }
+
+    .install-card h3 {
+      margin: 0 0 12px;
+      font-size: 1.35rem;
+      letter-spacing: -0.03em;
+    }
+
+    code {
+      display: block;
+      padding: 10px 12px;
+      margin: 10px 0;
+      border-radius: 14px;
+      background: #201b1c;
+      color: #fff4dd;
+      font-family: "Consolas", "Cascadia Code", monospace;
+      font-size: 0.9rem;
+      overflow-wrap: anywhere;
+    }
+
+    .note {
+      margin-top: 22px;
+      padding: 22px;
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+      background:
+        linear-gradient(120deg, rgba(240, 195, 91, 0.16), rgba(255,255,255,0.92) 40%, rgba(23, 120, 242, 0.10));
+    }
+
+    .note h3 {
+      margin: 0 0 8px;
+      font-size: 1.3rem;
+      letter-spacing: -0.03em;
+    }
+
+    .note p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .note ul {
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.75;
+    }
+
+    .footer {
+      margin-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+
+    @media (max-width: 1080px) {
+      .hero,
+      .note,
+      .framework-grid,
+      .install-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section-title {
+        align-items: start;
+        flex-direction: column;
+      }
+
+      .section-title p {
+        text-align: left;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        width: calc(100vw - 24px);
+        margin: 12px auto 24px;
+        padding: 16px;
+        border-radius: 20px;
+      }
+
+      .hero-panel,
+      .hero-side,
+      .card,
+      .install-card,
+      .note {
+        border-radius: 20px;
+      }
+
+      .hero-panel,
+      .hero-side,
+      .card,
+      .install-card,
+      .note {
+        padding: 18px;
+      }
+
+      .footer {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <article class="hero-panel">
+        <div class="eyebrow">GitHub Release Canvas</div>
+        <img class="wordmark" src="./assets/superspider-wordmark.svg" alt="SuperSpider wordmark" />
+        <h1>One crawler brand. Four very different runtime choices.</h1>
+        <p class="lead">
+          SuperSpider is published as a clean four-runtime release surface:
+          <strong>PySpider</strong> for fast AI-heavy project authoring,
+          <strong>GoSpider</strong> for concurrent binary deployment,
+          <strong>RustSpider</strong> for strongly typed high-performance releases,
+          and <strong>JavaSpider</strong> for browser workflow and enterprise Java delivery.
+        </p>
+        <div class="pill-row">
+          <span class="pill py">PySpider</span>
+          <span class="pill go">GoSpider</span>
+          <span class="pill rs">RustSpider</span>
+          <span class="pill java">JavaSpider</span>
+        </div>
+      </article>
+
+      <aside class="hero-side">
+        <h2>Release focus</h2>
+        <p class="side-copy">
+          This release strips the repository down to what matters in public:
+          the four shipped runtimes, the three operating-system install versions,
+          and the capability documents needed to choose between them.
+        </p>
+        <ul class="side-list">
+          <li>Four runtime directories only</li>
+          <li>Windows, Linux, and macOS installers for each runtime</li>
+          <li>Release-facing docs instead of monorepo sprawl</li>
+          <li>Capability-first presentation for framework selection</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <h2>Four frameworks, four strengths</h2>
+        <p>These runtimes solve the same class of crawling problems, but each one is shaped around a different production reality.</p>
+      </div>
+
+      <div class="framework-grid">
+        <article class="card py">
+          <div class="card-head">
+            <h3>PySpider</h3>
+            <span class="tag">fastest iteration loop</span>
+          </div>
+          <p>PySpider is the strongest choice when the crawl is a living project: evolving schemas, AI extraction, plugin injection, browser + HTTP mixing, and data workflows all in one place.</p>
+          <ul class="bullet-list">
+            <li>Python-native CLI and package workflow</li>
+            <li>Richest scrapy-style project runtime</li>
+            <li>AI extraction, research, and plugin surfaces</li>
+            <li>Browser + HTTP hybrid crawling</li>
+            <li>Media, anti-bot, dataset, and node-reverse support</li>
+          </ul>
+        </article>
+
+        <article class="card go">
+          <div class="card-head">
+            <h3>GoSpider</h3>
+            <span class="tag">binary-first concurrency</span>
+          </div>
+          <p>GoSpider fits teams that want a service-friendly executable, strong concurrency, and a runtime that is straightforward to deploy across workers, queues, and operational nodes.</p>
+          <ul class="bullet-list">
+            <li>Compiled CLI with simple deployment shape</li>
+            <li>Concurrent crawling and task dispatch</li>
+            <li>Distributed workers, queues, and storage</li>
+            <li>Browser artifact capture and replay</li>
+            <li>Media download, anti-bot, and control-plane-friendly runtime</li>
+          </ul>
+        </article>
+
+        <article class="card rs">
+          <div class="card-head">
+            <h3>RustSpider</h3>
+            <span class="tag">typed release boundary</span>
+          </div>
+          <p>RustSpider is built for high-performance release binaries, stricter runtime boundaries, and teams that want to decide exactly which modules ship by using feature gates.</p>
+          <ul class="bullet-list">
+            <li>Rust release binary output</li>
+            <li>Feature-gated browser, distributed, API, and web modules</li>
+            <li>Typed scrapy-style interfaces</li>
+            <li>Preflight, monitoring, and contract-heavy runtime posture</li>
+            <li>Strong fit for performance-sensitive deployments</li>
+          </ul>
+        </article>
+
+        <article class="card java">
+          <div class="card-head">
+            <h3>JavaSpider</h3>
+            <span class="tag">browser workflow + Maven</span>
+          </div>
+          <p>JavaSpider fits organizations already living in Java build pipelines and browser-heavy automation, where Maven packaging, auditability, and enterprise workflow integration matter.</p>
+          <ul class="bullet-list">
+            <li>Maven / JAR packaging model</li>
+            <li>Browser workflow emphasis with Selenium and Playwright helpers</li>
+            <li>Audit, connector, and session-aware execution paths</li>
+            <li>Scrapy-style compatibility surface</li>
+            <li>Workflow replay, media parsing, and enterprise integration</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <h2>Three operating-system install versions</h2>
+        <p>Every runtime ships with its own install path for Windows, Linux, and macOS, so users choose the framework first and the operating system second.</p>
+      </div>
+
+      <div class="install-grid">
+        <article class="install-card">
+          <h3>Windows</h3>
+          <code>scripts/windows/install-pyspider.bat</code>
+          <code>scripts/windows/install-gospider.bat</code>
+          <code>scripts/windows/install-rustspider.bat</code>
+          <code>scripts/windows/install-javaspider.bat</code>
+        </article>
+
+        <article class="install-card">
+          <h3>Linux</h3>
+          <code>scripts/linux/install-pyspider.sh</code>
+          <code>scripts/linux/install-gospider.sh</code>
+          <code>scripts/linux/install-rustspider.sh</code>
+          <code>scripts/linux/install-javaspider.sh</code>
+        </article>
+
+        <article class="install-card">
+          <h3>macOS</h3>
+          <code>scripts/macos/install-pyspider.sh</code>
+          <code>scripts/macos/install-gospider.sh</code>
+          <code>scripts/macos/install-rustspider.sh</code>
+          <code>scripts/macos/install-javaspider.sh</code>
+        </article>
+      </div>
+    </section>
+
+    <section class="note">
+      <div>
+        <h3>What the repository now contains</h3>
+        <p>
+          The default branch is intentionally narrow. It keeps only the four crawler runtimes,
+          the install scripts, and the capability docs so GitHub opens as a product release surface
+          instead of an experimental crawler monorepo.
+        </p>
+      </div>
+      <ul>
+        <li><strong>Source:</strong> `pyspider`, `gospider`, `rustspider`, `javaspider`</li>
+        <li><strong>Install docs:</strong> `docs/SUPERSPIDER_INSTALLS.md`</li>
+        <li><strong>Capability docs:</strong> `docs/FRAMEWORK_CAPABILITIES.md`, `docs/FRAMEWORK_CAPABILITY_MATRIX.md`</li>
+        <li><strong>Brand:</strong> `docs/assets/superspider-wordmark.svg`, `docs/assets/superspider-icon.svg`</li>
+      </ul>
+    </section>
+
+    <footer class="footer">
+      <span>SuperSpider release canvas</span>
+      <span>Designed for GitHub release presentation, product overview, and team sharing</span>
+    </footer>
+  </main>
+</body>
+</html>

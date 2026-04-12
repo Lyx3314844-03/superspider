@@ -138,6 +138,8 @@ JavaSpider 是最适合浏览器工作流和企业 Java 环境集成的一支。
 - 框架能力总览: [docs/FRAMEWORK_CAPABILITIES.md](docs/FRAMEWORK_CAPABILITIES.md)
 - 四框架能力矩阵: [docs/FRAMEWORK_CAPABILITY_MATRIX.md](docs/FRAMEWORK_CAPABILITY_MATRIX.md)
 - 三系统安装矩阵: [docs/SUPERSPIDER_INSTALLS.md](docs/SUPERSPIDER_INSTALLS.md)
+- GitHub Release Notes: [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)
+- 发布展示页: [docs/release-canvas.html](docs/release-canvas.html)
 
 ## Repository Scope
 
