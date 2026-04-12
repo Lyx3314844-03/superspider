@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-python -m pyspider scrapy run --project . --output artifacts/exports/pyspider-starter-items.json

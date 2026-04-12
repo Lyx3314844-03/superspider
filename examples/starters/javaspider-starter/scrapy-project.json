@@ -1,8 +1,0 @@
-{
-  "name": "javaspider-starter",
-  "runtime": "java",
-  "entry": "src/main/java/starter/ScrapyStyleStarter.java",
-  "runner": "build/project-runner.jar",
-  "url": "https://example.com",
-  "output": "artifacts/exports/javaspider-starter-items.json"
-}

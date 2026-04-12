@@ -1,1 +1,0 @@
-csharpspider scrapy run --project .

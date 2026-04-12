@@ -1,8 +1,0 @@
-{
-  "name": "rustspider-starter",
-  "runtime": "rust",
-  "entry": "src/main.rs",
-  "runner": "dist/rustspider-project",
-  "url": "https://example.com",
-  "output": "artifacts/exports/rustspider-starter-items.json"
-}
