@@ -1,7 +1,7 @@
 // Gospider 核心爬虫模块
 
 //! 爬虫核心实现
-//! 
+//!
 //! 吸收 Crawlee 的爬虫设计理念
 
 package core
@@ -9,6 +9,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"sync"
@@ -29,6 +30,7 @@ type SpiderConfig struct {
 	UserAgent      string        // User-Agent
 	ProxyURL       string        // 代理 URL
 	Delay          time.Duration // 请求延迟
+	RespectRobots  bool          // 是否遵守 robots.txt
 }
 
 // DefaultSpiderConfig returns defaults for the legacy Spider API.
@@ -43,28 +45,31 @@ func DefaultSpiderConfig() *SpiderConfig {
 		UserAgent:      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 		ProxyURL:       "",
 		Delay:          100 * time.Millisecond,
+		RespectRobots:  true,
 	}
 }
 
 // Spider - 爬虫核心
 type Spider struct {
-	config      *SpiderConfig
-	queue       *queue.DedupQueue
-	dataset     *storage.Dataset
-	kvs         *storage.KeyValueStore
-	httpClient  *http.Client
+	config       *SpiderConfig
+	dataset      *storage.Dataset
+	kvs          *storage.KeyValueStore
+	httpClient   *http.Client
 	httpExecutor Executor
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	mu          sync.RWMutex
-	running     bool
-	requested   int
-	handled     int
-	failed      int
-	onRequest   func(*queue.Request) error
-	onResponse  func(*queue.Request, *http.Response) error
-	onError     func(*queue.Request, error)
+	robots       *RobotsChecker
+	frontier     *AutoscaledFrontier
+	observability *ObservabilityCollector
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	mu           sync.RWMutex
+	running      bool
+	requested    int
+	handled      int
+	failed       int
+	onRequest    func(*queue.Request) error
+	onResponse   func(*queue.Request, *http.Response) error
+	onError      func(*queue.Request, error)
 }
 
 // NewSpider - 创建爬虫
@@ -74,10 +79,6 @@ func NewSpider(config *SpiderConfig) *Spider {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-
-	// 创建队列
-	pq := queue.NewPriorityQueue()
-	dedupQueue := queue.NewDedupQueue(pq)
 
 	// 创建存储
 	dataset := storage.NewDataset(config.Name)
@@ -96,20 +97,26 @@ func NewSpider(config *SpiderConfig) *Spider {
 	}
 
 	return &Spider{
-		config:     config,
-		queue:      dedupQueue,
-		dataset:    dataset,
-		kvs:        kvs,
-		httpClient: httpClient,
-		ctx:        ctx,
-		cancel:     cancel,
-		running:    false,
+		config:        config,
+		dataset:       dataset,
+		kvs:           kvs,
+		httpClient:    httpClient,
+		robots:        NewRobotsChecker(config.UserAgent, time.Hour),
+		frontier:      mustFrontier(DefaultFrontierConfig()),
+		observability: NewObservabilityCollector(),
+		ctx:           ctx,
+		cancel:        cancel,
+		running:       false,
 	}
 }
 
 // AddRequest - 添加请求
 func (s *Spider) AddRequest(req *queue.Request) error {
-	return s.queue.Push(req)
+	if req == nil {
+		return fmt.Errorf("request is required")
+	}
+	_ = s.frontier.Push(coreRequestFromQueue(req))
+	return nil
 }
 
 // AddJob adds a normalized job by adapting it into the current request queue.
@@ -189,10 +196,21 @@ func (s *Spider) Run() error {
 		s.mu.Lock()
 		s.running = false
 		s.mu.Unlock()
+		if s.frontier != nil {
+			_ = s.frontier.Persist()
+		}
 	}()
 
+	if s.frontier != nil && frontierPendingCount(s.frontier) == 0 {
+		_ = s.frontier.Load()
+	}
+
 	// 启动工作协程
-	for i := 0; i < s.config.Concurrency; i++ {
+	workerCount := s.config.Concurrency
+	if s.frontier != nil && s.frontier.RecommendedConcurrency() > 0 {
+		workerCount = s.frontier.RecommendedConcurrency()
+	}
+	for i := 0; i < workerCount; i++ {
 		s.wg.Add(1)
 		go s.worker(i)
 	}
@@ -233,7 +251,13 @@ func (s *Spider) GetStats() map[string]interface{} {
 		"requested":  s.requested,
 		"handled":    s.handled,
 		"failed":     s.failed,
-		"queue_size": s.queue.Size(),
+		"queue_size": frontierPendingCount(s.frontier),
+		"frontier": map[string]interface{}{
+			"recommended_concurrency": s.frontier.RecommendedConcurrency(),
+			"dead_letters":            s.frontier.DeadLetterCount(),
+			"pending":                 frontierPendingCount(s.frontier),
+		},
+		"observability": s.observability.Summary(),
 	}
 }
 
@@ -256,15 +280,21 @@ func (s *Spider) worker(id int) {
 		case <-s.ctx.Done():
 			return
 		default:
-			// 检查是否达到最大请求数
-			if s.config.MaxRequests > 0 && s.requested >= s.config.MaxRequests {
-				return
+			// 检查是否达到最大请求数(修复: 加锁保护)
+			if s.config.MaxRequests > 0 {
+				s.mu.RLock()
+				reqCount := s.requested
+				s.mu.RUnlock()
+				if reqCount >= s.config.MaxRequests {
+					return
+				}
 			}
 
-			// 获取请求
-			req, err := s.queue.Pop()
-			if err != nil {
-				// 队列为空，等待
+			req := queueRequestFromCore(s.frontier.Lease())
+			if req == nil {
+				if frontierPendingCount(s.frontier) == 0 {
+					return
+				}
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
@@ -282,11 +312,34 @@ func (s *Spider) executeRequest(workerID int, req *queue.Request) {
 	s.mu.Unlock()
 
 	log.Printf("Worker %d: Processing %s", workerID, req.URL)
+	traceID := s.observability.StartTrace("spider.request")
+	startedAt := time.Now()
+
+	if s.config.RespectRobots && s.robots != nil {
+		if !s.robots.IsAllowed(req.URL, s.config.UserAgent) {
+			s.mu.Lock()
+			s.failed++
+			s.mu.Unlock()
+			log.Printf("robots.txt forbids: %s", req.URL)
+			latencyMS := float64(time.Since(startedAt).Milliseconds())
+			s.frontier.Ack(coreRequestFromQueue(req), false, latencyMS, fmt.Errorf("robots.txt forbids"), 403, s.config.RetryCount)
+			s.observability.RecordResult(coreRequestFromQueue(req), latencyMS, 403, fmt.Errorf("robots.txt forbids"), traceID)
+			s.observability.EndTrace(traceID, map[string]interface{}{"status": "failed"})
+			return
+		}
+		if delaySeconds := s.robots.GetCrawlDelay(req.URL); delaySeconds > 0 {
+			time.Sleep(time.Duration(delaySeconds * float64(time.Second)))
+		}
+	}
 
 	// 请求回调
 	if s.onRequest != nil {
 		if err := s.onRequest(req); err != nil {
 			log.Printf("Request callback error: %v", err)
+			latencyMS := float64(time.Since(startedAt).Milliseconds())
+			s.frontier.Ack(coreRequestFromQueue(req), false, latencyMS, err, 0, s.config.RetryCount)
+			s.observability.RecordResult(coreRequestFromQueue(req), latencyMS, 0, err, traceID)
+			s.observability.EndTrace(traceID, map[string]interface{}{"status": "failed"})
 			return
 		}
 	}
@@ -316,6 +369,10 @@ func (s *Spider) executeRequest(workerID int, req *queue.Request) {
 		result, err := s.httpExecutor.Execute(s.ctx, job)
 		if err != nil {
 			s.handleError(req, err)
+			latencyMS := float64(time.Since(startedAt).Milliseconds())
+			s.frontier.Ack(coreRequestFromQueue(req), false, latencyMS, err, 0, s.config.RetryCount)
+			s.observability.RecordResult(coreRequestFromQueue(req), latencyMS, 0, err, traceID)
+			s.observability.EndTrace(traceID, map[string]interface{}{"status": "failed"})
 			return
 		}
 
@@ -323,6 +380,13 @@ func (s *Spider) executeRequest(workerID int, req *queue.Request) {
 			s.mu.Lock()
 			s.handled++
 			s.mu.Unlock()
+			latency := float64(time.Since(startedAt).Milliseconds())
+			if result.Metrics != nil && result.Metrics.LatencyMS > 0 {
+				latency = float64(result.Metrics.LatencyMS)
+			}
+			s.frontier.Ack(coreRequestFromQueue(req), true, latency, nil, result.StatusCode, s.config.RetryCount)
+			s.observability.RecordResult(coreRequestFromQueue(req), latency, result.StatusCode, nil, traceID)
+			s.observability.EndTrace(traceID, map[string]interface{}{"status": "ok"})
 		}
 
 		if s.config.Delay > 0 {
@@ -350,6 +414,10 @@ func (s *Spider) executeRequest(workerID int, req *queue.Request) {
 	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
 		s.handleError(req, err)
+		latencyMS := float64(time.Since(startedAt).Milliseconds())
+		s.frontier.Ack(coreRequestFromQueue(req), false, latencyMS, err, 0, s.config.RetryCount)
+		s.observability.RecordResult(coreRequestFromQueue(req), latencyMS, 0, err, traceID)
+		s.observability.EndTrace(traceID, map[string]interface{}{"status": "failed"})
 		return
 	}
 	defer resp.Body.Close()
@@ -359,13 +427,24 @@ func (s *Spider) executeRequest(workerID int, req *queue.Request) {
 		if err := s.onResponse(req, resp); err != nil {
 			log.Printf("Response callback error: %v", err)
 			s.handleError(req, err)
+			latencyMS := float64(time.Since(startedAt).Milliseconds())
+			s.frontier.Ack(coreRequestFromQueue(req), false, latencyMS, err, resp.StatusCode, s.config.RetryCount)
+			s.observability.RecordResult(coreRequestFromQueue(req), latencyMS, resp.StatusCode, err, traceID)
+			s.observability.EndTrace(traceID, map[string]interface{}{"status": "failed"})
 			return
 		}
+	} else {
+		// 如果没有回调，确保 Body 被读取以释放连接
+		io.Copy(io.Discard, resp.Body)
 	}
 
 	s.mu.Lock()
 	s.handled++
 	s.mu.Unlock()
+	latency := float64(time.Since(startedAt).Milliseconds())
+	s.frontier.Ack(coreRequestFromQueue(req), true, latency, nil, resp.StatusCode, s.config.RetryCount)
+	s.observability.RecordResult(coreRequestFromQueue(req), latency, resp.StatusCode, nil, traceID)
+	s.observability.EndTrace(traceID, map[string]interface{}{"status": "ok"})
 
 	// 延迟
 	if s.config.Delay > 0 {
@@ -401,9 +480,64 @@ func (s *Spider) handleError(req *queue.Request, err error) {
 	if req.RetryCount < s.config.RetryCount {
 		req.RetryCount++
 		req.Priority++ // 提高优先级
-		s.queue.Push(req)
 		log.Printf("Retrying request: %s (retry %d)", req.URL, req.RetryCount)
 	}
+}
+
+func mustFrontier(config FrontierConfig) *AutoscaledFrontier {
+	frontier, err := NewAutoscaledFrontier(config)
+	if err != nil {
+		panic(err)
+	}
+	return frontier
+}
+
+func frontierPendingCount(frontier *AutoscaledFrontier) int {
+	if frontier == nil {
+		return 0
+	}
+	snapshot := frontier.Snapshot()
+	if pending, ok := snapshot["pending"].([]frontierRequest); ok {
+		return len(pending)
+	}
+	if pending, ok := snapshot["pending"].([]interface{}); ok {
+		return len(pending)
+	}
+	return 0
+}
+
+func coreRequestFromQueue(req *queue.Request) *Request {
+	if req == nil {
+		return nil
+	}
+	coreReq := NewRequest(req.URL, nil)
+	coreReq.Method = req.Method
+	coreReq.Headers = cloneRequestHeaders(req.Headers)
+	coreReq.Body = string(req.Body)
+	coreReq.Meta = make(map[string]interface{}, len(req.Meta))
+	for key, value := range req.Meta {
+		coreReq.Meta[key] = value
+	}
+	coreReq.Priority = req.Priority
+	return coreReq
+}
+
+func queueRequestFromCore(req *Request) *queue.Request {
+	if req == nil {
+		return nil
+	}
+	queueReq := &queue.Request{
+		URL:      req.URL,
+		Method:   req.Method,
+		Headers:  cloneRequestHeaders(req.Headers),
+		Body:     []byte(req.Body),
+		Priority: req.Priority,
+		Meta:     make(map[string]interface{}, len(req.Meta)),
+	}
+	for key, value := range req.Meta {
+		queueReq.Meta[key] = value
+	}
+	return queueReq
 }
 
 // SaveResults - 保存结果
@@ -418,7 +552,7 @@ func (s *Spider) GetResults() []map[string]interface{} {
 
 // Clear - 清空状态
 func (s *Spider) Clear() {
-	s.queue.Clear()
+	s.frontier = mustFrontier(DefaultFrontierConfig())
 	s.dataset = storage.NewDataset(s.config.Name)
 	s.kvs = storage.NewKeyValueStore(s.config.Name)
 	s.requested = 0
@@ -426,8 +560,8 @@ func (s *Spider) Clear() {
 	s.failed = 0
 }
 
-// Example - 使用示例
-func Example() {
+// RunExample - 使用示例 (不是测试函数)
+func RunExample() {
 	// 创建爬虫
 	config := DefaultSpiderConfig()
 	config.Name = "example"

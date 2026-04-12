@@ -15,7 +15,7 @@ RUN go mod download
 COPY . .
 
 # 构建
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gospider ./cmd/gospider/main_enhanced.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gospider ./cmd/gospider/main.go
 
 # 最终镜像
 FROM alpine:latest

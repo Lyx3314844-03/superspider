@@ -53,3 +53,42 @@ func TestSpiderExecuteRequestUsesInjectedExecutor(t *testing.T) {
 		t.Fatalf("expected runtime %s, got %s", RuntimeHTTP, executor.job.Runtime)
 	}
 }
+
+func TestSpiderRunUsesFrontierBackedScheduling(t *testing.T) {
+	config := DefaultSpiderConfig()
+	config.Name = "frontier-runner"
+	config.Concurrency = 1
+	config.MaxRequests = 1
+	config.RespectRobots = false
+
+	spider := NewSpider(config)
+	executor := &stubExecutor{}
+	spider.SetHTTPExecutor(executor)
+
+	req := &queue.Request{
+		URL:      "https://example.com",
+		Method:   "GET",
+		Headers:  map[string]string{},
+		Priority: 3,
+		Meta:     map[string]interface{}{},
+	}
+	if err := spider.AddRequest(req); err != nil {
+		t.Fatalf("expected request to be accepted: %v", err)
+	}
+
+	if err := spider.Run(); err != nil {
+		t.Fatalf("run should succeed: %v", err)
+	}
+
+	if executor.calls != 1 {
+		t.Fatalf("expected executor to be called once, got %d", executor.calls)
+	}
+	stats := spider.GetStats()
+	if stats["handled"] != 1 {
+		t.Fatalf("expected handled count to be 1, got %#v", stats["handled"])
+	}
+	frontier := stats["frontier"].(map[string]interface{})
+	if frontier["pending"] != 0 {
+		t.Fatalf("expected pending frontier items to be 0, got %#v", frontier["pending"])
+	}
+}

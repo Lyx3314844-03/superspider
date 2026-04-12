@@ -9,6 +9,8 @@ import (
 
 // DynamicCrawler 动态爬虫（增强版）
 type DynamicCrawler struct {
+	allocCtx context.Context
+	allocCancel context.CancelFunc
 	ctx    context.Context
 	cancel context.CancelFunc
 	opts   []chromedp.ExecAllocatorOption
@@ -25,9 +27,12 @@ func NewDynamicCrawler(headless bool, timeout time.Duration) *DynamicCrawler {
 		chromedp.WindowSize(1920, 1080),
 	)
 
-	ctx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	ctx, cancel := chromedp.NewContext(allocCtx)
 
 	return &DynamicCrawler{
+		allocCtx:    allocCtx,
+		allocCancel: allocCancel,
 		ctx:    ctx,
 		cancel: cancel,
 		opts:   opts,
@@ -172,10 +177,13 @@ func (dc *DynamicCrawler) ExecuteJS(script string) (interface{}, error) {
 	return result, err
 }
 
-// Close 关闭
+// Close 关闭浏览器并清理资源
 func (dc *DynamicCrawler) Close() {
 	if dc.cancel != nil {
 		dc.cancel()
+	}
+	if dc.allocCancel != nil {
+		dc.allocCancel()
 	}
 }
 

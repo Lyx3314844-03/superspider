@@ -3,7 +3,6 @@ package middleware
 import (
 	"gospider/core"
 	"math/rand"
-	"time"
 )
 
 // RequestMiddleware 请求中间件接口
@@ -33,7 +32,6 @@ func NewUserAgentMiddleware(userAgents []string, random bool) *UserAgentMiddlewa
 // ProcessRequest 处理请求
 func (m *UserAgentMiddleware) ProcessRequest(req *core.Request) *core.Request {
 	if m.Random && len(m.UserAgents) > 0 {
-		rand.Seed(time.Now().UnixNano())
 		req.SetHeader("User-Agent", m.UserAgents[rand.Intn(len(m.UserAgents))])
 	} else if len(m.UserAgents) > 0 {
 		req.SetHeader("User-Agent", m.UserAgents[0])

@@ -29,7 +29,7 @@ type doctorOptions struct {
 
 type doctorCheck struct {
 	Name    string
-	Passed  bool
+	Status  string
 	Details string
 }
 
@@ -40,11 +40,56 @@ type doctorReport struct {
 
 func (r doctorReport) AllPassed() bool {
 	for _, check := range r.Checks {
-		if !check.Passed {
+		if check.Status == "failed" {
 			return false
 		}
 	}
 	return true
+}
+
+func (r doctorReport) HasWarnings() bool {
+	for _, check := range r.Checks {
+		if check.Status == "warning" {
+			return true
+		}
+	}
+	return false
+}
+
+func (r doctorReport) summaryText() string {
+	passed := 0
+	warning := 0
+	failed := 0
+	skipped := 0
+	for _, check := range r.Checks {
+		switch check.Status {
+		case "passed":
+			passed++
+		case "warning":
+			warning++
+		case "skipped":
+			skipped++
+		default:
+			failed++
+		}
+	}
+	return fmt.Sprintf("%d passed, %d warning, %d failed, %d skipped", passed, warning, failed, skipped)
+}
+
+func passedCheck(name string, details string) doctorCheck {
+	return doctorCheck{Name: name, Status: "passed", Details: details}
+}
+
+func failedCheck(name string, details string) doctorCheck {
+	return doctorCheck{Name: name, Status: "failed", Details: details}
+}
+
+func warningCheck(name string, details string) doctorCheck {
+	return doctorCheck{Name: name, Status: "warning", Details: details}
+}
+
+func skippedCheck(name string, details string) doctorCheck {
+	return doctorCheck{Name: name, Status: "skipped", Details: details}
 }
 
 func loadDoctorConfig(configPath string) (*core.Config, string, error) {
@@ -75,26 +120,14 @@ func runDoctor(opts doctorOptions) doctorReport {
 
 	cfg, message, err := loadDoctorConfig(opts.ConfigPath)
 	if err != nil {
-		report.Checks = append(report.Checks, doctorCheck{
-			Name:    "配置",
-			Passed:  false,
-			Details: err.Error(),
-		})
+		report.Checks = append(report.Checks, failedCheck("配置", err.Error()))
 		return report
 	}
 
 	report.Config = cfg
-	report.Checks = append(report.Checks, doctorCheck{
-		Name:    "配置",
-		Passed:  true,
-		Details: message,
-	})
+	report.Checks = append(report.Checks, passedCheck("配置", message))
 
-	report.Checks = append(report.Checks, doctorCheck{
-		Name:    "Go 运行时",
-		Passed:  true,
-		Details: runtimeVersionSummary(),
-	})
+	report.Checks = append(report.Checks, passedCheck("Go 运行时", runtimeVersionSummary()))
 
 	writablePaths := collectWritablePaths(cfg, opts.WritablePaths)
 	for _, path := range writablePaths {
@@ -112,11 +145,7 @@ func runDoctor(opts doctorOptions) doctorReport {
 		}
 
 		if redisTarget == "" {
-			report.Checks = append(report.Checks, doctorCheck{
-				Name:    "Redis",
-				Passed:  true,
-				Details: "未配置，已跳过",
-			})
+			report.Checks = append(report.Checks, skippedCheck("Redis", "未配置，已跳过"))
 		} else {
 			report.Checks = append(report.Checks, checkRedisTarget(redisTarget))
 		}
@@ -172,39 +201,39 @@ func checkWritablePath(path string, allowAutoCreate bool) doctorCheck {
 
 	if allowAutoCreate {
 		if err := os.MkdirAll(path, 0755); err != nil {
-			return doctorCheck{Name: name, Passed: false, Details: fmt.Sprintf("无法创建目录: %v", err)}
+			return failedCheck(name, fmt.Sprintf("无法创建目录: %v", err))
 		}
 	} else {
 		if _, err := os.Stat(path); err != nil {
-			return doctorCheck{Name: name, Passed: false, Details: fmt.Sprintf("目录不存在: %v", err)}
+			return failedCheck(name, fmt.Sprintf("目录不存在: %v", err))
 		}
 	}
 
 	probeFile := filepath.Join(path, fmt.Sprintf(".gospider-doctor-%d.tmp", time.Now().UnixNano()))
 	if err := os.WriteFile(probeFile, []byte("doctor"), 0644); err != nil {
-		return doctorCheck{Name: name, Passed: false, Details: fmt.Sprintf("无法写入: %v", err)}
+		return failedCheck(name, fmt.Sprintf("无法写入: %v", err))
 	}
 	if err := os.Remove(probeFile); err != nil {
-		return doctorCheck{Name: name, Passed: false, Details: fmt.Sprintf("无法删除探针文件: %v", err)}
+		return failedCheck(name, fmt.Sprintf("无法删除探针文件: %v", err))
 	}
 
-	return doctorCheck{Name: name, Passed: true, Details: "可读写"}
+	return passedCheck(name, "可读写")
 }
 
 func checkNetworkTarget(target string) doctorCheck {
 	name := fmt.Sprintf("网络:%s", target)
 	address, err := normalizeDialTarget(target)
 	if err != nil {
-		return doctorCheck{Name: name, Passed: false, Details: err.Error()}
+		return failedCheck(name, err.Error())
 	}
 
 	conn, err := net.DialTimeout("tcp", address, 3*time.Second)
 	if err != nil {
-		return doctorCheck{Name: name, Passed: false, Details: fmt.Sprintf("连接失败: %v", err)}
+		return failedCheck(name, fmt.Sprintf("连接失败: %v", err))
 	}
 	_ = conn.Close()
 
-	return doctorCheck{Name: name, Passed: true, Details: fmt.Sprintf("可连接 (%s)", address)}
+	return passedCheck(name, fmt.Sprintf("可连接 (%s)", address))
 }
 
 func normalizeDialTarget(target string) (string, error) {
@@ -249,32 +278,32 @@ func checkRedisTarget(target string) doctorCheck {
 	name := "Redis"
 	address, err := normalizeDialTarget(target)
 	if err != nil {
-		return doctorCheck{Name: name, Passed: false, Details: err.Error()}
+		return failedCheck(name, err.Error())
 	}
 
 	conn, err := net.DialTimeout("tcp", address, 3*time.Second)
 	if err != nil {
-		return doctorCheck{Name: name, Passed: false, Details: fmt.Sprintf("连接失败: %v", err)}
+		return failedCheck(name, fmt.Sprintf("连接失败: %v", err))
 	}
 	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 	if _, err := conn.Write([]byte("*1\r\n$4\r\nPING\r\n")); err != nil {
 		_ = conn.Close()
-		return doctorCheck{Name: name, Passed: false, Details: fmt.Sprintf("PING 发送失败: %v", err)}
+		return failedCheck(name, fmt.Sprintf("PING 发送失败: %v", err))
 	}
 
 	buffer := make([]byte, 64)
 	n, err := conn.Read(buffer)
 	_ = conn.Close()
 	if err != nil {
-		return doctorCheck{Name: name, Passed: false, Details: fmt.Sprintf("PING 读取失败: %v", err)}
+		return failedCheck(name, fmt.Sprintf("PING 读取失败: %v", err))
 	}
 
 	response := string(buffer[:n])
 	if !strings.Contains(response, "PONG") {
-		return doctorCheck{Name: name, Passed: false, Details: fmt.Sprintf("收到异常响应: %q", response)}
+		return failedCheck(name, fmt.Sprintf("收到异常响应: %q", response))
 	}
 
-	return doctorCheck{Name: name, Passed: true, Details: fmt.Sprintf("可连接 (%s)", address)}
+	return passedCheck(name, fmt.Sprintf("可连接 (%s)", address))
 }
 
 func checkFFmpeg(configuredPath string) doctorCheck {
@@ -282,17 +311,17 @@ func checkFFmpeg(configuredPath string) doctorCheck {
 
 	if configuredPath != "" {
 		if _, err := os.Stat(configuredPath); err == nil {
-			return doctorCheck{Name: name, Passed: true, Details: fmt.Sprintf("已配置 (%s)", configuredPath)}
+			return passedCheck(name, fmt.Sprintf("已配置 (%s)", configuredPath))
 		}
-		return doctorCheck{Name: name, Passed: false, Details: fmt.Sprintf("配置路径不可用: %s", configuredPath)}
+		return failedCheck(name, fmt.Sprintf("配置路径不可用: %s", configuredPath))
 	}
 
 	path, err := media.AutoDetectFFmpeg()
 	if err != nil {
-		return doctorCheck{Name: name, Passed: false, Details: err.Error()}
+		return warningCheck(name, err.Error())
 	}
 
-	return doctorCheck{Name: name, Passed: true, Details: fmt.Sprintf("已找到 (%s)", path)}
+	return passedCheck(name, fmt.Sprintf("已找到 (%s)", path))
 }
 
 func checkBrowserDeps() doctorCheck {
@@ -310,7 +339,7 @@ func checkBrowserDeps() doctorCheck {
 
 	for _, candidate := range candidates {
 		if path, err := exec.LookPath(candidate); err == nil {
-			return doctorCheck{Name: name, Passed: true, Details: fmt.Sprintf("已找到 %s", path)}
+			return passedCheck(name, fmt.Sprintf("已找到 %s", path))
 		}
 	}
 
@@ -322,11 +351,11 @@ func checkBrowserDeps() doctorCheck {
 	}
 	for _, path := range commonPaths {
 		if _, err := os.Stat(path); err == nil {
-			return doctorCheck{Name: name, Passed: true, Details: fmt.Sprintf("已找到 %s", path)}
+			return passedCheck(name, fmt.Sprintf("已找到 %s", path))
 		}
 	}
 
-	return doctorCheck{Name: name, Passed: false, Details: "未找到 Chrome/Edge/chromedriver"}
+	return warningCheck(name, "未找到 Chrome/Edge/chromedriver")
 }
 
 func renderDoctorReport(report doctorReport) string {
@@ -335,18 +364,25 @@ func renderDoctorReport(report doctorReport) string {
 	builder.WriteString("================\n")
 
 	for _, check := range report.Checks {
-		status := "✓"
-		if !check.Passed {
-			status = "✗"
+		icon := map[string]string{
+			"passed":  "✓",
+			"warning": "!",
+			"skipped": "-",
+			"failed":  "✗",
+		}[check.Status]
+		if icon == "" {
+			icon = "✗"
 		}
-		builder.WriteString(fmt.Sprintf("%s %s: %s\n", status, check.Name, check.Details))
+		builder.WriteString(fmt.Sprintf("%s %s [%s]: %s\n", icon, check.Name, check.Status, check.Details))
 	}
 
 	builder.WriteString("\n")
-	if report.AllPassed() {
-		builder.WriteString("所有检查通过 ✓\n")
-	} else {
+	if !report.AllPassed() {
 		builder.WriteString("部分检查失败，请查看上述错误\n")
+	} else if report.HasWarnings() {
+		builder.WriteString("检查通过，但存在可选依赖告警\n")
+	} else {
+		builder.WriteString("所有检查通过 ✓\n")
 	}
 
 	return builder.String()
@@ -366,23 +402,29 @@ func renderDoctorReportJSON(report doctorReport) (string, error) {
 
 	checks := make([]jsonCheck, 0, len(report.Checks))
 	for _, check := range report.Checks {
-		status := "passed"
-		if !check.Passed {
-			status = "failed"
-		}
 		checks = append(checks, jsonCheck{
 			Name:    check.Name,
-			Status:  status,
+			Status:  check.Status,
 			Details: check.Details,
 		})
 	}
 
 	payload := map[string]any{
-		"command":   "doctor",
-		"runtime":   "go",
-		"summary":   summary,
-		"exit_code": map[bool]int{true: 0, false: 1}[report.AllPassed()],
-		"checks":    checks,
+		"command":      "doctor",
+		"framework":    "gospider",
+		"runtime":      "go",
+		"version":      version,
+		"summary":      summary,
+		"summary_text": report.summaryText(),
+		"exit_code":    map[bool]int{true: 0, false: 1}[report.AllPassed()],
+		"checks":       checks,
+		"shared_contracts": []string{
+			"shared-cli",
+			"shared-config",
+			"scrapy-project",
+			"scrapy-plugins-manifest",
+			"web-control-plane",
+		},
 	}
 
 	data, err := json.MarshalIndent(payload, "", "  ")

@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -65,13 +66,13 @@ func (s *Session) GetClient() *http.Client {
 		Timeout: 30 * time.Second,
 	}
 
-	// TODO: 添加代理支持
-	// if s.ProxyURL != "" {
-	// 	proxyURL, _ := url.Parse(s.ProxyURL)
-	// 	client.Transport = &http.Transport{
-	// 		Proxy: http.ProxyURL(proxyURL),
-	// 	}
-	// }
+	if s.ProxyURL != "" {
+		if proxyURL, err := url.Parse(s.ProxyURL); err == nil {
+			client.Transport = &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			}
+		}
+	}
 
 	return client
 }

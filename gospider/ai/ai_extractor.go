@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,13 +27,43 @@ func DefaultAIConfig() *AIConfig {
 	if apiKey == "" {
 		apiKey = os.Getenv("AI_API_KEY")
 	}
-	
+
+	baseURL := os.Getenv("OPENAI_BASE_URL")
+	if baseURL == "" {
+		baseURL = os.Getenv("AI_BASE_URL")
+	}
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+
+	model := os.Getenv("OPENAI_MODEL")
+	if model == "" {
+		model = os.Getenv("AI_MODEL")
+	}
+	if model == "" {
+		model = "gpt-3.5-turbo"
+	}
+
+	maxTokens := 2000
+	if raw := strings.TrimSpace(os.Getenv("AI_MAX_TOKENS")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			maxTokens = parsed
+		}
+	}
+
+	temperature := 0.7
+	if raw := strings.TrimSpace(os.Getenv("AI_TEMPERATURE")); raw != "" {
+		if parsed, err := strconv.ParseFloat(raw, 64); err == nil {
+			temperature = parsed
+		}
+	}
+
 	return &AIConfig{
 		APIKey:      apiKey,
-		BaseURL:     "https://api.openai.com/v1",
-		Model:       "gpt-3.5-turbo",
-		MaxTokens:   2000,
-		Temperature: 0.7,
+		BaseURL:     baseURL,
+		Model:       model,
+		MaxTokens:   maxTokens,
+		Temperature: temperature,
 	}
 }
 
@@ -225,10 +256,10 @@ func NewSpiderAssistant(apiKey string) *SpiderAssistant {
 
 // PageAnalysis - 页面分析结果
 type PageAnalysis struct {
-	PageType   string     `json:"page_type"`
-	MainContent string    `json:"main_content"`
-	Links      []LinkInfo `json:"links"`
-	Entities   []Entity   `json:"entities"`
+	PageType    string     `json:"page_type"`
+	MainContent string     `json:"main_content"`
+	Links       []LinkInfo `json:"links"`
+	Entities    []Entity   `json:"entities"`
 }
 
 // LinkInfo - 链接信息
@@ -301,7 +332,7 @@ func (a *SpiderAssistant) ShouldCrawl(content, criteria string) (bool, error) {
 // ExtractFields - 提取指定字段
 func (a *SpiderAssistant) ExtractFields(content string, fields []string) (map[string]interface{}, error) {
 	fieldsJSON, _ := json.Marshal(fields)
-	
+
 	prompt := fmt.Sprintf(`请从以下内容中提取指定字段。
 
 需要提取的字段：%s

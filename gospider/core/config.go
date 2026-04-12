@@ -144,10 +144,10 @@ func DefaultConfig() *Config {
 			Download: 10 * time.Minute,
 		},
 		Output: OutputConfig{
-			Directory:   "./outputs",
+			Directory:   "./artifacts/datasets",
 			Format:      "json",
 			ArtifactDir: "./artifacts",
-			DownloadDir: "./downloads",
+			DownloadDir: "./artifacts/downloads",
 		},
 		Browser: BrowserConfig{
 			Headless:    true,
@@ -163,7 +163,7 @@ func DefaultConfig() *Config {
 			Enabled:   true,
 			Download:  false,
 			Types:     []string{"video", "audio", "image", "hls", "dash"},
-			OutputDir: "./media",
+			OutputDir: "./artifacts/exports",
 		},
 		Scheduler: SchedulerConfig{
 			Mode:         "local",

@@ -1,22 +1,22 @@
 package distributed
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 	"github.com/go-redis/redis/v8"
-	"context"
 	"gospider/core"
 	"log"
+	"time"
 )
 
 // RedisScheduler 分布式调度器
 type RedisScheduler struct {
-	client    *redis.Client
-	ctx       context.Context
-	queueKey  string
+	client     *redis.Client
+	ctx        context.Context
+	queueKey   string
 	visitedKey string
-	statsKey  string
+	statsKey   string
 }
 
 // NewRedisScheduler 创建分布式调度器
@@ -26,15 +26,15 @@ func NewRedisScheduler(addr, password string, db int, spiderName string) *RedisS
 		Password: password,
 		DB:       db,
 	})
-	
+
 	ctx := context.Background()
-	
+
 	return &RedisScheduler{
-		client:    client,
-		ctx:       ctx,
-		queueKey:  "gospider:" + spiderName + ":queue",
+		client:     client,
+		ctx:        ctx,
+		queueKey:   "gospider:" + spiderName + ":queue",
 		visitedKey: "gospider:" + spiderName + ":visited",
-		statsKey:  "gospider:" + spiderName + ":stats",
+		statsKey:   "gospider:" + spiderName + ":stats",
 	}
 }
 
@@ -44,22 +44,22 @@ func (rs *RedisScheduler) AddRequest(req *core.Request) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// 检查是否已访问
 	visited, _ := rs.client.Exists(rs.ctx, rs.visitedKey+":"+req.URL).Result()
 	if visited > 0 {
 		return nil
 	}
-	
+
 	// 添加到队列
 	_, err = rs.client.LPush(rs.ctx, rs.queueKey, data).Result()
 	if err != nil {
 		return err
 	}
-	
+
 	// 标记为已访问
 	rs.client.Set(rs.ctx, rs.visitedKey+":"+req.URL, "1", 24*time.Hour)
-	
+
 	return nil
 }
 
@@ -69,13 +69,13 @@ func (rs *RedisScheduler) NextRequest() (*core.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var req core.Request
 	err = json.Unmarshal([]byte(result), &req)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &req, nil
 }
 
@@ -116,20 +116,20 @@ func (rs *RedisScheduler) Close() {
 
 // DistributedSpider 分布式爬虫
 type DistributedSpider struct {
-	name       string
-	redisAddr  string
-	redisPass  string
-	redisDB    int
+	name        string
+	redisAddr   string
+	redisPass   string
+	redisDB     int
 	threadCount int
 }
 
 // NewDistributedSpider 创建分布式爬虫
 func NewDistributedSpider(name, redisAddr, redisPass string, redisDB int) *DistributedSpider {
 	return &DistributedSpider{
-		name:       name,
-		redisAddr:  redisAddr,
-		redisPass:  redisPass,
-		redisDB:    redisDB,
+		name:        name,
+		redisAddr:   redisAddr,
+		redisPass:   redisPass,
+		redisDB:     redisDB,
 		threadCount: 5,
 	}
 }
@@ -143,9 +143,9 @@ func (ds *DistributedSpider) SetThreadCount(count int) {
 func (ds *DistributedSpider) Start(callback func(*core.Request) error) {
 	scheduler := NewRedisScheduler(ds.redisAddr, ds.redisPass, ds.redisDB, ds.name)
 	defer scheduler.Close()
-	
+
 	log.Printf("Distributed Spider [%s] started", ds.name)
-	
+
 	// 启动工作协程
 	for i := 0; i < ds.threadCount; i++ {
 		go func() {
@@ -155,7 +155,7 @@ func (ds *DistributedSpider) Start(callback func(*core.Request) error) {
 					time.Sleep(100 * time.Millisecond)
 					continue
 				}
-				
+
 				if err := callback(req); err != nil {
 					log.Printf("Error processing %s: %v", req.URL, err)
 					scheduler.UpdateStats("failed", 1)
@@ -165,7 +165,7 @@ func (ds *DistributedSpider) Start(callback func(*core.Request) error) {
 			}
 		}()
 	}
-	
+
 	// 保持运行
 	select {}
 }
@@ -174,7 +174,7 @@ func (ds *DistributedSpider) Start(callback func(*core.Request) error) {
 func (ds *DistributedSpider) AddStartURL(url string) error {
 	scheduler := NewRedisScheduler(ds.redisAddr, ds.redisPass, ds.redisDB, ds.name)
 	defer scheduler.Close()
-	
+
 	req := core.NewRequest(url, nil)
 	return scheduler.AddRequest(req)
 }

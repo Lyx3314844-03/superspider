@@ -8,18 +8,19 @@ import (
 	"sync"
 	"time"
 
+	"gospider/core"
 	"gospider/distributed"
 )
 
 // Monitor 监控器
 type Monitor struct {
-	redis      *distributed.RedisClient
-	stats      *SystemStats
-	mu         sync.RWMutex
-	callbacks  []func(*SystemStats)
-	interval   time.Duration
-	running    bool
-	startTime  time.Time
+	redis     *distributed.RedisClient
+	stats     *SystemStats
+	mu        sync.RWMutex
+	callbacks []func(*SystemStats)
+	interval  time.Duration
+	running   bool
+	startTime time.Time
 }
 
 // SystemStats 系统统计
@@ -134,9 +135,9 @@ func (m *Monitor) CollectStats() (*SystemStats, error) {
 	stats.Queues = queueStats
 
 	// 计算总任务数
-	stats.TasksTotal = queueStats["pending"] + queueStats["running"] + queueStats["completed"] + queueStats["failed"]
-	stats.TasksCompleted = queueStats["completed"]
-	stats.TasksFailed = queueStats["failed"]
+	stats.TasksTotal = queueStats[string(core.StateQueued)] + queueStats["running"] + queueStats[string(core.StateSucceeded)] + queueStats[string(core.StateFailed)] + queueStats[string(core.StateCancelled)]
+	stats.TasksCompleted = queueStats[string(core.StateSucceeded)]
+	stats.TasksFailed = queueStats[string(core.StateFailed)]
 
 	// 工作节点统计
 	workers, err := m.redis.ListWorkers()
@@ -276,7 +277,7 @@ func (m *Monitor) GetHealthStatus() HealthStatus {
 	}
 
 	// 检查队列积压
-	if stats.Queues["pending"] > 1000 {
+	if stats.Queues[string(core.StateQueued)] > 1000 {
 		status.Status = "warning"
 		status.Message = "队列积压严重"
 	}
@@ -286,10 +287,10 @@ func (m *Monitor) GetHealthStatus() HealthStatus {
 
 // HealthStatus 健康状态
 type HealthStatus struct {
-	Status    string            `json:"status"` // healthy, warning, critical
-	Message   string            `json:"message,omitempty"`
-	Timestamp time.Time         `json:"timestamp"`
-	Checks    map[string]bool   `json:"checks"`
+	Status    string          `json:"status"` // healthy, warning, critical
+	Message   string          `json:"message,omitempty"`
+	Timestamp time.Time       `json:"timestamp"`
+	Checks    map[string]bool `json:"checks"`
 }
 
 // HTTPHandler 创建 HTTP 处理器

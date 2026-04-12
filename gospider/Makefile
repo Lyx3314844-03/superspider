@@ -9,7 +9,7 @@ GOOS?=$(shell go env GOOS)
 GOARCH?=$(shell go env GOARCH)
 BUILD_DIR=./build
 CMD_DIR=./cmd/gospider
-MAIN_FILE=$(CMD_DIR)/main_enhanced.go
+MAIN_FILE=$(CMD_DIR)/main.go
 
 # 默认目标
 all: lint test build

@@ -17,12 +17,15 @@ import (
 // 所有入口点 (CLI, Web UI, Worker, 库调用) 都收敛到这个模型
 type JobSpec struct {
 	// 基本信息
-	Name     string            `json:"name" yaml:"name"`                     // 任务名称
-	Runtime  Runtime           `json:"runtime" yaml:"runtime"`               // 运行时：http|browser
-	Priority int               `json:"priority,omitempty" yaml:"priority"`   // 优先级
+	Name     string  `json:"name" yaml:"name"`                   // 任务名称
+	Runtime  Runtime `json:"runtime" yaml:"runtime"`             // 运行时：http|browser
+	Priority int     `json:"priority,omitempty" yaml:"priority"` // 优先级
 
 	// 目标定义
 	Target TargetSpec `json:"target" yaml:"target"` // 请求目标
+
+	// 浏览器能力（v2 首选）
+	Browser BrowserSpec `json:"browser,omitempty" yaml:"browser"`
 
 	// 浏览器动作 (仅 browser 运行时)
 	Actions []ActionSpec `json:"actions,omitempty" yaml:"actions"`
@@ -42,68 +45,79 @@ type JobSpec struct {
 	// 媒体能力
 	Media MediaSpec `json:"media,omitempty" yaml:"media"`
 
+	// 反爬能力
+	AntiBot AntiBotSpec `json:"anti_bot,omitempty" yaml:"anti_bot"`
+
+	// 执行策略
+	Policy PolicySpec `json:"policy,omitempty" yaml:"policy"`
+
 	// 元数据
 	Metadata map[string]interface{} `json:"metadata,omitempty" yaml:"metadata"`
 }
 
 // TargetSpec 定义请求目标
 type TargetSpec struct {
-	URL     string            `json:"url" yaml:"url"`                                   // 目标 URL
-	Method  string            `json:"method,omitempty" yaml:"method"`                   // HTTP 方法
-	Headers map[string]string `json:"headers,omitempty" yaml:"headers"`                 // 请求头
-	Cookies map[string]string `json:"cookies,omitempty" yaml:"cookies"`                 // Cookie
-	Body    string            `json:"body,omitempty" yaml:"body"`                       // 请求体
-	Timeout time.Duration     `json:"timeout,omitempty" yaml:"timeout"`                 // 超时时间
-	Retries int               `json:"retries,omitempty" yaml:"retries"`                 // 重试次数
-	Proxy   string            `json:"proxy,omitempty" yaml:"proxy"`                     // 代理地址
+	URL            string            `json:"url" yaml:"url"`                                   // 目标 URL
+	Method         string            `json:"method,omitempty" yaml:"method"`                   // HTTP 方法
+	Headers        map[string]string `json:"headers,omitempty" yaml:"headers"`                 // 请求头
+	Cookies        map[string]string `json:"cookies,omitempty" yaml:"cookies"`                 // Cookie
+	Body           string            `json:"body,omitempty" yaml:"body"`                       // 请求体
+	Timeout        time.Duration     `json:"timeout,omitempty" yaml:"timeout"`                 // 超时时间
+	Retries        int               `json:"retries,omitempty" yaml:"retries"`                 // 重试次数
+	Proxy          string            `json:"proxy,omitempty" yaml:"proxy"`                     // 代理地址
+	AllowedDomains []string          `json:"allowed_domains,omitempty" yaml:"allowed_domains"` // 允许域名
 }
 
 // ActionSpec 定义浏览器动作 (declarative browser actions)
 type ActionSpec struct {
-	Type      string                 `json:"type" yaml:"type"`             // 动作类型：goto|wait|click|type|scroll|select|hover|eval|screenshot|listen_network
-	Selector  string                 `json:"selector,omitempty" yaml:"selector"` // CSS/XPath 选择器
-	Value     string                 `json:"value,omitempty" yaml:"value"`       // 输入值/JS 代码
-	URL       string                 `json:"url,omitempty" yaml:"url"`         // 用于 goto 动作
-	Timeout   time.Duration          `json:"timeout,omitempty" yaml:"timeout"`   // 超时
-	Optional  bool                   `json:"optional,omitempty" yaml:"optional"` // 是否可选
-	SaveAs    string                 `json:"save_as,omitempty" yaml:"save_as"`   // 保存为字段名
-	Mode      string                 `json:"mode,omitempty" yaml:"mode"`         // 模式：bottom|top|element (scroll)
+	Type      string                 `json:"type" yaml:"type"`                         // 动作类型：goto|wait|click|type|scroll|select|hover|eval|screenshot|listen_network
+	Selector  string                 `json:"selector,omitempty" yaml:"selector"`       // CSS/XPath 选择器
+	Value     string                 `json:"value,omitempty" yaml:"value"`             // 输入值/JS 代码
+	URL       string                 `json:"url,omitempty" yaml:"url"`                 // 用于 goto 动作
+	Timeout   time.Duration          `json:"timeout,omitempty" yaml:"timeout"`         // 超时
+	Optional  bool                   `json:"optional,omitempty" yaml:"optional"`       // 是否可选
+	SaveAs    string                 `json:"save_as,omitempty" yaml:"save_as"`         // 保存为字段名
+	Mode      string                 `json:"mode,omitempty" yaml:"mode"`               // 模式：bottom|top|element (scroll)
 	MaxScroll int                    `json:"max_scrolls,omitempty" yaml:"max_scrolls"` // 最大滚动次数
-	Extra     map[string]interface{} `json:"extra,omitempty" yaml:"extra"`         // 额外参数
+	Extra     map[string]interface{} `json:"extra,omitempty" yaml:"extra"`             // 额外参数
 }
 
 // ExtractSpec 定义提取规范
 type ExtractSpec struct {
-	Field string `json:"field" yaml:"field"`         // 字段名
-	Type  string `json:"type" yaml:"type"`           // 提取类型：css|css_attr|xpath|regex|json_path|media
-	Expr  string `json:"expr" yaml:"expr"`           // 表达式
-	Attr  string `json:"attr,omitempty" yaml:"attr"` // 属性名 (css_attr 类型)
-	Regex string `json:"regex,omitempty" yaml:"regex"` // 正则表达式 (regex 类型)
-	Path  string `json:"path,omitempty" yaml:"path"`   // JSON 路径 (json_path 类型)
+	Field    string                 `json:"field" yaml:"field"`                 // 字段名
+	Type     string                 `json:"type" yaml:"type"`                   // 提取类型：css|css_attr|xpath|regex|json_path|media|ai
+	Expr     string                 `json:"expr" yaml:"expr"`                   // 表达式
+	Attr     string                 `json:"attr,omitempty" yaml:"attr"`         // 属性名 (css_attr 类型)
+	Regex    string                 `json:"regex,omitempty" yaml:"regex"`       // 正则表达式 (regex 类型)
+	Path     string                 `json:"path,omitempty" yaml:"path"`         // JSON 路径 (json_path 类型)
+	Schema   map[string]interface{} `json:"schema,omitempty" yaml:"schema"`     // 结构化提取 schema
+	Required bool                   `json:"required,omitempty" yaml:"required"` // 是否必填
 }
 
 // OutputSpec 定义输出规范
 type OutputSpec struct {
-	Format    string `json:"format" yaml:"format"`             // 输出格式：json|jsonl|csv
-	Path      string `json:"path,omitempty" yaml:"path"`       // 输出路径
-	Directory string `json:"directory,omitempty" yaml:"directory"` // 输出目录
-	Artifact  string `json:"artifact,omitempty" yaml:"artifact"`   // 工件名称
+	Format         string `json:"format" yaml:"format"`                             // 输出格式：json|jsonl|csv
+	Path           string `json:"path,omitempty" yaml:"path"`                       // 输出路径
+	Directory      string `json:"directory,omitempty" yaml:"directory"`             // 输出目录
+	Artifact       string `json:"artifact,omitempty" yaml:"artifact"`               // 工件名称
+	ArtifactPrefix string `json:"artifact_prefix,omitempty" yaml:"artifact_prefix"` // 工件前缀
 }
 
 // ScheduleSpec 定义调度规范
 type ScheduleSpec struct {
-	Mode      string `json:"mode,omitempty" yaml:"mode"`             // 调度模式：once|queued|distributed|scheduled
-	Cron      string `json:"cron,omitempty" yaml:"cron"`             // Cron 表达式 (scheduled 模式)
-	QueueName string `json:"queue_name,omitempty" yaml:"queue_name"` // 队列名称 (queued/distributed 模式)
-	Delay     int    `json:"delay,omitempty" yaml:"delay"`           // 延迟秒数
+	Mode         string `json:"mode,omitempty" yaml:"mode"`                   // 调度模式：once|queued|distributed|scheduled
+	Cron         string `json:"cron,omitempty" yaml:"cron"`                   // Cron 表达式 (scheduled 模式)
+	QueueName    string `json:"queue_name,omitempty" yaml:"queue_name"`       // 队列名称 (queued/distributed 模式)
+	Delay        int    `json:"delay,omitempty" yaml:"delay"`                 // 延迟秒数
+	DelaySeconds int    `json:"delay_seconds,omitempty" yaml:"delay_seconds"` // 延迟秒数（兼容字段）
 }
 
 // ResourceSpec 定义资源规范
 type ResourceSpec struct {
 	// 并发控制
-	Concurrency int `json:"concurrency,omitempty" yaml:"concurrency"` // 并发数
-	Timeout     time.Duration `json:"timeout,omitempty" yaml:"timeout"` // 超时
-	Retries     int           `json:"retries,omitempty" yaml:"retries"`   // 重试次数
+	Concurrency int           `json:"concurrency,omitempty" yaml:"concurrency"` // 并发数
+	Timeout     time.Duration `json:"timeout,omitempty" yaml:"timeout"`         // 超时
+	Retries     int           `json:"retries,omitempty" yaml:"retries"`         // 重试次数
 
 	// 下载配置
 	DownloadDir string `json:"download_dir,omitempty" yaml:"download_dir"` // 下载目录
@@ -113,17 +127,26 @@ type ResourceSpec struct {
 	Browser BrowserResourceSpec `json:"browser,omitempty" yaml:"browser"`
 
 	// 速率限制
-	RateLimit RateLimitSpec `json:"rate_limit,omitempty" yaml:"rate_limit"`
+	RateLimit       RateLimitSpec `json:"rate_limit,omitempty" yaml:"rate_limit"`
+	RateLimitPerSec float64       `json:"rate_limit_per_sec,omitempty" yaml:"rate_limit_per_sec"`
+}
+
+// BrowserSpec 定义浏览器执行上下文
+type BrowserSpec struct {
+	BrowserResourceSpec
+	Profile string       `json:"profile,omitempty" yaml:"profile"`
+	Actions []ActionSpec `json:"actions,omitempty" yaml:"actions"`
+	Capture []string     `json:"capture,omitempty" yaml:"capture"`
 }
 
 // BrowserResourceSpec 浏览器资源配置
 type BrowserResourceSpec struct {
-	Headless    bool          `json:"headless,omitempty" yaml:"headless"`       // 无头模式
-	Viewport    ViewportSpec  `json:"viewport,omitempty" yaml:"viewport"`       // 视口大小
-	UserAgent   string        `json:"user_agent,omitempty" yaml:"user_agent"`   // User-Agent
-	WaitLoad    bool          `json:"wait_load,omitempty" yaml:"wait_load"`     // 等待页面加载
-	BlockImages bool          `json:"block_images,omitempty" yaml:"block_images"` // 阻止图片
-	Cookies     []CookieSpec  `json:"cookies,omitempty" yaml:"cookies"`         // Cookie
+	Headless    bool         `json:"headless,omitempty" yaml:"headless"`         // 无头模式
+	Viewport    ViewportSpec `json:"viewport,omitempty" yaml:"viewport"`         // 视口大小
+	UserAgent   string       `json:"user_agent,omitempty" yaml:"user_agent"`     // User-Agent
+	WaitLoad    bool         `json:"wait_load,omitempty" yaml:"wait_load"`       // 等待页面加载
+	BlockImages bool         `json:"block_images,omitempty" yaml:"block_images"` // 阻止图片
+	Cookies     []CookieSpec `json:"cookies,omitempty" yaml:"cookies"`           // Cookie
 }
 
 // ViewportSpec 视口配置
@@ -142,18 +165,44 @@ type CookieSpec struct {
 
 // RateLimitSpec 速率限制配置
 type RateLimitSpec struct {
-	Enabled   bool          `json:"enabled,omitempty" yaml:"enabled"`   // 是否启用
-	Requests  int           `json:"requests,omitempty" yaml:"requests"` // 请求数
-	Interval  time.Duration `json:"interval,omitempty" yaml:"interval"` // 时间间隔
-	Delay     time.Duration `json:"delay,omitempty" yaml:"delay"`       // 请求间隔
+	Enabled  bool          `json:"enabled,omitempty" yaml:"enabled"`   // 是否启用
+	Requests int           `json:"requests,omitempty" yaml:"requests"` // 请求数
+	Interval time.Duration `json:"interval,omitempty" yaml:"interval"` // 时间间隔
+	Delay    time.Duration `json:"delay,omitempty" yaml:"delay"`       // 请求间隔
 }
 
 // MediaSpec 媒体能力配置
 type MediaSpec struct {
-	Enabled  bool     `json:"enabled,omitempty" yaml:"enabled"`   // 是否启用媒体发现
-	Download bool     `json:"download,omitempty" yaml:"download"` // 是否下载媒体
-	Types    []string `json:"types,omitempty" yaml:"types"`       // 媒体类型：video|audio|image|hls|dash
-	OutputDir string  `json:"output_dir,omitempty" yaml:"output_dir"` // 输出目录
+	Enabled   bool     `json:"enabled,omitempty" yaml:"enabled"`       // 是否启用媒体发现
+	Download  bool     `json:"download,omitempty" yaml:"download"`     // 是否下载媒体
+	Types     []string `json:"types,omitempty" yaml:"types"`           // 媒体类型：video|audio|image|hls|dash
+	OutputDir string   `json:"output_dir,omitempty" yaml:"output_dir"` // 输出目录
+}
+
+// AntiBotSpec 定义任务级反爬策略
+type AntiBotSpec struct {
+	IdentityProfile string  `json:"identity_profile,omitempty" yaml:"identity_profile"`
+	ProxyPool       string  `json:"proxy_pool,omitempty" yaml:"proxy_pool"`
+	SessionMode     string  `json:"session_mode,omitempty" yaml:"session_mode"`
+	Stealth         bool    `json:"stealth,omitempty" yaml:"stealth"`
+	FallbackRuntime Runtime `json:"fallback_runtime,omitempty" yaml:"fallback_runtime"`
+	ChallengePolicy string  `json:"challenge_policy,omitempty" yaml:"challenge_policy"`
+}
+
+// PolicySpec 定义任务执行预算和边界
+type PolicySpec struct {
+	MaxPages         int        `json:"max_pages,omitempty" yaml:"max_pages"`
+	MaxDepth         int        `json:"max_depth,omitempty" yaml:"max_depth"`
+	RespectRobotsTxt bool       `json:"respect_robots_txt,omitempty" yaml:"respect_robots_txt"`
+	SameDomainOnly   bool       `json:"same_domain_only,omitempty" yaml:"same_domain_only"`
+	Budget           BudgetSpec `json:"budget,omitempty" yaml:"budget"`
+}
+
+// BudgetSpec 定义任务预算
+type BudgetSpec struct {
+	Requests   int   `json:"requests,omitempty" yaml:"requests"`
+	BytesIn    int64 `json:"bytes_in,omitempty" yaml:"bytes_in"`
+	WallTimeMS int64 `json:"wall_time_ms,omitempty" yaml:"wall_time_ms"`
 }
 
 // ============================================================================
@@ -162,6 +211,10 @@ type MediaSpec struct {
 
 // Validate 验证 JobSpec 的最小契约
 func (j *JobSpec) Validate() error {
+	if j == nil {
+		return fmt.Errorf("job is required")
+	}
+	j.Normalize()
 	if j.Name == "" {
 		return fmt.Errorf("job name is required")
 	}
@@ -169,12 +222,74 @@ func (j *JobSpec) Validate() error {
 		return fmt.Errorf("target.url is required")
 	}
 	switch j.Runtime {
-	case RuntimeHTTP, RuntimeBrowser:
+	case RuntimeHTTP, RuntimeBrowser, RuntimeMedia, RuntimeAI:
 		// 有效
 	default:
 		return fmt.Errorf("unsupported runtime %q", j.Runtime)
 	}
 	return nil
+}
+
+// Normalize aligns browser/resource fields so dispatchers can rely on one shape.
+func (j *JobSpec) Normalize() {
+	if j == nil {
+		return
+	}
+	if j.Runtime == "" {
+		j.Runtime = RuntimeHTTP
+	}
+	if j.Name == "" {
+		j.Name = j.Target.URL
+	}
+	if j.Target.Method == "" {
+		j.Target.Method = "GET"
+	}
+	if j.Output.Format == "" {
+		j.Output.Format = "json"
+	}
+	if j.Schedule.Mode == "" {
+		j.Schedule.Mode = "once"
+	}
+	if j.Schedule.DelaySeconds == 0 && j.Schedule.Delay > 0 {
+		j.Schedule.DelaySeconds = j.Schedule.Delay
+	}
+	if j.Schedule.Delay == 0 && j.Schedule.DelaySeconds > 0 {
+		j.Schedule.Delay = j.Schedule.DelaySeconds
+	}
+	if len(j.Browser.Actions) == 0 && len(j.Actions) > 0 {
+		j.Browser.Actions = append([]ActionSpec(nil), j.Actions...)
+	}
+	if len(j.Actions) == 0 && len(j.Browser.Actions) > 0 {
+		j.Actions = append([]ActionSpec(nil), j.Browser.Actions...)
+	}
+	normalizeBrowserResources(&j.Browser, &j.Resources.Browser)
+	if j.Resources.RateLimitPerSec == 0 && j.Resources.RateLimit.Enabled && j.Resources.RateLimit.Delay > 0 {
+		j.Resources.RateLimitPerSec = 1 / j.Resources.RateLimit.Delay.Seconds()
+	}
+}
+
+func normalizeBrowserResources(browser *BrowserSpec, resources *BrowserResourceSpec) {
+	if browser == nil || resources == nil {
+		return
+	}
+	if browser.UserAgent == "" && resources.UserAgent != "" {
+		browser.UserAgent = resources.UserAgent
+	}
+	if resources.UserAgent == "" && browser.UserAgent != "" {
+		resources.UserAgent = browser.UserAgent
+	}
+	if browser.Viewport.Width == 0 && resources.Viewport.Width > 0 {
+		browser.Viewport = resources.Viewport
+	}
+	if resources.Viewport.Width == 0 && browser.Viewport.Width > 0 {
+		resources.Viewport = browser.Viewport
+	}
+	if !browser.Headless && resources.Headless {
+		browser.Headless = resources.Headless
+	}
+	if !resources.Headless && browser.Headless {
+		resources.Headless = browser.Headless
+	}
 }
 
 // ToRequest 将 JobSpec 转换为 Request (向后兼容)

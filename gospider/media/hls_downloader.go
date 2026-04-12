@@ -72,8 +72,8 @@ func (h *HLSDownloader) ParseM3U8(content string, baseURL string) (*M3U8Playlist
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		// 跳过空行和注释
-		if line == "" || !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "http") {
+		// 跳过空行
+		if line == "" {
 			continue
 		}
 

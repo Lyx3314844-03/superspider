@@ -2,7 +2,7 @@
 
 // Gospider 浏览器池模块
 // 注意：此文件当前被禁用，因为 playwright-go API 有兼容性问题
-// 使用 browser.go (chromedp) 作为替代方案
+// 当前生产主线使用 browser 包下的 chromedp 实现
 
 package browser
 
@@ -15,7 +15,7 @@ import (
 	"github.com/playwright-community/playwright-go"
 )
 
-// PlaywrightBrowserOptions - Playwright 浏览器选项（避免与 browser.go 冲突）
+// PlaywrightBrowserOptions - Playwright 浏览器选项
 type PlaywrightBrowserOptions struct {
 	Headless          bool
 	Width             int

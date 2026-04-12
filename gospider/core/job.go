@@ -6,4 +6,6 @@ type Runtime string
 const (
 	RuntimeHTTP    Runtime = "http"
 	RuntimeBrowser Runtime = "browser"
+	RuntimeMedia   Runtime = "media"
+	RuntimeAI      Runtime = "ai"
 )

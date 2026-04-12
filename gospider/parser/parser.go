@@ -1,15 +1,20 @@
 package parser
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 
+	"github.com/antchfx/htmlquery"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/tidwall/gjson"
+	"golang.org/x/net/html"
 )
 
 // HTMLParser HTML 解析器
 type HTMLParser struct {
-	doc *goquery.Document
+	doc  *goquery.Document
+	node *html.Node
 	html string
 }
 
@@ -19,8 +24,13 @@ func NewHTMLParser(html string) *HTMLParser {
 	if err != nil {
 		return nil
 	}
+	node, err := htmlquery.Parse(strings.NewReader(html))
+	if err != nil {
+		return nil
+	}
 	return &HTMLParser{
 		doc:  doc,
+		node: node,
 		html: html,
 	}
 }
@@ -83,12 +93,42 @@ func (p *HTMLParser) Text() string {
 	return p.doc.Text()
 }
 
-// XPathFirst XPath 查询（简化实现）
+// XPathFirst XPath 查询（兼容旧接口）
 func (p *HTMLParser) XPathFirst(xpath string) string {
-	// 简化实现：使用 CSS 选择器代替
-	// 实际应该使用 goquery 的 XPath 支持
-	return p.CSSFirst(xpath)
+	result, _ := p.XPathFirstStrict(xpath)
+	return result
 }
+
+// XPathFirstStrict runs a full XPath query against the parsed HTML document.
+func (p *HTMLParser) XPathFirstStrict(xpath string) (string, error) {
+	if p == nil || p.node == nil {
+		return "", fmt.Errorf("html parser is not initialized")
+	}
+	if strings.TrimSpace(xpath) == "" {
+		return "", fmt.Errorf("xpath expression is empty")
+	}
+	node, err := htmlquery.Query(p.node, xpath)
+	if err != nil {
+		return "", fmt.Errorf("xpath evaluation error: %w", err)
+	}
+	if node == nil {
+		return "", nil
+	}
+	if value := strings.TrimSpace(htmlquery.InnerText(node)); value != "" {
+		return value, nil
+	}
+	return strings.TrimSpace(htmlquery.SelectAttr(node, "href")), nil
+}
+
+// MustCompileRegex compiles a regex pattern and returns nil on failure.
+func MustCompileRegex(expr string) *regexp.Regexp {
+	compiled, err := regexp.Compile(expr)
+	if err != nil {
+		return nil
+	}
+	return compiled
+}
+
 
 // HTML 获取 HTML
 func (p *HTMLParser) HTML() string {

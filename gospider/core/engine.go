@@ -5,6 +5,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -22,6 +23,7 @@ type JobRunner struct {
 	executor Executor
 	mu       sync.RWMutex
 	running  map[string]bool
+	cancels  map[string]context.CancelFunc
 	stats    *EngineStats
 }
 
@@ -46,6 +48,7 @@ func NewJobRunner(config *Config) *JobRunner {
 		config:  config,
 		service: NewJobService(),
 		running: make(map[string]bool),
+		cancels: make(map[string]context.CancelFunc),
 		stats: &EngineStats{
 			StartTime: time.Now(),
 		},
@@ -110,6 +113,7 @@ func (r *JobRunner) Run(ctx context.Context, job *JobSpec) (*JobResult, error) {
 	defer func() {
 		r.mu.Lock()
 		delete(r.running, job.Name)
+		delete(r.cancels, job.Name)
 		r.mu.Unlock()
 
 		r.stats.mu.Lock()
@@ -126,6 +130,11 @@ func (r *JobRunner) Run(ctx context.Context, job *JobSpec) (*JobResult, error) {
 	execCtx, cancel := context.WithTimeout(ctx, job.Resources.Timeout)
 	defer cancel()
 
+	// 将取消函数注册到运行中任务，允许外部调用 Cancel。
+	r.mu.Lock()
+	r.cancels[job.Name] = cancel
+	r.mu.Unlock()
+
 	// 执行任务
 	result, err := r.executor.Execute(execCtx, *job)
 	if err != nil {
@@ -133,7 +142,15 @@ func (r *JobRunner) Run(ctx context.Context, job *JobSpec) (*JobResult, error) {
 		r.stats.Failed++
 		r.stats.mu.Unlock()
 
-		return nil, WrapWithJob(err, ErrRuntimeHTTP, "execution failed", job)
+		code := ErrRuntimeHTTP
+		switch {
+		case errors.Is(err, context.Canceled):
+			code = ErrRuntimeCancelled
+		case errors.Is(err, context.DeadlineExceeded):
+			code = ErrRuntimeTimeout
+		}
+
+		return nil, WrapWithJob(err, code, "execution failed", job)
 	}
 
 	// 更新统计
@@ -214,7 +231,13 @@ func (r *JobRunner) IsRunning(jobName string) bool {
 
 // Cancel 取消任务
 func (r *JobRunner) Cancel(jobName string) error {
-	// TODO: 实现取消逻辑
+	r.mu.RLock()
+	cancel, ok := r.cancels[jobName]
+	r.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("job %q is not running", jobName)
+	}
+	cancel()
 	return nil
 }
 

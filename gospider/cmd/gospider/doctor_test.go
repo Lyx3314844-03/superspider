@@ -66,7 +66,7 @@ func TestRunDoctorReportsRedisFailure(t *testing.T) {
 	for _, check := range report.Checks {
 		if check.Name == "Redis" {
 			found = true
-			if check.Passed {
+			if check.Status != "failed" {
 				t.Fatalf("expected Redis check to fail")
 			}
 		}
@@ -89,8 +89,9 @@ func TestNormalizeDialTargetSupportsURLs(t *testing.T) {
 func TestRenderDoctorReportJSON(t *testing.T) {
 	report := doctorReport{
 		Checks: []doctorCheck{
-			{Name: "配置", Passed: true, Details: "已加载 gospider.yaml"},
-			{Name: "FFmpeg", Passed: false, Details: "配置路径不可用"},
+			{Name: "配置", Status: "passed", Details: "已加载 gospider.yaml"},
+			{Name: "FFmpeg", Status: "warning", Details: "自动探测失败"},
+			{Name: "Redis", Status: "failed", Details: "连接失败"},
 		},
 	}
 
@@ -119,10 +120,13 @@ func TestRenderDoctorReportJSON(t *testing.T) {
 	if payload["exit_code"] != float64(1) {
 		t.Fatalf("expected exit_code 1, got %#v", payload["exit_code"])
 	}
+	if payload["summary_text"] != "1 passed, 1 warning, 1 failed, 0 skipped" {
+		t.Fatalf("expected summary_text, got %#v", payload["summary_text"])
+	}
 
 	checks, ok := payload["checks"].([]any)
-	if !ok || len(checks) != 2 {
-		t.Fatalf("expected 2 checks, got %#v", payload["checks"])
+	if !ok || len(checks) != 3 {
+		t.Fatalf("expected 3 checks, got %#v", payload["checks"])
 	}
 }
 

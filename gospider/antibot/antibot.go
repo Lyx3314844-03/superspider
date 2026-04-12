@@ -236,20 +236,26 @@ func (p *ProxyPool) checkProxyHealth(proxy *ProxyInfo) bool {
 	if err != nil {
 		return false
 	}
-	
+
 	client := &http.Client{
 		Timeout: p.timeout,
 		Transport: &http.Transport{
 			Proxy: http.ProxyURL(proxyURL),
 		},
 	}
-	
+
 	resp, err := client.Get("https://www.google.com")
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
 	
+	// 确保在函数返回前关闭响应体
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+	}()
+
 	return resp.StatusCode == 200 || resp.StatusCode == 302
 }
 
