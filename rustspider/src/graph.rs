@@ -4,11 +4,13 @@
 //!
 //! 吸收 ScrapegraphAI 的图结构设计
 
+use scraper::{Html, Selector};
+use serde::Serialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 /// 图节点
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Node {
     pub id: String,
     pub node_type: String,
@@ -53,7 +55,7 @@ impl Node {
 }
 
 /// 图边
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Edge {
     pub id: String,
     pub source: String,
@@ -290,6 +292,144 @@ impl GraphBuilder {
 
         stats
     }
+
+    pub fn rebuild_from_html(&mut self, html: &str) {
+        self.nodes.clear();
+        self.edges.clear();
+        self.root_id = None;
+
+        let document_id = "document".to_string();
+        self.add_node(Node::new(
+            document_id.clone(),
+            "document".to_string(),
+            "html".to_string(),
+        ));
+        self.set_root(document_id.clone());
+
+        let parsed = Html::parse_document(html);
+        self.add_text_nodes(&parsed, &document_id, "title", "title", "title");
+        self.add_text_nodes(&parsed, &document_id, "h1, h2, h3", "heading", "heading");
+        self.add_resource_nodes(
+            &parsed,
+            &document_id,
+            "a[href]",
+            "link",
+            "a",
+            "href",
+            "link",
+        );
+        self.add_resource_nodes(
+            &parsed,
+            &document_id,
+            "img[src]",
+            "image",
+            "img",
+            "src",
+            "image",
+        );
+    }
+
+    fn add_text_nodes(
+        &mut self,
+        parsed: &Html,
+        parent_id: &str,
+        selector: &str,
+        node_type: &str,
+        tag_prefix: &str,
+    ) {
+        let Ok(selector) = Selector::parse(selector) else {
+            return;
+        };
+        for (index, element) in parsed.select(&selector).enumerate() {
+            let text = element
+                .text()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            if text.is_empty() {
+                continue;
+            }
+            let node_id = format!("{tag_prefix}-{index}");
+            let node = Node::new(
+                node_id.clone(),
+                node_type.to_string(),
+                element.value().name().to_string(),
+            )
+            .with_text(text)
+            .with_parent(parent_id.to_string());
+            self.attach_child(parent_id, node_id.clone());
+            self.add_node(node);
+            self.add_edge(Edge::new(
+                format!("contains-{parent_id}-{node_id}"),
+                parent_id.to_string(),
+                node_id,
+                "contains".to_string(),
+            ));
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn add_resource_nodes(
+        &mut self,
+        parsed: &Html,
+        parent_id: &str,
+        selector: &str,
+        node_type: &str,
+        tag: &str,
+        attribute: &str,
+        relation: &str,
+    ) {
+        let Ok(selector) = Selector::parse(selector) else {
+            return;
+        };
+        for (index, element) in parsed.select(&selector).enumerate() {
+            let Some(target) = element.value().attr(attribute) else {
+                continue;
+            };
+            if target.trim().is_empty() {
+                continue;
+            }
+
+            let mut attributes = HashMap::new();
+            attributes.insert(attribute.to_string(), target.to_string());
+            let text = element
+                .text()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            let node_id = format!("{relation}-{index}");
+            let mut node = Node::new(node_id.clone(), node_type.to_string(), tag.to_string())
+                .with_parent(parent_id.to_string())
+                .with_attributes(attributes);
+            if !text.is_empty() {
+                node = node.with_text(text);
+            }
+
+            self.attach_child(parent_id, node_id.clone());
+            self.add_node(node);
+            self.add_edge(Edge::new(
+                format!("contains-{parent_id}-{node_id}"),
+                parent_id.to_string(),
+                node_id.clone(),
+                "contains".to_string(),
+            ));
+            self.add_edge(Edge::new(
+                format!("{relation}-{node_id}"),
+                node_id,
+                target.to_string(),
+                relation.to_string(),
+            ));
+        }
+    }
+
+    fn attach_child(&mut self, parent_id: &str, child_id: String) {
+        if let Some(parent) = self.get_node_mut(parent_id) {
+            parent.add_child(child_id);
+        }
+    }
 }
 
 impl Default for GraphBuilder {
@@ -381,5 +521,38 @@ mod tests {
 
         let result = graph.bfs("1");
         assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_rebuild_from_html_extracts_links_images_and_title() {
+        let mut graph = GraphBuilder::new();
+        graph.rebuild_from_html(
+            r#"
+            <html>
+              <head><title>Graph Demo</title></head>
+              <body>
+                <h1>Headline</h1>
+                <a href="https://example.com/page">Read more</a>
+                <img src="https://example.com/image.png" alt="demo" />
+              </body>
+            </html>
+            "#,
+        );
+
+        assert_eq!(graph.root_id.as_deref(), Some("document"));
+        assert!(!graph.get_nodes_by_type("link").is_empty());
+        assert!(!graph.get_nodes_by_type("image").is_empty());
+        assert!(graph
+            .get_nodes_by_tag("title")
+            .iter()
+            .any(|node| node.text == "Graph Demo"));
+        assert!(graph
+            .get_links()
+            .iter()
+            .any(|edge| edge.target == "https://example.com/page"));
+        assert!(graph
+            .get_images()
+            .iter()
+            .any(|edge| edge.target == "https://example.com/image.png"));
     }
 }

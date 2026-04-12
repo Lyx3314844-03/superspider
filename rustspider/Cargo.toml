@@ -2,8 +2,11 @@
 name = "rustspider"
 version = "1.0.0"
 edition = "2021"
-authors = ["rustspider team"]
-description = "A complete web crawler framework in Rust with media downloading support"
+default-run = "rustspider"
+authors = ["Spider Framework Suite Maintainers"]
+description = "Rust runtime for the Spider Framework Suite crawler platform"
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
 # HTTP
@@ -27,6 +30,7 @@ fantoccini = { version = "0.21", optional = true }
 url = "2.5"
 # 哈希
 md-5 = "0.10"
+sha2 = "0.10"
 # 时间
 chrono = "0.4"
 # 错误处理
@@ -40,13 +44,14 @@ regex = "1.10"
 rusqlite = { version = "0.29", features = ["bundled"] }
 # 配置
 serde_yaml = "0.9"
+# 异步工具
+futures = "0.3"
 # 视频下载（可选）
-futures = { version = "0.3", optional = true }
 quick-xml = { version = "0.29", features = ["serialize"], optional = true }
 clap = { version = "4.3", features = ["derive"], optional = true }
 indicatif = { version = "0.17", optional = true }
 # Redis（可选）
-redis = { version = "0.23", features = ["tokio-comp", "cluster"], optional = true }
+redis = { version = "0.29.5", features = ["tokio-comp", "cluster"], optional = true }
 # 监控（可选）
 prometheus = { version = "0.13", optional = true }
 sysinfo = { version = "0.29", optional = true }
@@ -59,12 +64,12 @@ actix-web = { version = "4.4", optional = true }
 actix-rt = { version = "2.9", optional = true }
 # 工具
 which = { version = "4.4", optional = true }
-tempfile = { version = "3.8", optional = true }
+tempfile = { version = "3.8" }
 
 [features]
-default = []
+default = ["browser"]
 browser = ["fantoccini"]
-video = ["futures", "quick-xml", "clap", "indicatif"]
+video = ["quick-xml", "clap", "indicatif"]
 distributed = ["redis"]
 api = ["axum", "tower", "tower-http", "prometheus", "sysinfo"]
 web = ["actix-web", "actix-rt"]

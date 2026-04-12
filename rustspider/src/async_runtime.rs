@@ -73,6 +73,8 @@ impl std::fmt::Display for Error {
     }
 }
 
+impl std::error::Error for Error {}
+
 /// 优先级队列
 pub struct PriorityQueue {
     heap: Arc<Mutex<std::collections::BinaryHeap<PrioritizedRequest>>>,

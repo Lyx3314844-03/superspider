@@ -14,6 +14,8 @@ use std::time::Duration;
 #[serde(rename_all = "lowercase")]
 pub enum CheckStatus {
     Passed,
+    Warning,
+    Skipped,
     Failed,
 }
 
@@ -38,6 +40,22 @@ impl PreflightCheck {
         Self {
             name: name.into(),
             status: CheckStatus::Failed,
+            details: details.into(),
+        }
+    }
+
+    fn warning(name: impl Into<String>, details: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            status: CheckStatus::Warning,
+            details: details.into(),
+        }
+    }
+
+    fn skipped(name: impl Into<String>, details: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            status: CheckStatus::Skipped,
             details: details.into(),
         }
     }
@@ -160,7 +178,7 @@ impl PreflightReport {
     pub fn is_success(&self) -> bool {
         self.checks
             .iter()
-            .all(|check| check.status == CheckStatus::Passed)
+            .all(|check| check.status != CheckStatus::Failed)
     }
 
     pub fn failures(&self) -> Vec<&PreflightCheck> {
@@ -193,23 +211,62 @@ impl PreflightReport {
         }
     }
 
-    pub fn to_json(&self) -> serde_json::Result<String> {
+    pub fn summary_text(&self) -> String {
+        let mut passed = 0usize;
+        let mut warning = 0usize;
+        let mut failed = 0usize;
+        let mut skipped = 0usize;
+        for check in &self.checks {
+            match check.status {
+                CheckStatus::Passed => passed += 1,
+                CheckStatus::Warning => warning += 1,
+                CheckStatus::Skipped => skipped += 1,
+                CheckStatus::Failed => failed += 1,
+            }
+        }
+        format!("{passed} passed, {warning} warning, {failed} failed, {skipped} skipped")
+    }
+
+    pub fn to_json_with_command(&self, command: &'static str) -> serde_json::Result<String> {
         #[derive(Serialize)]
         struct SerializableReport<'a> {
             command: &'static str,
+            framework: &'static str,
             runtime: &'static str,
+            version: &'static str,
             exit_code: i32,
             summary: &'a str,
+            summary_text: &'a str,
             checks: &'a [PreflightCheck],
+            shared_contracts: [&'static str; 5],
         }
 
+        let summary_text = self.summary_text();
         serde_json::to_string_pretty(&SerializableReport {
-            command: "preflight",
+            command,
+            framework: "rustspider",
             runtime: "rust",
+            version: env!("CARGO_PKG_VERSION"),
             exit_code: if self.is_success() { 0 } else { 1 },
             summary: self.summary(),
+            summary_text: &summary_text,
             checks: &self.checks,
+            shared_contracts: [
+                "shared-cli",
+                "shared-config",
+                "scrapy-project",
+                "scrapy-plugins-manifest",
+                "web-control-plane",
+            ],
         })
+    }
+
+    pub fn to_json(&self) -> serde_json::Result<String> {
+        self.to_json_with_command("preflight")
+    }
+
+    pub fn to_doctor_json(&self) -> serde_json::Result<String> {
+        self.to_json_with_command("doctor")
     }
 }
 
@@ -495,9 +552,37 @@ mod tests {
 
         assert_eq!(value["command"], "preflight");
         assert_eq!(value["summary"], "failed");
+        assert_eq!(
+            value["summary_text"],
+            "1 passed, 0 warning, 1 failed, 0 skipped"
+        );
         assert_eq!(value["exit_code"], 1);
         assert_eq!(value["checks"][0]["status"], "passed");
         assert_eq!(value["checks"][1]["name"], "dependency:ffmpeg");
+    }
+
+    #[test]
+    fn preflight_report_can_serialize_doctor_contract_json() {
+        let report = PreflightReport {
+            checks: vec![
+                PreflightCheck::passed("filesystem:data", "ok"),
+                PreflightCheck::passed("dependency:browser automation runtime", "found chrome"),
+            ],
+        };
+
+        let json = report
+            .to_doctor_json()
+            .expect("doctor report should serialize");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("json should parse");
+
+        assert_eq!(value["command"], "doctor");
+        assert_eq!(value["runtime"], "rust");
+        assert_eq!(value["summary"], "passed");
+        assert_eq!(
+            value["summary_text"],
+            "2 passed, 0 warning, 0 failed, 0 skipped"
+        );
+        assert_eq!(value["exit_code"], 0);
     }
 
     #[test]

@@ -9,6 +9,8 @@
 //! - 多标签页支持
 //! - 自动化检测绕过
 
+use std::time::Duration;
+
 /// 浏览器配置
 #[derive(Debug, Clone)]
 #[cfg(feature = "browser")]
@@ -62,7 +64,7 @@ impl BrowserManager {
 
         // Chrome 选项
         let mut chrome_opts = serde_json::map::Map::new();
-        
+
         // 无头模式
         if config.headless {
             let mut args = vec!["--headless".to_string()];
@@ -72,9 +74,10 @@ impl BrowserManager {
             if let Some(proxy) = &config.proxy {
                 args.push(format!("--proxy-server={}", proxy));
             }
-            chrome_opts.insert("args".to_string(), Value::Array(
-                args.into_iter().map(Value::String).collect()
-            ));
+            chrome_opts.insert(
+                "args".to_string(),
+                Value::Array(args.into_iter().map(Value::String).collect()),
+            );
         } else {
             // 有头模式也设置用户代理
             let mut args = vec![];
@@ -85,17 +88,25 @@ impl BrowserManager {
                 args.push(format!("--proxy-server={}", proxy));
             }
             if !args.is_empty() {
-                chrome_opts.insert("args".to_string(), Value::Array(
-                    args.into_iter().map(Value::String).collect()
-                ));
+                chrome_opts.insert(
+                    "args".to_string(),
+                    Value::Array(args.into_iter().map(Value::String).collect()),
+                );
             }
         }
 
         // 添加扩展
         if !config.extensions.is_empty() {
-            chrome_opts.insert("extensions".to_string(), Value::Array(
-                config.extensions.iter().map(|s| Value::String(s.clone())).collect()
-            ));
+            chrome_opts.insert(
+                "extensions".to_string(),
+                Value::Array(
+                    config
+                        .extensions
+                        .iter()
+                        .map(|s| Value::String(s.clone()))
+                        .collect(),
+                ),
+            );
         }
 
         caps.insert("goog:chromeOptions".to_string(), Value::Object(chrome_opts));
@@ -137,8 +148,10 @@ impl BrowserManager {
 
     /// 创建有头浏览器（用于调试）
     pub async fn with_head() -> Result<Self, BrowserError> {
-        let mut config = BrowserConfig::default();
-        config.headless = false;
+        let config = BrowserConfig {
+            headless: false,
+            ..BrowserConfig::default()
+        };
         Self::new(config).await
     }
 
@@ -178,8 +191,9 @@ impl BrowserManager {
     /// 点击元素
     pub async fn click(&self, selector: &str) -> Result<(), BrowserError> {
         use fantoccini::Locator;
-        
-        let element = self.webdriver
+
+        let element = self
+            .webdriver
             .wait()
             .for_element(Locator::Css(selector))
             .await
@@ -194,8 +208,9 @@ impl BrowserManager {
     /// 输入文本
     pub async fn fill(&self, selector: &str, text: &str) -> Result<(), BrowserError> {
         use fantoccini::Locator;
-        
-        let element = self.webdriver
+
+        let element = self
+            .webdriver
             .wait()
             .for_element(Locator::Css(selector))
             .await
@@ -210,8 +225,9 @@ impl BrowserManager {
     /// 清空输入框并输入
     pub async fn fill_clear(&self, selector: &str, text: &str) -> Result<(), BrowserError> {
         use fantoccini::Locator;
-        
-        let element = self.webdriver
+
+        let element = self
+            .webdriver
             .wait()
             .for_element(Locator::Css(selector))
             .await
@@ -222,14 +238,18 @@ impl BrowserManager {
         // 删除
         element.send_keys("\u{E017}").await.ok();
         // 输入新文本
-        element.send_keys(text).await.map_err(|e| BrowserError::InteractionFailed(e.to_string()))
+        element
+            .send_keys(text)
+            .await
+            .map_err(|e| BrowserError::InteractionFailed(e.to_string()))
     }
 
     /// 选择下拉选项（按文本）
     pub async fn select_option(&self, selector: &str, value: &str) -> Result<(), BrowserError> {
         use fantoccini::Locator;
-        
-        let _element = self.webdriver
+
+        let _element = self
+            .webdriver
             .wait()
             .for_element(Locator::Css(selector))
             .await
@@ -248,10 +268,15 @@ impl BrowserManager {
     }
 
     /// 选择下拉选项（按值）
-    pub async fn select_option_by_value(&self, selector: &str, value: &str) -> Result<(), BrowserError> {
+    pub async fn select_option_by_value(
+        &self,
+        selector: &str,
+        value: &str,
+    ) -> Result<(), BrowserError> {
         use fantoccini::Locator;
-        
-        let _element = self.webdriver
+
+        let _element = self
+            .webdriver
             .wait()
             .for_element(Locator::Css(selector))
             .await
@@ -272,7 +297,8 @@ impl BrowserManager {
     /// 悬停元素
     pub async fn hover(&self, selector: &str) -> Result<(), BrowserError> {
         // fantoccini 0.21 不支持 hover，使用 JavaScript 替代
-        let script = format!(r#"
+        let script = format!(
+            r#"
             var element = document.querySelector('{}');
             if (element) {{
                 var event = new MouseEvent('mouseover', {{
@@ -282,8 +308,10 @@ impl BrowserManager {
                 }});
                 element.dispatchEvent(event);
             }}
-        "#, selector);
-        
+        "#,
+            selector
+        );
+
         self.webdriver
             .execute(&script, vec![])
             .await
@@ -303,10 +331,10 @@ impl BrowserManager {
     pub async fn screenshot_to_file(&self, path: &str) -> Result<(), BrowserError> {
         use std::fs::File;
         use std::io::Write;
-        
+
         let data = self.screenshot().await?;
-        let mut file = File::create(path)
-            .map_err(|e| BrowserError::FileOperationFailed(e.to_string()))?;
+        let mut file =
+            File::create(path).map_err(|e| BrowserError::FileOperationFailed(e.to_string()))?;
         file.write_all(&data)
             .map_err(|e| BrowserError::FileOperationFailed(e.to_string()))?;
         Ok(())
@@ -315,8 +343,9 @@ impl BrowserManager {
     /// 元素截图
     pub async fn screenshot_element(&self, selector: &str) -> Result<Vec<u8>, BrowserError> {
         use fantoccini::Locator;
-        
-        let element = self.webdriver
+
+        let element = self
+            .webdriver
             .wait()
             .for_element(Locator::Css(selector))
             .await
@@ -334,6 +363,17 @@ impl BrowserManager {
             .execute(script, vec![])
             .await
             .map(|_| ())
+            .map_err(|e| BrowserError::ScriptExecutionFailed(e.to_string()))
+    }
+
+    /// 执行 JavaScript 并返回结果
+    pub async fn execute_script_value(
+        &self,
+        script: &str,
+    ) -> Result<serde_json::Value, BrowserError> {
+        self.webdriver
+            .execute(script, vec![])
+            .await
             .map_err(|e| BrowserError::ScriptExecutionFailed(e.to_string()))
     }
 
@@ -369,9 +409,13 @@ impl BrowserManager {
     }
 
     /// 等待元素出现
-    pub async fn wait_for_element(&self, selector: &str, timeout: Option<Duration>) -> Result<(), BrowserError> {
+    pub async fn wait_for_element(
+        &self,
+        selector: &str,
+        timeout: Option<Duration>,
+    ) -> Result<(), BrowserError> {
         let t = timeout.unwrap_or(self.config.timeout);
-        
+
         // 使用轮询方式等待
         let start = std::time::Instant::now();
         while start.elapsed() < t {
@@ -380,14 +424,18 @@ impl BrowserManager {
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        
+
         Err(BrowserError::Timeout(format!("等待元素超时：{}", selector)))
     }
 
     /// 等待元素消失
-    pub async fn wait_for_element_gone(&self, selector: &str, timeout: Option<Duration>) -> Result<(), BrowserError> {
+    pub async fn wait_for_element_gone(
+        &self,
+        selector: &str,
+        timeout: Option<Duration>,
+    ) -> Result<(), BrowserError> {
         let t = timeout.unwrap_or(self.config.timeout);
-        
+
         let start = std::time::Instant::now();
         while start.elapsed() < t {
             if !self.element_exists(selector).await? {
@@ -395,15 +443,22 @@ impl BrowserManager {
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        
-        Err(BrowserError::Timeout(format!("等待元素消失超时：{}", selector)))
+
+        Err(BrowserError::Timeout(format!(
+            "等待元素消失超时：{}",
+            selector
+        )))
     }
 
     /// 等待文本出现
-    pub async fn wait_for_text(&self, text: &str, timeout: Option<Duration>) -> Result<(), BrowserError> {
+    pub async fn wait_for_text(
+        &self,
+        text: &str,
+        timeout: Option<Duration>,
+    ) -> Result<(), BrowserError> {
         let t = timeout.unwrap_or(self.config.timeout);
         let text_to_find = text.to_string();
-        
+
         let start = std::time::Instant::now();
         while start.elapsed() < t {
             if let Ok(html) = self.get_html().await {
@@ -413,20 +468,21 @@ impl BrowserManager {
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        
+
         Err(BrowserError::Timeout(format!("等待文本超时：{}", text)))
     }
 
     /// 等待页面加载完成
     pub async fn wait_for_page_load(&self, timeout: Option<Duration>) -> Result<(), BrowserError> {
         let t = timeout.unwrap_or(self.config.timeout);
-        
+
         let start = std::time::Instant::now();
         while start.elapsed() < t {
-            let result = self.webdriver
+            let result = self
+                .webdriver
                 .execute("return document.readyState", vec![])
                 .await;
-            
+
             if let Ok(v) = result {
                 if let Ok(state) = serde_json::from_value::<String>(v) {
                     if state == "complete" {
@@ -436,20 +492,23 @@ impl BrowserManager {
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        
+
         Err(BrowserError::Timeout("等待页面加载超时".to_string()))
     }
 
     /// 等待网络空闲
-    pub async fn wait_for_network_idle(&self, timeout: Option<Duration>) -> Result<(), BrowserError> {
+    pub async fn wait_for_network_idle(
+        &self,
+        timeout: Option<Duration>,
+    ) -> Result<(), BrowserError> {
         let t = timeout.unwrap_or(self.config.timeout);
-        
+
         let start = std::time::Instant::now();
         while start.elapsed() < t {
             let result = self.webdriver
                 .execute("return window.performance.getEntriesByType('resource').filter(r => !r.responseEnd).length", vec![])
                 .await;
-            
+
             if let Ok(v) = result {
                 if let Ok(count) = serde_json::from_value::<u64>(v) {
                     if count == 0 {
@@ -459,15 +518,34 @@ impl BrowserManager {
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        
+
         Err(BrowserError::Timeout("等待网络空闲超时".to_string()))
+    }
+
+    /// 获取资源请求摘要
+    pub async fn get_network_requests(&self) -> Result<Vec<serde_json::Value>, BrowserError> {
+        let value = self
+            .execute_script_value(concat!(
+                "return window.performance.getEntriesByType('resource').map(function(r) {",
+                "return {",
+                "name: r.name,",
+                "type: r.initiatorType,",
+                "duration: r.duration,",
+                "startTime: r.startTime,",
+                "transferSize: r.transferSize || 0",
+                "};",
+                "});"
+            ))
+            .await?;
+        Ok(value.as_array().cloned().unwrap_or_default())
     }
 
     /// 获取元素文本
     pub async fn get_element_text(&self, selector: &str) -> Result<String, BrowserError> {
         use fantoccini::Locator;
-        
-        let element = self.webdriver
+
+        let element = self
+            .webdriver
             .wait()
             .for_element(Locator::Css(selector))
             .await
@@ -480,10 +558,15 @@ impl BrowserManager {
     }
 
     /// 获取元素属性
-    pub async fn get_element_attribute(&self, selector: &str, attr: &str) -> Result<String, BrowserError> {
+    pub async fn get_element_attribute(
+        &self,
+        selector: &str,
+        attr: &str,
+    ) -> Result<String, BrowserError> {
         use fantoccini::Locator;
-        
-        let element = self.webdriver
+
+        let element = self
+            .webdriver
             .wait()
             .for_element(Locator::Css(selector))
             .await
@@ -499,8 +582,9 @@ impl BrowserManager {
     /// 获取元素数量
     pub async fn count_elements(&self, selector: &str) -> Result<usize, BrowserError> {
         use fantoccini::Locator;
-        
-        let elements = self.webdriver
+
+        let elements = self
+            .webdriver
             .find_all(Locator::Css(selector))
             .await
             .map_err(|e| BrowserError::ElementNotFound(selector.to_string(), e.to_string()))?;
@@ -511,24 +595,28 @@ impl BrowserManager {
     /// 检查元素是否存在
     pub async fn element_exists(&self, selector: &str) -> Result<bool, BrowserError> {
         use fantoccini::Locator;
-        
+
         match self.webdriver.find(Locator::Css(selector)).await {
             Ok(_) => Ok(true),
             Err(fantoccini::error::CmdError::Standard(e)) => {
                 // 检查错误类型
-                let is_not_found = format!("{:?}", e.error).contains("NoSuchElement") 
+                let is_not_found = format!("{:?}", e.error).contains("NoSuchElement")
                     || e.message.contains("no such element");
                 Ok(!is_not_found)
             }
-            Err(e) => Err(BrowserError::ElementNotFound(selector.to_string(), e.to_string())),
+            Err(e) => Err(BrowserError::ElementNotFound(
+                selector.to_string(),
+                e.to_string(),
+            )),
         }
     }
 
     /// 获取所有匹配元素的文本
     pub async fn get_all_texts(&self, selector: &str) -> Result<Vec<String>, BrowserError> {
         use fantoccini::Locator;
-        
-        let elements = self.webdriver
+
+        let elements = self
+            .webdriver
             .find_all(Locator::Css(selector))
             .await
             .map_err(|e| BrowserError::ElementNotFound(selector.to_string(), e.to_string()))?;
@@ -546,9 +634,14 @@ impl BrowserManager {
     }
 
     /// 设置 Cookie
-    pub async fn set_cookie(&self, name: &str, value: &str, _domain: Option<&str>) -> Result<(), BrowserError> {
+    pub async fn set_cookie(
+        &self,
+        name: &str,
+        value: &str,
+        _domain: Option<&str>,
+    ) -> Result<(), BrowserError> {
         use fantoccini::cookies::Cookie;
-        
+
         let cookie = Cookie::new(name.to_string(), value.to_string());
 
         self.webdriver
@@ -559,7 +652,8 @@ impl BrowserManager {
 
     /// 获取 Cookie
     pub async fn get_cookie(&self, name: &str) -> Result<Option<String>, BrowserError> {
-        let cookies = self.webdriver
+        let cookies = self
+            .webdriver
             .get_all_cookies()
             .await
             .map_err(|e| BrowserError::CookieOperationFailed(e.to_string()))?;
@@ -571,7 +665,9 @@ impl BrowserManager {
     }
 
     /// 获取所有 Cookie
-    pub async fn get_all_cookies(&self) -> Result<Vec<fantoccini::cookies::Cookie<'_>>, BrowserError> {
+    pub async fn get_all_cookies(
+        &self,
+    ) -> Result<Vec<fantoccini::cookies::Cookie<'_>>, BrowserError> {
         self.webdriver
             .get_all_cookies()
             .await
@@ -596,7 +692,8 @@ impl BrowserManager {
 
     /// 获取窗口大小
     pub async fn get_window_size(&self) -> Result<(u64, u64), BrowserError> {
-        let rect: (u64, u64, u64, u64) = self.webdriver
+        let rect: (u64, u64, u64, u64) = self
+            .webdriver
             .get_window_rect()
             .await
             .map_err(|e| BrowserError::WindowOperationFailed(e.to_string()))?;
@@ -673,7 +770,7 @@ impl BrowserManager {
     pub async fn switch_to_window(&self, handle: &str) -> Result<(), BrowserError> {
         // 使用字符串匹配来切换窗口
         let handles = self.get_window_handles().await?;
-        
+
         for h in handles {
             if h == handle {
                 // 使用 JavaScript 切换到指定窗口（通过名称或句柄）
@@ -682,8 +779,11 @@ impl BrowserManager {
                 return Ok(());
             }
         }
-        
-        Err(BrowserError::WindowOperationFailed(format!("窗口句柄不存在：{}", handle)))
+
+        Err(BrowserError::WindowOperationFailed(format!(
+            "窗口句柄不存在：{}",
+            handle
+        )))
     }
 
     /// 创建新标签页
@@ -886,7 +986,10 @@ pub struct FormHandler<'a> {
 impl<'a> FormHandler<'a> {
     /// 创建表单处理器
     pub fn new(browser: &'a BrowserManager, form_selector: &'a str) -> Self {
-        FormHandler { browser, form_selector }
+        FormHandler {
+            browser,
+            form_selector,
+        }
     }
 
     /// 填写字段
@@ -897,8 +1000,10 @@ impl<'a> FormHandler<'a> {
 
     /// 提交表单
     pub async fn submit(&self) -> Result<(), BrowserError> {
-        let selector = format!("{} button[type='submit'], {} input[type='submit']", 
-                               self.form_selector, self.form_selector);
+        let selector = format!(
+            "{} button[type='submit'], {} input[type='submit']",
+            self.form_selector, self.form_selector
+        );
         self.browser.click(&selector).await
     }
 }

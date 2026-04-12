@@ -1,12 +1,13 @@
 //! 分布式模块（完整版）
 //! 支持 Redis 分布式队列、布隆过滤器、任务分发
 
-use redis::{Client, Connection, Commands, AsyncCommands};
-use std::error::Error;
-use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Serialize, Deserialize};
+use md5::{Digest, Md5};
+use redis::{Client, Commands};
+use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
+use std::error::Error;
 use std::hash::{Hash, Hasher};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 爬取任务
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,7 +28,7 @@ impl CrawlTask {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs_f64();
-        
+
         Self {
             url,
             priority: 0,
@@ -85,7 +86,7 @@ impl RedisDistributedQueue {
     /// 添加任务
     pub fn push(&self, task: &CrawlTask) -> Result<bool, Box<dyn Error>> {
         let mut conn = self.client.get_connection()?;
-        
+
         // 检查队列大小
         let size: usize = conn.zcard(self.priority_queue_key())?;
         if size >= self.max_size {
@@ -93,34 +94,46 @@ impl RedisDistributedQueue {
         }
 
         // 检查是否已存在
-        if self.exists(&task.url)? {
+        if self.exists(&task.url)?
+            || conn.sismember::<_, _, bool>(self.pending_key(), &task.url)?
+            || conn.hexists::<_, _, bool>(self.processing_key(), &task.url)?
+        {
             return Ok(false);
         }
 
         // 添加到优先级队列
         let task_json = task.to_json()?;
         let _: () = conn.zadd(self.priority_queue_key(), &task_json, task.priority)?;
-
-        // 添加到 URL 集合（去重）
-        let _: () = conn.sadd(self.url_set_key(), self.url_key(&task.url))?;
+        let _: () = conn.sadd(self.pending_key(), &task.url)?;
 
         Ok(true)
     }
 
     /// 获取任务
     pub fn pop(&self) -> Result<Option<CrawlTask>, Box<dyn Error>> {
+        self.lease("scheduler", 30)
+    }
+
+    pub fn lease(
+        &self,
+        worker_id: &str,
+        lease_ttl_secs: u64,
+    ) -> Result<Option<CrawlTask>, Box<dyn Error>> {
         let mut conn = self.client.get_connection()?;
 
-        // 从优先级队列获取
-        let results: Vec<(String, f64)> = conn.zpopmin(self.priority_queue_key(), 1)?;
+        let results: Vec<(String, f64)> = conn.zpopmax(self.priority_queue_key(), 1)?;
 
         if let Some((task_json, _score)) = results.into_iter().next() {
             let task = CrawlTask::from_json(&task_json)?;
+            let _: () = conn.srem(self.pending_key(), &task.url)?;
 
-            // 添加到处理中集合
             let processing_data = serde_json::json!({
                 "url": task.url,
                 "started_at": current_timestamp(),
+                "worker_id": worker_id,
+                "expires_at": current_timestamp() + lease_ttl_secs as f64,
+                "retry_count": task.retry_count,
+                "task": task,
             });
             let _: () = conn.hset(
                 self.processing_key(),
@@ -136,20 +149,75 @@ impl RedisDistributedQueue {
 
     /// 确认任务完成
     pub fn ack(&self, task: &CrawlTask, success: bool) -> Result<(), Box<dyn Error>> {
+        self.ack_url(&task.url, success, 3)
+    }
+
+    pub fn ack_url(
+        &self,
+        url: &str,
+        success: bool,
+        max_retries: i32,
+    ) -> Result<(), Box<dyn Error>> {
         let mut conn = self.client.get_connection()?;
 
-        // 从处理中集合移除
-        let _: () = conn.hdel(self.processing_key(), self.url_key(&task.url))?;
+        let payload: Option<String> = conn.hget(self.processing_key(), self.url_key(url))?;
+        let _: () = conn.hdel(self.processing_key(), self.url_key(url))?;
+        let Some(payload) = payload else {
+            return Ok(());
+        };
+        let lease: serde_json::Value = serde_json::from_str(&payload)?;
+        let mut task: CrawlTask = serde_json::from_value(lease["task"].clone())?;
 
-        if !success && task.retry_count < 3 {
-            // 重新入队
-            let mut retry_task = task.clone();
-            retry_task.retry_count += 1;
-            retry_task.priority -= 10;
-            self.push(&retry_task)?;
+        if success {
+            let _: () = conn.sadd(self.url_set_key(), self.url_key(url))?;
+            return Ok(());
         }
 
+        task.retry_count += 1;
+        if task.retry_count > max_retries {
+            let _: () = conn.lpush(self.failed_queue_key(), task.to_json()?)?;
+            let _: () = conn.sadd(self.url_set_key(), self.url_key(url))?;
+        } else {
+            let _: () = conn.zadd(self.priority_queue_key(), task.to_json()?, task.priority)?;
+            let _: () = conn.sadd(self.pending_key(), url)?;
+        }
         Ok(())
+    }
+
+    pub fn heartbeat(&self, url: &str, lease_ttl_secs: u64) -> Result<bool, Box<dyn Error>> {
+        let mut conn = self.client.get_connection()?;
+        let key = self.url_key(url);
+        let payload: Option<String> = conn.hget(self.processing_key(), &key)?;
+        let Some(payload) = payload else {
+            return Ok(false);
+        };
+        let mut lease: serde_json::Value = serde_json::from_str(&payload)?;
+        lease["expires_at"] = serde_json::Value::from(current_timestamp() + lease_ttl_secs as f64);
+        let _: () = conn.hset(self.processing_key(), key, lease.to_string())?;
+        Ok(true)
+    }
+
+    pub fn reap_expired_leases(
+        &self,
+        now_secs: f64,
+        max_retries: i32,
+    ) -> Result<usize, Box<dyn Error>> {
+        let mut conn = self.client.get_connection()?;
+        let processing: std::collections::HashMap<String, String> =
+            conn.hgetall(self.processing_key())?;
+        let mut reaped = 0usize;
+        for (url_key, payload) in processing {
+            let lease: serde_json::Value = serde_json::from_str(&payload)?;
+            let expires_at = lease["expires_at"].as_f64().unwrap_or(0.0);
+            if expires_at > now_secs {
+                continue;
+            }
+            let task_url = lease["url"].as_str().unwrap_or_default().to_string();
+            self.ack_url(&task_url, false, max_retries)?;
+            reaped += 1;
+        }
+
+        Ok(reaped)
     }
 
     /// 检查 URL 是否存在
@@ -203,15 +271,19 @@ impl RedisDistributedQueue {
     }
 
     fn priority_queue_key(&self) -> String {
-        format!("queue:{}:priority", self.name)
+        "spider:shared:queue".to_string()
     }
 
     fn url_set_key(&self) -> String {
-        format!("queue:{}:urls", self.name)
+        "spider:shared:visited".to_string()
     }
 
     fn processing_key(&self) -> String {
         format!("queue:{}:processing", self.name)
+    }
+
+    fn pending_key(&self) -> String {
+        format!("queue:{}:pending", self.name)
     }
 
     fn failed_queue_key(&self) -> String {
@@ -219,7 +291,9 @@ impl RedisDistributedQueue {
     }
 
     fn url_key(&self, url: &str) -> String {
-        format!("url:{}", md5::compute(url.as_bytes()))
+        let mut hasher = Md5::new();
+        hasher.update(url.as_bytes());
+        format!("url:{:x}", hasher.finalize())
     }
 }
 
@@ -242,8 +316,9 @@ impl RedisBloomFilter {
         let client = Client::open(redis_url)?;
 
         // 计算最优参数
-        let size = ((-expected_items as f64 * error_rate.ln()) / (2.0_f64.ln().powi(2))).ceil() as usize;
-        let size = ((size + 7) / 8) * 8; // 对齐到字节
+        let size = (((-(expected_items as f64)) * error_rate.ln()) / (2.0_f64.ln().powi(2))).ceil()
+            as usize;
+        let size = size.div_ceil(8) * 8; // 对齐到字节
         let hash_count = ((size as f64 / expected_items as f64) * 2.0_f64.ln()).ceil() as usize;
 
         Ok(Self {
@@ -262,7 +337,7 @@ impl RedisBloomFilter {
 
         for seed in 0..self.hash_count {
             let pos = self.hash(item_bytes, seed) % self.size;
-            let existed: bool = conn.setbit(self.key(), pos, 1)?;
+            let existed: bool = conn.setbit(self.key(), pos, true)?;
             if !existed {
                 is_new = false;
             }
@@ -378,13 +453,16 @@ impl RedisDistributedScheduler {
 
     fn update_stats(&self, success: bool) -> Result<(), Box<dyn Error>> {
         let mut conn = self.client.get_connection()?;
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
         if success {
-            let _: () = conn.hincrby(format!("stats:{}:success", self.spider_name), &today, 1)?;
+            let _: () = conn.hincr("spider:shared:stats", "success", 1)?;
+            let _: () = conn.hincr("spider:shared:stats", "rust:success", 1)?;
         } else {
-            let _: () = conn.hincrby(format!("stats:{}:failed", self.spider_name), &today, 1)?;
+            let _: () = conn.hincr("spider:shared:stats", "failed", 1)?;
+            let _: () = conn.hincr("spider:shared:stats", "rust:failed", 1)?;
         }
+        let _: () = conn.hincr("spider:shared:stats", "processed", 1)?;
+        let _: () = conn.hincr("spider:shared:stats", "rust:processed", 1)?;
 
         Ok(())
     }
@@ -395,8 +473,12 @@ impl RedisDistributedScheduler {
         let mut conn = self.client.get_connection()?;
 
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let success: i64 = conn.hget(format!("stats:{}:success", self.spider_name), &today).unwrap_or(0);
-        let failed: i64 = conn.hget(format!("stats:{}:failed", self.spider_name), &today).unwrap_or(0);
+        let success: i64 = conn
+            .hget(format!("stats:{}:success", self.spider_name), &today)
+            .unwrap_or(0);
+        let failed: i64 = conn
+            .hget(format!("stats:{}:failed", self.spider_name), &today)
+            .unwrap_or(0);
 
         Ok(serde_json::json!({
             "queue": queue_stats,
@@ -434,7 +516,12 @@ impl RedisWorker {
     }
 
     /// 启动工作节点
-    pub fn start<F>(&mut self, mut callback: F, max_tasks: usize, timeout_secs: u64) -> Result<(), Box<dyn Error>>
+    pub fn start<F>(
+        &mut self,
+        mut callback: F,
+        max_tasks: usize,
+        timeout_secs: u64,
+    ) -> Result<(), Box<dyn Error>>
     where
         F: FnMut(&CrawlTask) -> Result<(), Box<dyn Error>>,
     {
@@ -477,7 +564,9 @@ impl RedisWorker {
                     std::thread::sleep(std::time::Duration::from_secs(1));
 
                     // 检查超时
-                    if timeout_secs > 0 && (current_timestamp() - last_task_time) > timeout_secs as f64 {
+                    if timeout_secs > 0
+                        && (current_timestamp() - last_task_time) > timeout_secs as f64
+                    {
                         println!("队列超时，退出");
                         break;
                     }
@@ -523,8 +612,6 @@ fn current_timestamp() -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_bloom_filter() {
         // 注意：需要 Redis 服务

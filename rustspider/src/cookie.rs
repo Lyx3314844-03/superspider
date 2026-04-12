@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 /// Cookie 对象
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Cookie {
     pub name: String,
     pub value: String,
@@ -108,10 +108,12 @@ impl CookieJar {
     fn load(&mut self) {
         if let Some(file) = &self.persist_file {
             if Path::new(file).exists() {
-                // 简化实现：从 JSON 加载
                 if let Ok(content) = fs::read_to_string(file) {
-                    // TODO: 解析 JSON
-                    let _ = content;
+                    if let Ok(cookies) =
+                        serde_json::from_str::<HashMap<String, HashMap<String, Cookie>>>(&content)
+                    {
+                        self.cookies = cookies;
+                    }
                 }
             }
         }
@@ -119,8 +121,12 @@ impl CookieJar {
 
     pub fn save(&self) {
         if let Some(file) = &self.persist_file {
-            // TODO: 保存为 JSON
-            let _ = file;
+            if let Some(parent) = Path::new(file).parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if let Ok(content) = serde_json::to_string_pretty(&self.cookies) {
+                let _ = fs::write(file, content);
+            }
         }
     }
 }
@@ -142,6 +148,7 @@ fn extract_domain(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_cookie_jar() {
@@ -149,5 +156,24 @@ mod tests {
         jar.set(Cookie::new("session", "abc123", "example.com"));
 
         assert_eq!(jar.count(), 1);
+    }
+
+    #[test]
+    fn test_cookie_jar_persistence_round_trip() {
+        let temp_dir = tempdir().unwrap();
+        let path = temp_dir.path().join("cookies.json");
+        let path_str = path.to_string_lossy().to_string();
+
+        let mut jar = CookieJar::with_persistence(&path_str);
+        let mut cookie = Cookie::new("session", "abc123", "example.com");
+        cookie.secure = true;
+        jar.set(cookie.clone());
+        jar.save();
+
+        let loaded = CookieJar::with_persistence(&path_str);
+        let restored = loaded
+            .get("session", "example.com")
+            .expect("cookie should load");
+        assert_eq!(restored, &cookie);
     }
 }

@@ -21,7 +21,7 @@ pub enum Commands {
     /// 下载视频
     Download {
         /// 视频 URL
-        url: String,
+        url: Option<String>,
 
         /// 输出目录
         #[arg(short, long, default_value = "downloads")]
@@ -34,12 +34,36 @@ pub enum Commands {
         /// 并发数
         #[arg(short, long, default_value = "10")]
         workers: usize,
+
+        /// 浏览器抓取的 HTML artifact
+        #[arg(long)]
+        html_file: Option<String>,
+
+        /// 浏览器抓取的 network artifact
+        #[arg(long)]
+        network_file: Option<String>,
+
+        /// 浏览器抓取的 HAR artifact
+        #[arg(long)]
+        har_file: Option<String>,
     },
 
     /// 解析视频 URL
     Parse {
         /// 视频 URL
-        url: String,
+        url: Option<String>,
+
+        /// 浏览器抓取的 HTML artifact
+        #[arg(long)]
+        html_file: Option<String>,
+
+        /// 浏览器抓取的 network artifact
+        #[arg(long)]
+        network_file: Option<String>,
+
+        /// 浏览器抓取的 HAR artifact
+        #[arg(long)]
+        har_file: Option<String>,
     },
 
     /// 转换视频格式
@@ -86,12 +110,34 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             output_dir,
             output_name,
             workers,
+            html_file,
+            network_file,
+            har_file,
         } => {
-            cmd_download(&url, &output_dir, output_name.as_deref(), workers).await?;
+            cmd_download(
+                url.as_deref(),
+                &output_dir,
+                output_name.as_deref(),
+                workers,
+                html_file.as_deref(),
+                network_file.as_deref(),
+                har_file.as_deref(),
+            )
+            .await?;
         }
 
-        Commands::Parse { url } => {
-            cmd_parse(&url)?;
+        Commands::Parse {
+            url,
+            html_file,
+            network_file,
+            har_file,
+        } => {
+            cmd_parse(
+                url.as_deref(),
+                html_file.as_deref(),
+                network_file.as_deref(),
+                har_file.as_deref(),
+            )?;
         }
 
         Commands::Convert {
@@ -119,18 +165,35 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
 }
 
 async fn cmd_download(
-    url: &str,
+    url: Option<&str>,
     output_dir: &str,
     output_name: Option<&str>,
     workers: usize,
+    html_file: Option<&str>,
+    network_file: Option<&str>,
+    har_file: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
     use crate::video::{hls_downloader::*, video_parser::*};
 
-    println!("解析视频：{}", url);
-
-    // 解析视频
     let parser = UniversalParser::new()?;
-    let video = parser.parse(url).ok_or("无法解析视频")?;
+    let page_url = url.unwrap_or("https://example.com/");
+    let html = load_artifact_text(html_file)?;
+    let network = load_artifact_text(network_file)?;
+    let har = load_artifact_text(har_file)?;
+    let artifact_texts: Vec<String> = [network, har]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect();
+
+    println!("解析视频：{}", page_url);
+    let video = if !html.is_empty() || !artifact_texts.is_empty() {
+        parser
+            .parse_artifacts(page_url, if html.is_empty() { None } else { Some(&html) }, &artifact_texts)
+            .ok_or("无法解析 artifact 视频")?
+    } else {
+        let target = url.ok_or("需要提供 URL 或至少一个 artifact 文件")?;
+        parser.parse(target).ok_or("无法解析视频")?
+    };
 
     println!("✓ 解析成功：{}", video.title);
     println!("  平台：{}", video.platform);
@@ -181,11 +244,31 @@ async fn cmd_download(
     Ok(())
 }
 
-fn cmd_parse(url: &str) -> Result<(), Box<dyn Error>> {
+fn cmd_parse(
+    url: Option<&str>,
+    html_file: Option<&str>,
+    network_file: Option<&str>,
+    har_file: Option<&str>,
+) -> Result<(), Box<dyn Error>> {
     use crate::video::video_parser::*;
 
     let parser = UniversalParser::new()?;
-    let video = parser.parse(url).ok_or("无法解析视频")?;
+    let page_url = url.unwrap_or("https://example.com/");
+    let html = load_artifact_text(html_file)?;
+    let network = load_artifact_text(network_file)?;
+    let har = load_artifact_text(har_file)?;
+    let artifact_texts: Vec<String> = [network, har]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect();
+    let video = if !html.is_empty() || !artifact_texts.is_empty() {
+        parser
+            .parse_artifacts(page_url, if html.is_empty() { None } else { Some(&html) }, &artifact_texts)
+            .ok_or("无法解析 artifact 视频")?
+    } else {
+        let target = url.ok_or("需要提供 URL 或至少一个 artifact 文件")?;
+        parser.parse(target).ok_or("无法解析视频")?
+    };
 
     println!("\n视频信息:");
     println!("  平台：{}", video.platform);
@@ -200,6 +283,13 @@ fn cmd_parse(url: &str) -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn load_artifact_text(path: Option<&str>) -> Result<String, Box<dyn Error>> {
+    match path {
+        Some(value) if !value.trim().is_empty() => Ok(std::fs::read_to_string(value)?),
+        _ => Ok(String::new()),
+    }
 }
 
 fn cmd_convert(input: &str, output: &str, format: &str) -> Result<(), Box<dyn Error>> {

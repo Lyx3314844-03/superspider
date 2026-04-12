@@ -128,7 +128,7 @@ impl PersistentPriorityQueue {
         let conn = self.conn.lock().unwrap();
 
         // 检查队列大小
-        if self.size()? >= self.max_size {
+        if self.count_with_conn(&conn)? >= self.max_size {
             return Ok(false);
         }
 
@@ -160,7 +160,7 @@ impl PersistentPriorityQueue {
         let conn = self.conn.lock().unwrap();
 
         let mut stmt = conn.prepare(&format!(
-            "SELECT url, priority, depth, request_data, retry_count, created_at
+            "SELECT url, priority, depth, retry_count, request_data, created_at
              FROM {}
              ORDER BY priority DESC, created_at ASC
              LIMIT 1",
@@ -197,7 +197,7 @@ impl PersistentPriorityQueue {
         let conn = self.conn.lock().unwrap();
 
         let mut stmt = conn.prepare(&format!(
-            "SELECT url, priority, depth, request_data, retry_count, created_at
+            "SELECT url, priority, depth, retry_count, request_data, created_at
              FROM {}
              ORDER BY priority DESC, created_at ASC
              LIMIT ?1",
@@ -270,7 +270,10 @@ impl PersistentPriorityQueue {
     /// 获取队列大小
     pub fn size(&self) -> Result<usize, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
+        self.count_with_conn(&conn)
+    }
 
+    fn count_with_conn(&self, conn: &Connection) -> Result<usize, rusqlite::Error> {
         let mut stmt = conn.prepare(&format!("SELECT COUNT(*) FROM {}", self.table_name))?;
         let count: i32 = stmt.query_row([], |row| row.get(0))?;
 

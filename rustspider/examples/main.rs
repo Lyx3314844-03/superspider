@@ -9,7 +9,8 @@ fn main() {
         .name("ExampleSpider")
         .concurrency(3)
         .max_requests(10)
-        .build();
+        .build()
+        .expect("failed to build spider");
 
     spider
         .add_url("https://www.example.com")

@@ -5,12 +5,17 @@
 //! 吸收 Crawlee 的爬虫设计理念
 
 use reqwest::Client;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::async_runtime::{DedupQueue, Error, PriorityQueue, Request, RequestQueue};
+use crate::async_runtime::{Error, Request as AsyncRequest};
+use crate::contracts::{
+    AutoscaledFrontier, FileArtifactStore, FrontierConfig, ObservabilityCollector,
+};
 use crate::graph::GraphBuilder;
+use crate::models::Request as CoreRequest;
 
 /// 爬虫配置
 #[derive(Debug, Clone)]
@@ -45,7 +50,9 @@ impl Default for SpiderConfig {
 /// 爬虫引擎
 pub struct SpiderEngine {
     config: SpiderConfig,
-    queue: Arc<DedupQueue>,
+    frontier: Arc<Mutex<AutoscaledFrontier>>,
+    observability: Arc<Mutex<ObservabilityCollector>>,
+    artifact_store: Arc<Mutex<FileArtifactStore>>,
     client: Client,
     running: Arc<Mutex<bool>>,
     requested: Arc<Mutex<usize>>,
@@ -55,33 +62,41 @@ pub struct SpiderEngine {
 
 impl SpiderEngine {
     /// 创建爬虫引擎
-    pub fn new(config: SpiderConfig) -> Self {
-        let queue = Arc::new(DedupQueue::new(Arc::new(PriorityQueue::new())));
-
+    pub fn new(config: SpiderConfig) -> Result<Self, Error> {
         let client = Client::builder()
             .timeout(config.request_timeout)
             .user_agent(&config.user_agent)
             .build()
-            .unwrap_or_default();
+            .map_err(|e| Error::new(&format!("Failed to build HTTP client: {}", e)))?;
 
-        Self {
+        Ok(Self {
             config,
-            queue,
+            frontier: Arc::new(Mutex::new(AutoscaledFrontier::new(
+                FrontierConfig::default(),
+            ))),
+            observability: Arc::new(Mutex::new(ObservabilityCollector::default())),
+            artifact_store: Arc::new(Mutex::new(FileArtifactStore::new(
+                "artifacts/observability",
+            ))),
             client,
             running: Arc::new(Mutex::new(false)),
             requested: Arc::new(Mutex::new(0)),
             handled: Arc::new(Mutex::new(0)),
             failed: Arc::new(Mutex::new(0)),
-        }
+        })
     }
 
     /// 添加请求
-    pub fn add_request(&self, request: Request) -> Result<(), Error> {
-        self.queue.push(request)
+    pub fn add_request(&self, request: AsyncRequest) -> Result<(), Error> {
+        self.frontier
+            .lock()
+            .map_err(|_| Error::new("Frontier lock poisoned"))?
+            .push(core_request_from_async(&request));
+        Ok(())
     }
 
     /// 添加多个请求
-    pub fn add_requests(&self, requests: Vec<Request>) -> Result<(), Error> {
+    pub fn add_requests(&self, requests: Vec<AsyncRequest>) -> Result<(), Error> {
         for request in requests {
             self.add_request(request)?;
         }
@@ -90,7 +105,7 @@ impl SpiderEngine {
 
     /// 添加 URL
     pub fn add_url(&self, url: &str) -> Result<(), Error> {
-        let request = Request::new(url.to_string());
+        let request = AsyncRequest::new(url.to_string());
         self.add_request(request)
     }
 
@@ -103,12 +118,38 @@ impl SpiderEngine {
             }
             *running = true;
         }
+        {
+            let should_load = self
+                .frontier
+                .lock()
+                .map_err(|_| Error::new("Frontier lock poisoned"))?
+                .snapshot()
+                .get("pending")
+                .and_then(|value| value.as_array())
+                .map(|items| items.is_empty())
+                .unwrap_or(true);
+            if should_load {
+                let _ = self
+                    .frontier
+                    .lock()
+                    .map_err(|_| Error::new("Frontier lock poisoned"))?
+                    .load();
+            }
+        }
 
         // 启动工作线程
         let mut handles = Vec::new();
+        let worker_count = self
+            .frontier
+            .lock()
+            .map_err(|_| Error::new("Frontier lock poisoned"))?
+            .recommended_concurrency()
+            .max(1)
+            .min(self.config.concurrency.max(1));
 
-        for i in 0..self.config.concurrency {
-            let queue = Arc::clone(&self.queue);
+        for i in 0..worker_count {
+            let frontier = Arc::clone(&self.frontier);
+            let observability = Arc::clone(&self.observability);
             let client = self.client.clone();
             let running = Arc::clone(&self.running);
             let requested = Arc::clone(&self.requested);
@@ -118,7 +159,29 @@ impl SpiderEngine {
             let delay = self.config.delay;
 
             let handle = tokio::spawn(async move {
-                while let Some(request) = queue.pop() {
+                loop {
+                    let request = {
+                        let mut frontier = frontier.lock().unwrap();
+                        frontier
+                            .lease()
+                            .map(|request| async_request_from_core(&request))
+                    };
+                    let Some(request) = request else {
+                        let pending = {
+                            let frontier = frontier.lock().unwrap();
+                            frontier
+                                .snapshot()
+                                .get("pending")
+                                .and_then(|value| value.as_array())
+                                .map(|items| items.len())
+                                .unwrap_or_default()
+                        };
+                        if pending == 0 {
+                            break;
+                        }
+                        sleep(Duration::from_millis(50)).await;
+                        continue;
+                    };
                     // 检查是否停止
                     {
                         let running = running.lock().unwrap();
@@ -137,6 +200,11 @@ impl SpiderEngine {
 
                     // 执行请求
                     println!("Worker {} processing: {}", i, request.url);
+                    let trace_id = {
+                        let mut collector = observability.lock().unwrap();
+                        collector.start_trace("spider.request")
+                    };
+                    let started_at = std::time::Instant::now();
 
                     // 延迟
                     sleep(delay).await;
@@ -145,11 +213,105 @@ impl SpiderEngine {
                     match client.get(&request.url).send().await {
                         Ok(response) => {
                             println!("Worker {} got response: {}", i, response.status());
+                            let status = response.status().as_u16();
+
+                            // 读取响应 Body 以释放连接
+                            if let Err(e) = response.bytes().await {
+                                eprintln!("Worker {} failed to read response body: {}", i, e);
+                                {
+                                    let mut frontier = frontier.lock().unwrap();
+                                    frontier.ack(
+                                        &core_request_from_async(&request),
+                                        false,
+                                        started_at.elapsed().as_millis() as f64,
+                                        Some(&e.to_string()),
+                                        Some(status),
+                                        3,
+                                    );
+                                }
+                                {
+                                    let mut collector = observability.lock().unwrap();
+                                    collector.record_result(
+                                        Some(&core_request_from_async(&request)),
+                                        started_at.elapsed().as_millis() as f64,
+                                        Some(status),
+                                        Some(&e.to_string()),
+                                        Some(trace_id.clone()),
+                                    );
+                                    collector.end_trace(
+                                        &trace_id,
+                                        std::collections::BTreeMap::from([(
+                                            "status".to_string(),
+                                            serde_json::Value::String("failed".to_string()),
+                                        )]),
+                                    );
+                                }
+                                *failed.lock().unwrap() += 1;
+                                *requested.lock().unwrap() += 1;
+                                continue;
+                            }
+
                             *handled.lock().unwrap() += 1;
+                            {
+                                let mut frontier = frontier.lock().unwrap();
+                                frontier.ack(
+                                    &core_request_from_async(&request),
+                                    true,
+                                    started_at.elapsed().as_millis() as f64,
+                                    None,
+                                    Some(status),
+                                    3,
+                                );
+                            }
+                            {
+                                let mut collector = observability.lock().unwrap();
+                                collector.record_result(
+                                    Some(&core_request_from_async(&request)),
+                                    started_at.elapsed().as_millis() as f64,
+                                    Some(status),
+                                    None,
+                                    Some(trace_id.clone()),
+                                );
+                                collector.end_trace(
+                                    &trace_id,
+                                    std::collections::BTreeMap::from([(
+                                        "status".to_string(),
+                                        serde_json::Value::String("ok".to_string()),
+                                    )]),
+                                );
+                            }
                         }
                         Err(e) => {
                             eprintln!("Worker {} error: {}", i, e);
                             *failed.lock().unwrap() += 1;
+                            {
+                                let mut frontier = frontier.lock().unwrap();
+                                frontier.ack(
+                                    &core_request_from_async(&request),
+                                    false,
+                                    started_at.elapsed().as_millis() as f64,
+                                    Some(&e.to_string()),
+                                    None,
+                                    3,
+                                );
+                            }
+                            {
+                                let mut collector = observability.lock().unwrap();
+                                collector.record_result(
+                                    Some(&core_request_from_async(&request)),
+                                    started_at.elapsed().as_millis() as f64,
+                                    None,
+                                    Some(&e.to_string()),
+                                    Some(trace_id.clone()),
+                                );
+                                collector.end_trace(
+                                    &trace_id,
+                                    std::collections::BTreeMap::from([(
+                                        "status".to_string(),
+                                        serde_json::Value::String("failed".to_string()),
+                                    )]),
+                                );
+                            }
                         }
                     }
 
@@ -168,6 +330,43 @@ impl SpiderEngine {
         {
             let mut running = self.running.lock().unwrap();
             *running = false;
+        }
+        {
+            let frontier_snapshot = self
+                .frontier
+                .lock()
+                .map_err(|_| Error::new("Frontier lock poisoned"))?
+                .snapshot();
+            let observability_summary = self
+                .observability
+                .lock()
+                .map_err(|_| Error::new("Observability lock poisoned"))?
+                .summary();
+            let store = self
+                .artifact_store
+                .lock()
+                .map_err(|_| Error::new("Artifact store lock poisoned"))?;
+            let _ = self
+                .frontier
+                .lock()
+                .map_err(|_| Error::new("Frontier lock poisoned"))?
+                .persist();
+            let _ = store.put_bytes(
+                &format!("{}-frontier", self.config.name),
+                "json",
+                serde_json::to_vec_pretty(&frontier_snapshot)
+                    .unwrap_or_default()
+                    .as_slice(),
+                HashMap::new(),
+            );
+            let _ = store.put_bytes(
+                &format!("{}-observability", self.config.name),
+                "json",
+                serde_json::to_vec_pretty(&observability_summary)
+                    .unwrap_or_default()
+                    .as_slice(),
+                HashMap::new(),
+            );
         }
 
         Ok(())
@@ -188,13 +387,47 @@ impl SpiderEngine {
 
     /// 获取统计信息
     pub fn get_stats(&self) -> SpiderStats {
+        let frontier_snapshot = self
+            .frontier
+            .lock()
+            .ok()
+            .map(|frontier| frontier.snapshot())
+            .unwrap_or(serde_json::Value::Null);
+        let observability_summary = self
+            .observability
+            .lock()
+            .ok()
+            .map(|collector| collector.summary())
+            .unwrap_or(serde_json::Value::Null);
+        let queue_size = frontier_snapshot
+            .get("pending")
+            .and_then(|value| value.as_array())
+            .map(|items| items.len())
+            .unwrap_or_default();
         SpiderStats {
             name: self.config.name.clone(),
             running: self.is_running(),
             requested: *self.requested.lock().unwrap(),
             handled: *self.handled.lock().unwrap(),
             failed: *self.failed.lock().unwrap(),
-            queue_size: self.queue.size(),
+            queue_size,
+            recommended_concurrency: frontier_snapshot
+                .get("recommended_concurrency")
+                .and_then(|value| value.as_u64())
+                .unwrap_or_default() as usize,
+            dead_letters: frontier_snapshot
+                .get("dead_letters")
+                .and_then(|value| value.as_array())
+                .map(|items| items.len())
+                .unwrap_or_default(),
+            observability_events: observability_summary
+                .get("events")
+                .and_then(|value| value.as_u64())
+                .unwrap_or_default() as usize,
+            observability_traces: observability_summary
+                .get("traces")
+                .and_then(|value| value.as_u64())
+                .unwrap_or_default() as usize,
         }
     }
 }
@@ -208,14 +441,18 @@ pub struct SpiderStats {
     pub handled: usize,
     pub failed: usize,
     pub queue_size: usize,
+    pub recommended_concurrency: usize,
+    pub dead_letters: usize,
+    pub observability_events: usize,
+    pub observability_traces: usize,
 }
 
 impl std::fmt::Display for SpiderStats {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "SpiderStats {{ name: {}, running: {}, requested: {}, handled: {}, failed: {}, queue_size: {} }}",
-            self.name, self.running, self.requested, self.handled, self.failed, self.queue_size
+            "SpiderStats {{ name: {}, running: {}, requested: {}, handled: {}, failed: {}, queue_size: {}, recommended_concurrency: {}, dead_letters: {}, observability_events: {}, observability_traces: {} }}",
+            self.name, self.running, self.requested, self.handled, self.failed, self.queue_size, self.recommended_concurrency, self.dead_letters, self.observability_events, self.observability_traces
         )
     }
 }
@@ -288,7 +525,7 @@ impl SpiderBuilder {
     }
 
     /// 构建爬虫引擎
-    pub fn build(self) -> SpiderEngine {
+    pub fn build(self) -> Result<SpiderEngine, Error> {
         SpiderEngine::new(self.config)
     }
 }
@@ -319,14 +556,14 @@ impl SimpleSpider {
         println!("Crawling: {}", url);
 
         // 创建请求
-        let request = Request::new(url.to_string());
+        let request = AsyncRequest::new(url.to_string());
 
         // 发送请求
         let client = Client::builder()
             .timeout(self.config.request_timeout)
             .user_agent(&self.config.user_agent)
             .build()
-            .unwrap_or_default();
+            .map_err(|e| Error::new(&format!("Failed to build HTTP client: {}", e)))?;
 
         match client.get(&request.url).send().await {
             Ok(response) => {
@@ -334,9 +571,15 @@ impl SimpleSpider {
 
                 // 获取 HTML
                 if let Ok(html) = response.text().await {
-                    // 构建图结构
-                    // TODO: 解析 HTML 并添加到图中
+                    self.graph.rebuild_from_html(&html);
+                    let stats = self.graph.stats();
                     println!("Received {} bytes", html.len());
+                    println!(
+                        "Graph extracted nodes={}, links={}, images={}",
+                        stats.get("total_nodes").copied().unwrap_or_default(),
+                        self.graph.get_links().len(),
+                        self.graph.get_images().len(),
+                    );
                 }
             }
             Err(e) => {
@@ -354,6 +597,24 @@ impl SimpleSpider {
     }
 }
 
+fn core_request_from_async(request: &AsyncRequest) -> CoreRequest {
+    let mut req = CoreRequest::new(request.url.clone());
+    req.method = request.method.clone();
+    req.headers = request.headers.clone();
+    req.priority = request.priority;
+    req.meta = request.meta.clone();
+    req
+}
+
+fn async_request_from_core(request: &CoreRequest) -> AsyncRequest {
+    let mut req = AsyncRequest::new(request.url.clone());
+    req.method = request.method.clone();
+    req.headers = request.headers.clone();
+    req.priority = request.priority;
+    req.meta = request.meta.clone();
+    req
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,7 +628,7 @@ mod tests {
             ..Default::default()
         };
 
-        let engine = SpiderEngine::new(config);
+        let engine = SpiderEngine::new(config).expect("Failed to create spider engine");
 
         // 添加请求
         engine.add_url("https://example.com").unwrap();
@@ -380,6 +641,7 @@ mod tests {
         // 获取统计
         let stats = engine.get_stats();
         println!("Stats: {}", stats);
+        assert!(stats.observability_events >= 2);
     }
 
     #[tokio::test]

@@ -1,47 +1,32 @@
-// RustSpider Playwright 使用示例
-use rustspider::playwright::{Browser, BrowserConfig};
+// RustSpider 浏览器自动化示例。
 
+#[cfg(feature = "browser")]
+use rustspider::browser::{BrowserConfig, BrowserManager};
+
+#[cfg(feature = "browser")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("===== RustSpider Playwright 示例 =====");
-    
-    // 创建配置
+    println!("===== RustSpider Browser 示例 =====");
+
     let config = BrowserConfig::default();
-    
-    // 创建浏览器
-    let mut browser = Browser::new(config);
-    
-    // 启动浏览器
-    browser.start().await?;
-    
-    // 导航到页面
+    let browser = BrowserManager::new(config).await?;
+
     browser.navigate("https://www.example.com").await?;
-    
-    // 获取标题
+
     let title = browser.get_title().await?;
     println!("页面标题：{}", title);
-    
-    // 获取内容
-    let content = browser.get_content().await?;
+
+    let content = browser.get_html().await?;
     println!("页面内容长度：{}", content.len());
-    
-    // 截图
-    browser.screenshot("downloads/example.png").await?;
-    
-    // 执行 JavaScript
-    let result = browser.evaluate("document.title").await?;
-    println!("JS 结果：{}", result);
-    
-    // Cookie 管理
-    browser.save_cookies_to_file("downloads/cookies.json").await?;
-    
-    // 打印统计
-    browser.print_stats();
-    
-    // 关闭浏览器
-    browser.close();
-    
+
+    browser.screenshot_to_file("downloads/example.png").await?;
+    browser.close().await?;
+
     println!("===== 示例完成 =====");
-    
     Ok(())
+}
+
+#[cfg(not(feature = "browser"))]
+fn main() {
+    eprintln!("This example requires `cargo run --example playwright_example --features browser`.");
 }
