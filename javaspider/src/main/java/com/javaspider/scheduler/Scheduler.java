@@ -18,4 +18,14 @@ public interface Scheduler {
     boolean isEmpty();
     void clear();
     void close();
+
+    default void ack(Request request, boolean success) {
+    }
+
+    default void heartbeat(Request request, long leaseTtlMs) {
+    }
+
+    default int reapExpiredLeases(long nowMillis, int maxRetries) {
+        return 0;
+    }
 }

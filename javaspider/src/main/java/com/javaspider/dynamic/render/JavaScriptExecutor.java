@@ -329,11 +329,8 @@ public class JavaScriptExecutor {
             "  obj[ls.key(i)] = ls.getItem(ls.key(i));" +
             "}" +
             "return obj");
-        
-        if (result instanceof Map) {
-            return (Map<String, String>) result;
-        }
-        return new HashMap<>();
+
+        return toStringMap(result);
     }
     
     /**
@@ -353,11 +350,8 @@ public class JavaScriptExecutor {
             "  obj[ss.key(i)] = ss.getItem(ss.key(i));" +
             "}" +
             "return obj");
-        
-        if (result instanceof Map) {
-            return (Map<String, String>) result;
-        }
-        return new HashMap<>();
+
+        return toStringMap(result);
     }
     
     /**
@@ -382,11 +376,8 @@ public class JavaScriptExecutor {
             "    startTime: r.startTime" +
             "  };" +
             "})");
-        
-        if (result instanceof List) {
-            return (List<Map<String, Object>>) result;
-        }
-        return new ArrayList<>();
+
+        return toListOfObjectMaps(result);
     }
     
     /**
@@ -399,11 +390,38 @@ public class JavaScriptExecutor {
             "  domReady: performance.timing.domContentLoadedEventEnd - performance.timing.navigationStart," +
             "  firstPaint: performance.getEntriesByType('paint').find(p => p.name === 'first-contentful-paint')?.startTime" +
             "}");
-        
-        if (result instanceof Map) {
-            return (Map<String, Object>) result;
+
+        return toObjectMap(result);
+    }
+
+    private Map<String, String> toStringMap(Object value) {
+        Map<String, String> converted = new HashMap<>();
+        if (value instanceof Map<?, ?> rawMap) {
+            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                converted.put(String.valueOf(entry.getKey()), entry.getValue() == null ? null : String.valueOf(entry.getValue()));
+            }
         }
-        return new HashMap<>();
+        return converted;
+    }
+
+    private Map<String, Object> toObjectMap(Object value) {
+        Map<String, Object> converted = new HashMap<>();
+        if (value instanceof Map<?, ?> rawMap) {
+            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                converted.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+        }
+        return converted;
+    }
+
+    private List<Map<String, Object>> toListOfObjectMaps(Object value) {
+        List<Map<String, Object>> converted = new ArrayList<>();
+        if (value instanceof List<?> rawList) {
+            for (Object item : rawList) {
+                converted.add(toObjectMap(item));
+            }
+        }
+        return converted;
     }
     
     /**

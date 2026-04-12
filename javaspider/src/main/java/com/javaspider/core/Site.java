@@ -21,7 +21,14 @@ import java.util.Map;
 @Data
 @Accessors(chain = true)
 public class Site {
-    
+
+    /**
+     * 创建一个新的 Site 实例 (链式调用)
+     */
+    public static Site me() {
+        return new Site();
+    }
+
     // ========== 基础配置 ==========
     
     /**
@@ -165,6 +172,16 @@ public class Site {
      * 下载延迟 (毫秒)
      */
     private int downloadDelay = 1000;
+
+    /**
+     * 是否遵守 robots.txt
+     */
+    private boolean respectRobotsTxt = true;
+
+    /**
+     * robots.txt 缓存时间 (毫秒)
+     */
+    private long robotsCacheTimeoutMs = 3600_000L;
     
     /**
      * 随机下载延迟范围 (毫秒)

@@ -1,5 +1,6 @@
 package com.javaspider.extractor;
 
+import com.google.gson.reflect.TypeToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -7,6 +8,7 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.lang.reflect.Type;
 import java.util.*;
 
 /**
@@ -125,7 +127,7 @@ public class AIExtractor {
         
         try {
             com.google.gson.Gson gson = new com.google.gson.Gson();
-            Map<String, Object> result = gson.fromJson(response, Map.class);
+            Map<String, Object> result = parseResponse(response);
             return new SentimentResult(
                 String.valueOf(result.get("sentiment")),
                 Double.parseDouble(String.valueOf(result.get("confidence")))
@@ -155,7 +157,8 @@ public class AIExtractor {
         
         try {
             com.google.gson.Gson gson = new com.google.gson.Gson();
-            List<String> keywords = gson.fromJson(response, List.class);
+            Type type = new TypeToken<List<String>>() {}.getType();
+            List<String> keywords = gson.fromJson(response, type);
             return keywords != null ? keywords : new ArrayList<>();
         } catch (Exception e) {
             logger.error("Failed to parse keywords", e);
@@ -171,8 +174,7 @@ public class AIExtractor {
         String response = callAPI(prompt);
         
         try {
-            com.google.gson.Gson gson = new com.google.gson.Gson();
-            return gson.fromJson(response, Map.class);
+            return toStringListMap(parseResponse(response));
         } catch (Exception e) {
             logger.error("Failed to parse entities", e);
             return new HashMap<>();
@@ -305,18 +307,17 @@ public class AIExtractor {
 
     private String extractContentFromResponse(String response) {
         try {
-            com.google.gson.Gson gson = new com.google.gson.Gson();
-            Map<String, Object> result = gson.fromJson(response, Map.class);
+            Map<String, Object> result = parseResponse(response);
             
             if (provider == AIProvider.ANTHROPIC) {
-                List<Map<String, Object>> content = (List<Map<String, Object>>) result.get("content");
+                List<Map<String, Object>> content = toListOfObjectMaps(result.get("content"));
                 if (content != null && !content.isEmpty()) {
                     return String.valueOf(content.get(0).get("text"));
                 }
             } else {
-                List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
+                List<Map<String, Object>> choices = toListOfObjectMaps(result.get("choices"));
                 if (choices != null && !choices.isEmpty()) {
-                    Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+                    Map<String, Object> message = toObjectMap(choices.get(0).get("message"));
                     return String.valueOf(message.get("content"));
                 }
             }
@@ -327,26 +328,61 @@ public class AIExtractor {
         return response;
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> parseResponse(String response) {
         try {
             com.google.gson.Gson gson = new com.google.gson.Gson();
-            return gson.fromJson(response, Map.class);
+            Type type = new TypeToken<Map<String, Object>>() {}.getType();
+            return gson.fromJson(response, type);
         } catch (Exception e) {
             logger.error("Failed to parse response", e);
             return new HashMap<>();
         }
     }
 
-    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> parseListResponse(String response) {
         try {
             com.google.gson.Gson gson = new com.google.gson.Gson();
-            return gson.fromJson(response, List.class);
+            Type type = new TypeToken<List<Map<String, Object>>>() {}.getType();
+            return gson.fromJson(response, type);
         } catch (Exception e) {
             logger.error("Failed to parse list response", e);
             return new ArrayList<>();
         }
+    }
+
+    private Map<String, Object> toObjectMap(Object value) {
+        if (value instanceof Map<?, ?> rawMap) {
+            Map<String, Object> typed = new HashMap<>();
+            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                typed.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            return typed;
+        }
+        return new HashMap<>();
+    }
+
+    private List<Map<String, Object>> toListOfObjectMaps(Object value) {
+        List<Map<String, Object>> typed = new ArrayList<>();
+        if (value instanceof List<?> rawList) {
+            for (Object item : rawList) {
+                typed.add(toObjectMap(item));
+            }
+        }
+        return typed;
+    }
+
+    private Map<String, List<String>> toStringListMap(Map<String, Object> value) {
+        Map<String, List<String>> typed = new HashMap<>();
+        for (Map.Entry<String, Object> entry : value.entrySet()) {
+            List<String> items = new ArrayList<>();
+            if (entry.getValue() instanceof List<?> rawList) {
+                for (Object item : rawList) {
+                    items.add(String.valueOf(item));
+                }
+            }
+            typed.put(entry.getKey(), items);
+        }
+        return typed;
     }
 
     /**

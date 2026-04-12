@@ -1,11 +1,13 @@
 package com.javaspider.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.javaspider.selector.Html;
 import com.javaspider.selector.Selectable;
 
 import lombok.Data;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -14,7 +16,7 @@ import java.util.Map;
  */
 @Data
 public class Page {
-    
+
     private Request request;
     private ResultItems resultItems = new ResultItems();
     private String rawText;
@@ -28,14 +30,45 @@ public class Page {
     private List<Request> targetRequests = new ArrayList<>();
     private int depth;
     private long downloadDuration;
-    
+    private Map<String, Object> fields = new HashMap<>();
+    private JsonNode json;
+    private String error;
+
     public Html getHtml() {
         if (html == null && rawText != null) {
             html = new Html(rawText, url);
         }
         return html;
     }
-    
+
+    public void putField(String key, Object value) {
+        fields.put(key, value);
+    }
+
+    public Object getField(String key) {
+        return fields.get(key);
+    }
+
+    public Map<String, Object> getFields() {
+        return fields;
+    }
+
+    public void setError(String error) {
+        this.error = error;
+    }
+
+    public String getError() {
+        return error;
+    }
+
+    public void setJson(JsonNode json) {
+        this.json = json;
+    }
+
+    public JsonNode getJson() {
+        return json;
+    }
+
     public String $(String cssSelector) {
         return getHtml().$(cssSelector).get();
     }

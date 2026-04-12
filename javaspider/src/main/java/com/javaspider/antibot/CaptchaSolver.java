@@ -1,5 +1,6 @@
 package com.javaspider.antibot;
 
+import com.google.gson.reflect.TypeToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,14 +9,15 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.awt.image.ConvolveOp;
 import java.awt.image.Kernel;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
+import java.io.*;
+import java.lang.reflect.Type;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -58,12 +60,18 @@ public class CaptchaSolver {
         switch (type) {
             case LOCAL_OCR:
                 return solveLocalOCR(imageBytes);
+            case LOCAL_TESSERACT:
+                return solveTesseract(imageBytes);
             case TWOCAPTCHA:
                 return solveTwoCaptcha(imageBytes);
             case ANTICAPTCHA:
                 return solveAntiCaptcha(imageBytes);
             case CAPMONSTER:
                 return solveCapMonster(imageBytes);
+            case DEATHBYCAPTCHA:
+                return solveDeathByCaptcha(imageBytes);
+            case CUSTOM:
+                return solveCustom(imageBytes);
             default:
                 throw new UnsupportedOperationException("Unsupported solver type: " + type);
         }
@@ -111,6 +119,45 @@ public class CaptchaSolver {
             logger.error("Failed to perform OCR", e);
             return null;
         }
+    }
+
+    /**
+     * 本地 Tesseract OCR 识别
+     */
+    private String solveTesseract(byte[] imageBytes) {
+        File imageFile = null;
+        try {
+            imageFile = File.createTempFile("javaspider-captcha-", ".png");
+            try (OutputStream os = new FileOutputStream(imageFile)) {
+                os.write(imageBytes);
+            }
+
+            Process process = new ProcessBuilder(
+                "tesseract",
+                imageFile.getAbsolutePath(),
+                "stdout",
+                "--psm",
+                "8"
+            ).redirectErrorStream(true).start();
+
+            String output;
+            try (InputStream is = process.getInputStream()) {
+                output = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            int exitCode = process.waitFor();
+            String solved = normalizeSolvedText(output);
+            if (exitCode == 0 && solved != null && !solved.isBlank()) {
+                return solved;
+            }
+            logger.warn("Tesseract OCR returned no usable result, falling back to local OCR");
+        } catch (Exception e) {
+            logger.warn("Tesseract OCR failed, falling back to local OCR: {}", e.getMessage());
+        } finally {
+            if (imageFile != null && imageFile.exists() && !imageFile.delete()) {
+                logger.debug("Failed to delete temp captcha image: {}", imageFile.getAbsolutePath());
+            }
+        }
+        return solveLocalOCR(imageBytes);
     }
 
     /**
@@ -209,6 +256,77 @@ public class CaptchaSolver {
     }
 
     /**
+     * DeathByCaptcha 识别
+     */
+    private String solveDeathByCaptcha(byte[] imageBytes) {
+        if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
+            logger.warn("DeathByCaptcha credentials missing, falling back to local OCR");
+            return solveLocalOCR(imageBytes);
+        }
+
+        try {
+            String boundary = "----JavaSpiderCaptcha" + System.nanoTime();
+            Map<String, String> fields = new HashMap<>();
+            fields.put("username", apiKey);
+            fields.put("password", apiSecret);
+
+            String response = postMultipartRequest(
+                "http://api.dbcapi.me/api/captcha",
+                boundary,
+                fields,
+                "captchafile",
+                "captcha.png",
+                imageBytes
+            );
+            Map<String, Object> result = parseJson(response);
+
+            String directText = extractTextResult(result);
+            if (directText != null && !directText.isBlank()) {
+                return directText;
+            }
+
+            Object captchaId = result.get("captcha");
+            if (captchaId == null) {
+                captchaId = result.get("id");
+            }
+            if (captchaId != null) {
+                return pollDeathByCaptchaResult(String.valueOf(captchaId));
+            }
+        } catch (Exception e) {
+            logger.error("Failed to solve captcha with DeathByCaptcha", e);
+        }
+        return solveLocalOCR(imageBytes);
+    }
+
+    /**
+     * 自定义 API 识别
+     */
+    private String solveCustom(byte[] imageBytes) {
+        if (apiKey == null || apiKey.isBlank()) {
+            logger.warn("Custom captcha endpoint missing, falling back to local OCR");
+            return solveLocalOCR(imageBytes);
+        }
+
+        try {
+            String response = postJsonRequest(
+                apiKey,
+                toJson(Map.of(
+                    "image", Base64.getEncoder().encodeToString(imageBytes),
+                    "image_base64", Base64.getEncoder().encodeToString(imageBytes)
+                )),
+                apiSecret
+            );
+            String solved = extractTextResult(parseJson(response));
+            if (solved != null && !solved.isBlank()) {
+                return solved;
+            }
+        } catch (Exception e) {
+            logger.error("Failed to solve captcha with custom endpoint", e);
+        }
+        return solveLocalOCR(imageBytes);
+    }
+
+    /**
      * 轮询 2Captcha 结果
      */
     private String pollTwoCaptchaResult(String captchaId) throws Exception {
@@ -260,7 +378,7 @@ public class CaptchaSolver {
             }
             
             if ("ready".equals(String.valueOf(result.get("status")))) {
-                Map<String, Object> solution = (Map<String, Object>) result.get("solution");
+                Map<String, Object> solution = asObjectMap(result.get("solution"));
                 return String.valueOf(solution.get("text"));
             }
         }
@@ -285,7 +403,7 @@ public class CaptchaSolver {
             Map<String, Object> result = parseJson(response);
             
             if ("ready".equals(String.valueOf(result.get("status")))) {
-                Map<String, Object> solution = (Map<String, Object>) result.get("solution");
+                Map<String, Object> solution = asObjectMap(result.get("solution"));
                 return String.valueOf(solution.get("text"));
             }
         }
@@ -395,17 +513,61 @@ public class CaptchaSolver {
      * POST JSON 请求
      */
     private String postJsonRequest(String urlString, String json) throws IOException {
+        return postJsonRequest(urlString, json, null);
+    }
+
+    private String postJsonRequest(String urlString, String json, String bearerToken) throws IOException {
         URL url = new URL(urlString);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type", "application/json");
+        if (bearerToken != null && !bearerToken.isBlank()) {
+            conn.setRequestProperty("Authorization", "Bearer " + bearerToken);
+        }
         
         try (java.io.OutputStream os = conn.getOutputStream()) {
             os.write(json.getBytes(StandardCharsets.UTF_8));
         }
         
         try (java.io.InputStream is = conn.getInputStream()) {
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private String postMultipartRequest(
+        String urlString,
+        String boundary,
+        Map<String, String> fields,
+        String fileField,
+        String fileName,
+        byte[] fileBytes
+    ) throws IOException {
+        URL url = new URL(urlString);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+
+        try (OutputStream os = conn.getOutputStream()) {
+            for (Map.Entry<String, String> entry : fields.entrySet()) {
+                os.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+                os.write(("Content-Disposition: form-data; name=\"" + entry.getKey() + "\"\r\n\r\n")
+                    .getBytes(StandardCharsets.UTF_8));
+                os.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                os.write("\r\n".getBytes(StandardCharsets.UTF_8));
+            }
+
+            os.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            os.write(("Content-Disposition: form-data; name=\"" + fileField + "\"; filename=\"" + fileName + "\"\r\n")
+                .getBytes(StandardCharsets.UTF_8));
+            os.write("Content-Type: application/octet-stream\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            os.write(fileBytes);
+            os.write("\r\n".getBytes(StandardCharsets.UTF_8));
+            os.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        }
+
+        try (InputStream is = conn.getInputStream()) {
             return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
@@ -423,13 +585,73 @@ public class CaptchaSolver {
         }
     }
 
+    private String pollDeathByCaptchaResult(String captchaId) throws Exception {
+        String resultUrl = "http://api.dbcapi.me/api/captcha/" + captchaId;
+        for (int i = 0; i < 15; i++) {
+            Thread.sleep(2000);
+            String response = getRequest(resultUrl);
+            String solved = extractTextResult(parseJson(response));
+            if (solved != null && !solved.isBlank()) {
+                return solved;
+            }
+        }
+        throw new RuntimeException("DeathByCaptcha solving timeout");
+    }
+
+    private String extractTextResult(Map<String, Object> result) {
+        if (result == null || result.isEmpty()) {
+            return null;
+        }
+        for (String key : new String[]{"text", "result", "solution"}) {
+            Object value = result.get(key);
+            if (value != null) {
+                String normalized = normalizeSolvedText(String.valueOf(value));
+                if (normalized != null && !normalized.isBlank()) {
+                    return normalized;
+                }
+            }
+        }
+
+        Object dataValue = result.get("data");
+        if (dataValue instanceof Map<?, ?> nestedRaw) {
+            Map<String, Object> nested = new HashMap<>();
+            for (Map.Entry<?, ?> entry : nestedRaw.entrySet()) {
+                nested.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            return extractTextResult(nested);
+        }
+        return null;
+    }
+
+    private String normalizeSolvedText(String rawText) {
+        if (rawText == null) {
+            return null;
+        }
+        String normalized = rawText
+            .replace("\uFEFF", "")
+            .replaceAll("\\s+", " ")
+            .trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
     /**
      * 解析 JSON
      */
-    @SuppressWarnings("unchecked")
     private Map<String, Object> parseJson(String json) {
         com.google.gson.Gson gson = new com.google.gson.Gson();
-        return gson.fromJson(json, Map.class);
+        Type type = new TypeToken<Map<String, Object>>() {}.getType();
+        return gson.fromJson(json, type);
+    }
+
+    private Map<String, Object> asObjectMap(Object value) {
+        if (value instanceof Map<?, ?> rawMap) {
+            Map<String, Object> typed = new HashMap<>();
+            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                typed.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            return typed;
+        }
+        return Map.of();
     }
 
     /**
@@ -482,5 +704,19 @@ public class CaptchaSolver {
      */
     public static CaptchaSolver capMonster() {
         return new CaptchaSolver(CaptchaSolverType.CAPMONSTER, null, null);
+    }
+
+    /**
+     * 创建 DeathByCaptcha 求解器
+     */
+    public static CaptchaSolver deathByCaptcha(String username, String password) {
+        return new CaptchaSolver(CaptchaSolverType.DEATHBYCAPTCHA, username, password);
+    }
+
+    /**
+     * 创建自定义 API 求解器
+     */
+    public static CaptchaSolver custom(String endpoint, String bearerToken) {
+        return new CaptchaSolver(CaptchaSolverType.CUSTOM, endpoint, bearerToken);
     }
 }

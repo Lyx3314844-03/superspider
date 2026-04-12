@@ -5,131 +5,162 @@ import java.io.InputStream;
 import java.util.Properties;
 
 /**
- * 蜘蛛配置加载器
+ * 爬虫配置管理器
+ *
+ * 功能:
+ * 1. 从配置文件加载配置
+ * 2. 支持环境变量覆盖
+ * 3. 提供类型安全的配置访问
+ *
+ * @author Lan
+ * @version 1.0.0
  */
 public class SpiderConfig {
-    
-    private static final Properties props = new Properties();
-    private static boolean loaded = false;
-    
-    static {
-        try (InputStream is = SpiderConfig.class.getResourceAsStream("/spider.properties")) {
-            if (is != null) {
-                props.load(is);
-                loaded = true;
+
+    private final Properties properties;
+    private static SpiderConfig instance;
+
+    public SpiderConfig() {
+        properties = new Properties();
+        loadDefaultConfig();
+    }
+
+    /**
+     * 从默认配置文件加载
+     */
+    private void loadDefaultConfig() {
+        try (InputStream input = getClass().getClassLoader().getResourceAsStream("spider.properties")) {
+            if (input != null) {
+                properties.load(input);
             }
         } catch (IOException e) {
-            System.err.println("Failed to load spider.properties: " + e.getMessage());
+            // 配置文件可选，不存在时使用默认值
         }
     }
-    
+
+    /**
+     * 从自定义路径加载配置
+     *
+     * @param path 配置文件路径
+     * @throws IOException 读取失败时抛出
+     * @throws SecurityException 路径不安全时抛出
+     */
+    public void loadFromFile(String path) throws IOException {
+        if (path == null || path.isEmpty()) {
+            throw new IllegalArgumentException("配置路径不能为空");
+        }
+
+        // 防止路径遍历攻击
+        String normalizedPath = new java.io.File(path).getCanonicalPath();
+        if (!normalizedPath.endsWith(".properties")) {
+            throw new SecurityException("配置文件必须是 .properties 后缀");
+        }
+
+        try (InputStream input = new java.io.FileInputStream(path)) {
+            properties.load(input);
+        }
+    }
+
     /**
      * 获取字符串配置
      */
-    public static String getString(String key, String defaultValue) {
-        return loaded ? props.getProperty(key, defaultValue) : defaultValue;
+    public String getString(String key, String defaultValue) {
+        String envKey = getEnvKey(key);
+        String value = System.getenv(envKey);
+        if (value == null || value.isEmpty()) {
+            value = properties.getProperty(key, defaultValue);
+        }
+        // 如果最终还是空字符串,返回默认值
+        if (value == null || value.isEmpty()) {
+            return defaultValue;
+        }
+        return value;
     }
-    
+
     /**
      * 获取整数配置
      */
-    public static int getInt(String key, int defaultValue) {
+    public int getInt(String key, int defaultValue) {
+        String value = getString(key, null);
+        if (value == null) {
+            return defaultValue;
+        }
         try {
-            return loaded ? Integer.parseInt(props.getProperty(key)) : defaultValue;
+            return Integer.parseInt(value);
         } catch (NumberFormatException e) {
             return defaultValue;
         }
     }
-    
-    /**
-     * 获取布尔配置
-     */
-    public static boolean getBoolean(String key, boolean defaultValue) {
-        try {
-            return loaded ? Boolean.parseBoolean(props.getProperty(key)) : defaultValue;
-        } catch (Exception e) {
-            return defaultValue;
-        }
-    }
-    
+
     /**
      * 获取长整数配置
      */
-    public static long getLong(String key, long defaultValue) {
+    public long getLong(String key, long defaultValue) {
+        String value = getString(key, null);
+        if (value == null) {
+            return defaultValue;
+        }
         try {
-            return loaded ? Long.parseLong(props.getProperty(key)) : defaultValue;
+            return Long.parseLong(value);
         } catch (NumberFormatException e) {
             return defaultValue;
         }
     }
-    
-    // ========== 便捷方法 ==========
-    
-    public static int getThreads() {
-        return getInt("spider.threads", 5);
+
+    /**
+     * 获取布尔配置
+     */
+    public boolean getBoolean(String key, boolean defaultValue) {
+        String value = getString(key, null);
+        if (value == null) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(value);
     }
-    
-    public static int getRetryTimes() {
-        return getInt("spider.retry.times", 3);
+
+    /**
+     * 获取浮点数配置
+     */
+    public double getDouble(String key, double defaultValue) {
+        String value = getString(key, null);
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
-    
-    public static int getRetrySleep() {
-        return getInt("spider.retry.sleep", 1000);
+
+    /**
+     * 设置配置值
+     */
+    public void setProperty(String key, String value) {
+        properties.setProperty(key, value);
     }
-    
-    public static long getTimeout() {
-        return getLong("spider.timeout", 30000L);
+
+    /**
+     * 获取环境变量键
+     */
+    private String getEnvKey(String configKey) {
+        return configKey.replace(".", "_").replace("-", "_").toUpperCase();
     }
-    
-    public static String getDownloadDir() {
-        return getString("download.dir", "./downloads");
+
+    /**
+     * 获取单例实例
+     */
+    public static synchronized SpiderConfig getInstance() {
+        if (instance == null) {
+            instance = new SpiderConfig();
+        }
+        return instance;
     }
-    
-    public static int getMaxDownloadCount() {
-        return getInt("download.max.count", 10);
-    }
-    
-    public static boolean isDownloadOverwrite() {
-        return getBoolean("download.overwrite", false);
-    }
-    
-    public static boolean isProxyEnabled() {
-        return getBoolean("proxy.enabled", false);
-    }
-    
-    public static String getProxyHost() {
-        return getString("proxy.host", "");
-    }
-    
-    public static int getProxyPort() {
-        return getInt("proxy.port", 0);
-    }
-    
-    public static String getBrowserType() {
-        return getString("browser.type", "chrome");
-    }
-    
-    public static boolean isBrowserHeadless() {
-        return getBoolean("browser.headless", true);
-    }
-    
-    public static long getBrowserPageLoadTimeout() {
-        return getLong("browser.pageLoadTimeout", 30000L);
-    }
-    
-    public static String getRedisHost() {
-        return getString("redis.host", "localhost");
-    }
-    
-    public static int getRedisPort() {
-        return getInt("redis.port", 6379);
-    }
-    
-    public static boolean isApiEnabled() {
-        return getBoolean("api.enabled", false);
-    }
-    
-    public static int getApiPort() {
-        return getInt("api.port", 8080);
+
+    /**
+     * 重新加载配置
+     */
+    public static void reload() {
+        instance = new SpiderConfig();
     }
 }

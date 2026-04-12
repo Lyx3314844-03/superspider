@@ -12,19 +12,19 @@ public class SpiderAssistant {
     private final AIExtractor extractor;
     
     public SpiderAssistant(String apiKey) {
-        this.extractor = new AIExtractor(
+        this(new AIExtractor(
             apiKey,
             "https://api.openai.com/v1",
             "gpt-3.5-turbo"
-        );
+        ));
+    }
+
+    private SpiderAssistant(AIExtractor extractor) {
+        this.extractor = extractor;
     }
     
     public static SpiderAssistant fromEnv() {
-        return new SpiderAssistant(
-            System.getenv("OPENAI_API_KEY") != null ? 
-                System.getenv("OPENAI_API_KEY") : 
-                System.getenv("AI_API_KEY")
-        );
+        return new SpiderAssistant(AIExtractor.fromEnv());
     }
     
     /**

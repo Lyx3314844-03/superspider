@@ -116,7 +116,7 @@ public class Selector {
         return document.text();
     }
 
-    static final class SelectorList {
+    public static final class SelectorList {
         private final List<Element> elements;
         private final List<String> values;
 
@@ -203,7 +203,7 @@ public class Selector {
         }
     }
 
-    static final class SelectorNode {
+    public static final class SelectorNode {
         private final Element element;
         private final String text;
 

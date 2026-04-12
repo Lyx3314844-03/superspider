@@ -31,6 +31,9 @@ public class MediaDownloaderCLI {
             case "info":
                 handleInfo(Arrays.copyOfRange(args, 1, args.length));
                 break;
+            case "artifact":
+                handleArtifact(Arrays.copyOfRange(args, 1, args.length));
+                break;
             case "convert":
                 handleConvert(Arrays.copyOfRange(args, 1, args.length));
                 break;
@@ -68,6 +71,10 @@ public class MediaDownloaderCLI {
         String outputDir = "./downloads";
         String quality = "best";
         boolean audioOnly = false;
+        String htmlFile = "";
+        String networkFile = "";
+        String harFile = "";
+        String artifactDir = "";
         
         // 解析选项
         for (int i = 1; i < args.length; i++) {
@@ -88,8 +95,33 @@ public class MediaDownloaderCLI {
                 case "--audio-only":
                     audioOnly = true;
                     break;
+                case "--html-file":
+                    if (i + 1 < args.length) {
+                        htmlFile = args[++i];
+                    }
+                    break;
+                case "--network-file":
+                    if (i + 1 < args.length) {
+                        networkFile = args[++i];
+                    }
+                    break;
+                case "--har-file":
+                    if (i + 1 < args.length) {
+                        harFile = args[++i];
+                    }
+                    break;
+                case "--artifact-dir":
+                    if (i + 1 < args.length) {
+                        artifactDir = args[++i];
+                    }
+                    break;
             }
         }
+
+        String[] artifacts = resolveArtifactBundle(artifactDir, htmlFile, networkFile, harFile);
+        htmlFile = artifacts[0];
+        networkFile = artifacts[1];
+        harFile = artifacts[2];
         
         System.out.println("========== Media Downloader ==========");
         System.out.println("URL: " + url);
@@ -105,29 +137,32 @@ public class MediaDownloaderCLI {
                 System.out.println("Unsupported platform");
                 return;
             }
-            
-            VideoInfo info = parser.parse(url);
+
+            VideoInfo info = (!htmlFile.isBlank() || !networkFile.isBlank() || !harFile.isBlank())
+                ? parseVideoArtifacts(url, htmlFile, networkFile, harFile)
+                : parser.parse(url);
             System.out.println("Title: " + info.getTitle());
             System.out.println("Platform: " + info.getPlatform());
             System.out.println();
+            String mediaUrl = resolveMediaUrl(info, url);
             
             // 2. 下载
-            if (url.contains(".m3u8")) {
+            if (mediaUrl.contains(".m3u8")) {
                 // HLS 流
                 HLSDownloader hls = new HLSDownloader(outputDir);
-                HLSDownloader.DownloadResult result = hls.download(url, info.getTitle() + ".ts");
+                HLSDownloader.DownloadResult result = hls.download(mediaUrl, info.getTitle() + ".ts");
                 System.out.println("Downloaded: " + result.outputFile);
                 
-            } else if (url.contains(".mpd")) {
+            } else if (mediaUrl.contains(".mpd")) {
                 // DASH 流
                 DASHDownloader dash = new DASHDownloader(outputDir);
-                DASHDownloader.DownloadResult result = dash.download(url, quality);
+                DASHDownloader.DownloadResult result = dash.download(mediaUrl, quality);
                 System.out.println("Downloaded: " + result.outputFile);
                 
             } else {
                 // 普通下载
                 AdvancedMediaDownloader downloader = new AdvancedMediaDownloader(outputDir);
-                MediaItem item = new MediaItem(info.getTitle(), url, MediaType.VIDEO);
+                MediaItem item = new MediaItem(info.getTitle(), mediaUrl, MediaType.VIDEO);
                 String outputFile = downloader.downloadWithResume(item);
                 System.out.println("Downloaded: " + outputFile);
             }
@@ -148,29 +183,293 @@ public class MediaDownloaderCLI {
             System.out.println("Error: URL required");
             return;
         }
-        
+
         String url = args[0];
-        
+        String htmlFile = "";
+        String networkFile = "";
+        String harFile = "";
+        String artifactDir = "";
+
+        for (int i = 1; i < args.length; i++) {
+            switch (args[i]) {
+                case "--html-file" -> {
+                    if (i + 1 < args.length) {
+                        htmlFile = args[++i];
+                    }
+                }
+                case "--network-file" -> {
+                    if (i + 1 < args.length) {
+                        networkFile = args[++i];
+                    }
+                }
+                case "--har-file" -> {
+                    if (i + 1 < args.length) {
+                        harFile = args[++i];
+                    }
+                }
+                case "--artifact-dir" -> {
+                    if (i + 1 < args.length) {
+                        artifactDir = args[++i];
+                    }
+                }
+                default -> {
+                    // keep compatibility with the positional URL-only surface
+                }
+            }
+        }
+
+        String[] artifacts = resolveArtifactBundle(artifactDir, htmlFile, networkFile, harFile);
+        htmlFile = artifacts[0];
+        networkFile = artifacts[1];
+        harFile = artifacts[2];
+
         try {
             VideoParser parser = getParser(url);
             if (parser == null) {
+                // 尝试从 URL 推断平台
+                if (url.contains("youtube.com") || url.contains("youtu.be")) {
+                    System.out.println("Platform: YouTube");
+                    System.out.println("Title: " + fallbackVideoTitle(url, null));
+                    return;
+                }
                 System.out.println("Unsupported platform");
                 return;
             }
-            
-            VideoInfo info = parser.parse(url);
-            
+
+            VideoInfo info = (!htmlFile.isBlank() || !networkFile.isBlank() || !harFile.isBlank())
+                ? parseVideoArtifacts(url, htmlFile, networkFile, harFile)
+                : parser.parse(url);
+            String displayTitle = fallbackVideoTitle(url, info.getTitle());
+
             System.out.println("========== Video Info ==========");
-            System.out.println("Title: " + info.getTitle());
+            System.out.println("Title: " + displayTitle);
             System.out.println("Platform: " + info.getPlatform());
             System.out.println("Duration: " + info.getDuration() + "s");
             System.out.println("Views: " + info.getViewCount());
             System.out.println("Description: " + info.getDescription());
             System.out.println("================================");
-            
+
+        } catch (Exception e) {
+            System.err.println("Error: " + e.getMessage());
+            // 输出基本信息作为后备
+            if (url.contains("youtube.com") || url.contains("youtu.be")) {
+                System.out.println("Platform: YouTube");
+                System.out.println("Title: " + fallbackVideoTitle(url, null));
+            }
+        }
+    }
+
+    private static String fallbackVideoTitle(String url, String currentTitle) {
+        if (currentTitle != null && !currentTitle.isBlank() && !"null".equalsIgnoreCase(currentTitle)) {
+            return currentTitle;
+        }
+
+        String videoId = url;
+        String shortPrefix = "youtu.be/";
+        if (url.contains("v=")) {
+            videoId = url.substring(url.indexOf("v=") + 2);
+            if (videoId.contains("&")) {
+                videoId = videoId.substring(0, videoId.indexOf("&"));
+            }
+        } else if (url.contains(shortPrefix)) {
+            videoId = url.substring(url.indexOf(shortPrefix) + shortPrefix.length());
+            if (videoId.contains("?")) {
+                videoId = videoId.substring(0, videoId.indexOf("?"));
+            }
+        }
+        return videoId;
+    }
+
+    private static void handleArtifact(String[] args) {
+        String url = "https://example.com/";
+        String artifactDir = "";
+        String htmlFile = "";
+        String networkFile = "";
+        String harFile = "";
+        String outputDir = "./downloads";
+        boolean download = false;
+
+        for (int i = 0; i < args.length; i++) {
+            switch (args[i]) {
+                case "--url" -> {
+                    if (i + 1 < args.length) {
+                        url = args[++i];
+                    }
+                }
+                case "--artifact-dir" -> {
+                    if (i + 1 < args.length) {
+                        artifactDir = args[++i];
+                    }
+                }
+                case "--html-file" -> {
+                    if (i + 1 < args.length) {
+                        htmlFile = args[++i];
+                    }
+                }
+                case "--network-file" -> {
+                    if (i + 1 < args.length) {
+                        networkFile = args[++i];
+                    }
+                }
+                case "--har-file" -> {
+                    if (i + 1 < args.length) {
+                        harFile = args[++i];
+                    }
+                }
+                case "--output", "-o" -> {
+                    if (i + 1 < args.length) {
+                        outputDir = args[++i];
+                    }
+                }
+                case "--download" -> download = true;
+                default -> {
+                    // ignore unknown here for parity with the lightweight media surface
+                }
+            }
+        }
+
+        String[] artifacts = resolveArtifactBundle(artifactDir, htmlFile, networkFile, harFile);
+        htmlFile = artifacts[0];
+        networkFile = artifacts[1];
+        harFile = artifacts[2];
+
+        if (artifactDir.isBlank() && htmlFile.isBlank() && networkFile.isBlank() && harFile.isBlank()) {
+            System.out.println("artifact requires --artifact-dir or explicit artifact files");
+            return;
+        }
+
+        try {
+            VideoInfo info = parseVideoArtifacts(url, htmlFile, networkFile, harFile);
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("command", "media artifact");
+            payload.put("runtime", "java");
+            payload.put("url", url);
+            payload.put("artifact_dir", artifactDir);
+            payload.put("html_file", htmlFile);
+            payload.put("network_file", networkFile);
+            payload.put("har_file", harFile);
+            payload.put("video", Map.of(
+                "title", info.getTitle(),
+                "platform", info.getPlatform(),
+                "video_id", info.getVideoId(),
+                "description", info.getDescription(),
+                "cover_url", info.getCoverUrl(),
+                "video_url", info.getVideoUrl(),
+                "video_urls", info.getVideoUrls()
+            ));
+            payload.put("download", Map.of(
+                "requested", download,
+                "output", ""
+            ));
+
+            if (download) {
+                String mediaUrl = resolveMediaUrl(info, url);
+                if (mediaUrl.contains(".m3u8")) {
+                    HLSDownloader hls = new HLSDownloader(outputDir);
+                    HLSDownloader.DownloadResult result = hls.download(mediaUrl, info.getTitle() + ".ts");
+                    payload.put("download", Map.of("requested", true, "output", result.outputFile));
+                } else if (mediaUrl.contains(".mpd")) {
+                    DASHDownloader dash = new DASHDownloader(outputDir);
+                    DASHDownloader.DownloadResult result = dash.download(mediaUrl, "best");
+                    payload.put("download", Map.of("requested", true, "output", result.outputFile));
+                } else {
+                    AdvancedMediaDownloader downloader = new AdvancedMediaDownloader(outputDir);
+                    MediaItem item = new MediaItem(info.getTitle(), mediaUrl, MediaType.VIDEO);
+                    String output = downloader.downloadWithResume(item);
+                    payload.put("download", Map.of("requested", true, "output", output));
+                }
+            }
+
+            ObjectMapper mapper = new ObjectMapper();
+            System.out.println(mapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload));
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
         }
+    }
+
+    private static VideoInfo parseVideoArtifacts(String url, String htmlFile, String networkFile, String harFile) throws IOException {
+        GenericParser parser = new GenericParser();
+        String html = htmlFile.isBlank() ? "" : java.nio.file.Files.readString(java.nio.file.Path.of(htmlFile));
+        List<String> artifacts = new ArrayList<>();
+        if (!networkFile.isBlank()) {
+            artifacts.add(java.nio.file.Files.readString(java.nio.file.Path.of(networkFile)));
+        }
+        if (!harFile.isBlank()) {
+            artifacts.add(java.nio.file.Files.readString(java.nio.file.Path.of(harFile)));
+        }
+        return parser.parseArtifacts(url, html, artifacts);
+    }
+
+    private static String[] resolveArtifactBundle(String artifactDir, String htmlFile, String networkFile, String harFile) {
+        htmlFile = discoverArtifactPath(
+            artifactDir,
+            htmlFile,
+            List.of("page.html", "content.html", "document.html", "browser.html", "response.html", "index.html"),
+            List.of("*page*.html", "*content*.html", "*.html")
+        );
+        networkFile = discoverArtifactPath(
+            artifactDir,
+            networkFile,
+            List.of("network.json", "requests.json", "trace.json", "network.log", "network.txt"),
+            List.of("*network*.json", "*request*.json", "*trace*.json", "*network*.txt")
+        );
+        harFile = discoverArtifactPath(
+            artifactDir,
+            harFile,
+            List.of("trace.har", "network.har", "session.har", "browser.har", "page.har"),
+            List.of("*.har")
+        );
+        return new String[]{htmlFile, networkFile, harFile};
+    }
+
+    private static String discoverArtifactPath(String artifactDir, String currentValue, List<String> candidates, List<String> patterns) {
+        if (currentValue != null && !currentValue.isBlank()) {
+            return currentValue;
+        }
+        if (artifactDir == null || artifactDir.isBlank()) {
+            return "";
+        }
+        File root = new File(artifactDir);
+        if (!root.isDirectory()) {
+            return "";
+        }
+        for (String candidate : candidates) {
+            File file = new File(root, candidate);
+            if (file.isFile()) {
+                return file.getPath();
+            }
+        }
+        for (String pattern : patterns) {
+            File[] matches = root.listFiles((dir, name) -> {
+                String regex = pattern.replace(".", "\\.").replace("*", ".*");
+                return name.matches(regex);
+            });
+            if (matches != null) {
+                Arrays.sort(matches, Comparator.comparing(File::getName));
+                for (File file : matches) {
+                    if (file.isFile()) {
+                        return file.getPath();
+                    }
+                }
+            }
+        }
+        return "";
+    }
+
+    private static String resolveMediaUrl(VideoInfo info, String originalUrl) {
+        if (info != null) {
+            if (info.getVideoUrl() != null && !info.getVideoUrl().isBlank()) {
+                return info.getVideoUrl();
+            }
+            if (info.getVideoUrls() != null) {
+                for (String value : info.getVideoUrls()) {
+                    if (value != null && !value.isBlank()) {
+                        return value;
+                    }
+                }
+            }
+        }
+        return originalUrl;
     }
     
     /**
@@ -289,6 +588,7 @@ public class MediaDownloaderCLI {
         System.out.println("Commands:");
         System.out.println("  download <url> [options]  Download video");
         System.out.println("  info <url>                Show video info");
+        System.out.println("  artifact [options]        Parse or download from artifact directory");
         System.out.println("  convert <input> <format>  Convert video format");
         System.out.println("  merge <output> <inputs>   Merge videos");
         System.out.println("  doctor [--json]           Check runtime dependencies");

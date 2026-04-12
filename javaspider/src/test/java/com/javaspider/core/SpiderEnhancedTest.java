@@ -111,6 +111,20 @@ class SpiderEnhancedTest {
     }
 
     @Test
+    @DisplayName("测试运行时统计包含 observability")
+    void testRuntimeStats() {
+        SpiderEnhanced spider = SpiderEnhanced.builder()
+            .name("RuntimeStatsTest")
+            .build();
+
+        var runtime = spider.getRuntimeStats();
+
+        assertEquals("RuntimeStatsTest", runtime.get("name"));
+        assertTrue(runtime.containsKey("observability"));
+        assertTrue(runtime.containsKey("stats"));
+    }
+
+    @Test
     @DisplayName("测试链式调用")
     void testChaining() {
         SpiderEnhanced spider = SpiderEnhanced.builder()

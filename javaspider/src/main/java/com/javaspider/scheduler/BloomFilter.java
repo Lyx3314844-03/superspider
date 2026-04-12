@@ -176,16 +176,17 @@ public class BloomFilter {
     }
 
     /**
-     * 生成多个哈希值
+     * 生成多个哈希值（线程安全版本）
+     * 注意：每次调用都创建新的 MessageDigest 实例，避免线程安全问题
      */
     private int[] hash(byte[] data) {
         int[] hashes = new int[hashCount];
-        
+
         try {
-            // 使用 MD5 生成基础哈希
+            // 每次创建新的 MessageDigest 实例以保证线程安全
             MessageDigest md = MessageDigest.getInstance("MD5");
             byte[] digest = md.digest(data);
-            
+
             // 从 MD5 结果派生多个哈希值
             for (int i = 0; i < hashCount; i++) {
                 int h1 = ((digest[i * 4 % 16] & 0xFF) << 24) |
@@ -200,7 +201,7 @@ public class BloomFilter {
                 hashes[i] = murmurHash(data, i);
             }
         }
-        
+
         return hashes;
     }
 

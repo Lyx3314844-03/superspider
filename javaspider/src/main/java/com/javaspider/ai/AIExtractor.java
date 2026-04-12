@@ -1,5 +1,8 @@
 package com.javaspider.ai;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -10,6 +13,7 @@ import java.util.*;
  * 支持 OpenAI GPT、Anthropic Claude 等
  */
 public class AIExtractor {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     
     private final String apiKey;
     private final String baseUrl;
@@ -39,14 +43,32 @@ public class AIExtractor {
      * 从环境变量获取 API Key 创建提取器
      */
     public static AIExtractor fromEnv() {
-        String apiKey = System.getenv("OPENAI_API_KEY");
-        if (apiKey == null || apiKey.isEmpty()) {
-            apiKey = System.getenv("AI_API_KEY");
-        }
+        return fromEnvironment(System.getenv());
+    }
+
+    static AIExtractor fromEnvironment(Map<String, String> env) {
+        String apiKey = firstNonBlank(
+            env.get("OPENAI_API_KEY"),
+            env.get("AI_API_KEY")
+        );
+        String baseUrl = firstNonBlank(
+            env.get("OPENAI_BASE_URL"),
+            env.get("AI_BASE_URL"),
+            "https://api.openai.com/v1"
+        );
+        String model = firstNonBlank(
+            env.get("OPENAI_MODEL"),
+            env.get("AI_MODEL"),
+            "gpt-3.5-turbo"
+        );
+        int maxTokens = parseInt(env.get("AI_MAX_TOKENS"), 2000);
+        double temperature = parseDouble(env.get("AI_TEMPERATURE"), 0.7);
         return new AIExtractor(
             apiKey,
-            "https://api.openai.com/v1",
-            "gpt-3.5-turbo"
+            baseUrl,
+            model,
+            maxTokens,
+            temperature
         );
     }
     
@@ -58,17 +80,23 @@ public class AIExtractor {
      * @return 提取的数据
      */
     public Map<String, Object> extractStructured(String content, String instructions, Map<String, Object> schema) throws IOException {
+        String schemaJson;
+        try {
+            schemaJson = OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(schema);
+        } catch (Exception ignored) {
+            schemaJson = String.valueOf(schema);
+        }
         String prompt = String.format(
             "请从以下内容中提取结构化数据。\n\n" +
             "提取要求：%s\n\n" +
             "期望的输出格式（JSON Schema）：\n%s\n\n" +
             "页面内容：\n%s\n\n" +
             "请直接返回符合 JSON Schema 的 JSON 对象，不要包含其他解释。",
-            instructions, schema, content
+            instructions, schemaJson, content
         );
         
         String response = callLLM(prompt);
-        return parseJson(response);
+        return SchemaNormalizer.normalizeObject(schema, parseJson(response), Map.of());
     }
     
     /**
@@ -153,11 +181,13 @@ public class AIExtractor {
      */
     private String extractContent(String jsonResponse) {
         try {
-            Map<String, Object> response = parseJson(jsonResponse);
-            List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-            if (choices != null && !choices.isEmpty()) {
-                Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-                return (String) message.get("content");
+            JsonNode root = OBJECT_MAPPER.readTree(jsonResponse);
+            JsonNode choices = root.path("choices");
+            if (choices.isArray() && !choices.isEmpty()) {
+                JsonNode content = choices.get(0).path("message").path("content");
+                if (!content.isMissingNode() && !content.isNull()) {
+                    return content.asText();
+                }
             }
         } catch (Exception e) {
             // Ignore parsing errors
@@ -170,51 +200,92 @@ public class AIExtractor {
      */
     @SuppressWarnings("unchecked")
     Map<String, Object> parseJson(String json) {
-        json = json.trim();
-        if (!json.startsWith("{")) {
-            // 尝试提取 JSON 部分
-            int start = json.indexOf("{");
-            int end = json.lastIndexOf("}");
-            if (start >= 0 && end > start) {
-                json = json.substring(start, end + 1);
-            }
-        }
-        
-        Map<String, Object> result = new HashMap<>();
-        if (json.isEmpty() || !json.startsWith("{")) {
-            result.put("text", json);
+        String candidate = extractJsonCandidate(json);
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (candidate.isEmpty()) {
+            result.put("text", json == null ? "" : json);
             return result;
         }
-        
-        // 简单解析
-        json = json.substring(1, json.length() - 1).trim();
-        if (json.isEmpty()) {
+
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(candidate);
+            if (root.isObject()) {
+                return convertObject(root);
+            }
+            if (root.isArray()) {
+                result.put("items", convertNode(root));
+                return result;
+            }
+            result.put("value", convertNode(root));
+            return result;
+        } catch (Exception ignored) {
+            result.put("text", json == null ? "" : json.trim());
             return result;
         }
-        
-        String[] parts = json.split(",");
-        for (String part : parts) {
-            String[] kv = part.split(":", 2);
-            if (kv.length == 2) {
-                String key = kv[0].trim().replaceAll("\"", "");
-                String value = kv[1].trim();
-                if (value.startsWith("\"") && value.endsWith("\"")) {
-                    result.put(key, value.substring(1, value.length() - 1));
-                } else if (value.equals("true") || value.equals("false")) {
-                    result.put(key, Boolean.parseBoolean(value));
-                } else if (value.equals("null")) {
-                    result.put(key, null);
-                } else {
-                    try {
-                        result.put(key, Double.parseDouble(value));
-                    } catch (NumberFormatException e) {
-                        result.put(key, value);
-                    }
-                }
-            }
+    }
+
+    private String extractJsonCandidate(String input) {
+        if (input == null) {
+            return "";
         }
-        
+        String trimmed = input.trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            return trimmed;
+        }
+
+        int objectStart = trimmed.indexOf('{');
+        int objectEnd = trimmed.lastIndexOf('}');
+        if (objectStart >= 0 && objectEnd > objectStart) {
+            return trimmed.substring(objectStart, objectEnd + 1);
+        }
+
+        int arrayStart = trimmed.indexOf('[');
+        int arrayEnd = trimmed.lastIndexOf(']');
+        if (arrayStart >= 0 && arrayEnd > arrayStart) {
+            return trimmed.substring(arrayStart, arrayEnd + 1);
+        }
+
+        return "";
+    }
+
+    private Map<String, Object> convertObject(JsonNode node) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> entry = fields.next();
+            result.put(entry.getKey(), convertNode(entry.getValue()));
+        }
         return result;
+    }
+
+    private List<Object> convertArray(JsonNode node) {
+        List<Object> result = new ArrayList<>();
+        for (JsonNode item : node) {
+            result.add(convertNode(item));
+        }
+        return result;
+    }
+
+    private Object convertNode(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.isObject()) {
+            return convertObject(node);
+        }
+        if (node.isArray()) {
+            return convertArray(node);
+        }
+        if (node.isBoolean()) {
+            return node.asBoolean();
+        }
+        if (node.isIntegralNumber()) {
+            return node.asLong();
+        }
+        if (node.isFloatingPointNumber()) {
+            return node.asDouble();
+        }
+        return node.asText();
     }
     
     private String escapeJson(String text) {
@@ -234,5 +305,52 @@ public class AIExtractor {
             sb.append(line);
         }
         return sb.toString();
+    }
+
+    String baseUrl() {
+        return baseUrl;
+    }
+
+    String model() {
+        return model;
+    }
+
+    int maxTokens() {
+        return maxTokens;
+    }
+
+    double temperature() {
+        return temperature;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static int parseInt(String raw, int fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static double parseDouble(String raw, double fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Double.parseDouble(raw.trim());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 }

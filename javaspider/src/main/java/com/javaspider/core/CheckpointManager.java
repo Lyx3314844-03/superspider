@@ -1,5 +1,6 @@
 package com.javaspider.core;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import lombok.Data;
@@ -12,6 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -30,7 +32,7 @@ import java.util.concurrent.*;
  * 使用示例:
  * <pre>
  * {@code
- * CheckpointManager checkpoint = new CheckpointManager("checkpoints");
+ * CheckpointManager checkpoint = new CheckpointManager("artifacts/checkpoints");
  * 
  * // 保存状态
  * checkpoint.save("mySpider", Arrays.asList("url1", "url2"), stats);
@@ -54,6 +56,7 @@ public class CheckpointManager implements AutoCloseable {
     private final StorageType storageType;
     private final int autoSaveInterval;
     private final int maxCheckpoints;
+    private final Path sqliteDbPath;
     
     private final ObjectMapper objectMapper;
     private final Map<String, CheckpointState> stateCache;
@@ -106,6 +109,7 @@ public class CheckpointManager implements AutoCloseable {
         this.storageType = storageType;
         this.autoSaveInterval = autoSaveInterval;
         this.maxCheckpoints = maxCheckpoints;
+        this.sqliteDbPath = Paths.get(checkpointDir, "checkpoints.sqlite3");
         
         this.objectMapper = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT)
@@ -120,6 +124,14 @@ public class CheckpointManager implements AutoCloseable {
         } catch (IOException e) {
             log.error("创建 checkpoint 目录失败：{}", checkpointDir, e);
             throw new RuntimeException("创建 checkpoint 目录失败", e);
+        }
+
+        if (storageType == StorageType.SQLITE) {
+            try {
+                initSqliteStorage();
+            } catch (IOException e) {
+                throw new RuntimeException("初始化 SQLite checkpoint 存储失败", e);
+            }
         }
         
         // 启动自动保存
@@ -287,7 +299,7 @@ public class CheckpointManager implements AutoCloseable {
         if (storageType == StorageType.JSON) {
             saveJson(spiderId, state);
         } else {
-            throw new UnsupportedOperationException("SQLite 存储暂不支持");
+            saveSqlite(spiderId, state);
         }
     }
     
@@ -306,6 +318,8 @@ public class CheckpointManager implements AutoCloseable {
         
         // 原子替换
         Files.move(tempPath, filePath, StandardCopyOption.ATOMIC_MOVE);
+
+        writeJsonVersion(spiderId, json);
         
         // 清理旧 checkpoint
         cleanupOldCheckpoints(spiderId);
@@ -318,7 +332,7 @@ public class CheckpointManager implements AutoCloseable {
         if (storageType == StorageType.JSON) {
             return loadJson(spiderId);
         } else {
-            throw new UnsupportedOperationException("SQLite 存储暂不支持");
+            return loadSqlite(spiderId);
         }
     }
     
@@ -356,7 +370,31 @@ public class CheckpointManager implements AutoCloseable {
      * 清理旧的 checkpoint
      */
     private void cleanupOldCheckpoints(String spiderId) {
-        // TODO: 实现多版本保留
+        if (maxCheckpoints <= 0) {
+            return;
+        }
+
+        if (storageType == StorageType.SQLITE) {
+            cleanupSqliteCheckpointVersions(spiderId);
+            return;
+        }
+
+        File dir = Paths.get(checkpointDir).toFile();
+        File[] historyFiles = dir.listFiles((currentDir, name) ->
+            name.startsWith(spiderId + ".checkpoint.")
+                && name.endsWith(".json")
+                && !name.equals(spiderId + ".checkpoint.json")
+        );
+        if (historyFiles == null || historyFiles.length <= maxCheckpoints) {
+            return;
+        }
+
+        Arrays.sort(historyFiles, Comparator.comparing(File::getName).reversed());
+        for (int i = maxCheckpoints; i < historyFiles.length; i++) {
+            if (!historyFiles[i].delete()) {
+                log.warn("删除旧 checkpoint 历史失败：{}", historyFiles[i].getAbsolutePath());
+            }
+        }
     }
     
     /**
@@ -368,12 +406,18 @@ public class CheckpointManager implements AutoCloseable {
         try {
             // 从缓存删除
             stateCache.remove(spiderId);
-            
-            // 从存储删除
-            Path filePath = Paths.get(checkpointDir, spiderId + ".checkpoint.json");
-            if (Files.exists(filePath)) {
-                Files.delete(filePath);
-                log.info("Checkpoint 已删除：{}", spiderId);
+
+            if (storageType == StorageType.SQLITE) {
+                deleteSqliteCheckpoint(spiderId);
+            } else {
+                // 从存储删除
+                Path filePath = Paths.get(checkpointDir, spiderId + ".checkpoint.json");
+                if (Files.exists(filePath)) {
+                    Files.delete(filePath);
+                    log.info("Checkpoint 已删除：{}", spiderId);
+                }
+
+                deleteHistoryFiles(spiderId);
             }
             
         } catch (IOException e) {
@@ -387,6 +431,9 @@ public class CheckpointManager implements AutoCloseable {
      * @return checkpoint ID 列表
      */
     public List<String> listCheckpoints() {
+        if (storageType == StorageType.SQLITE) {
+            return listSqliteCheckpoints();
+        }
         try {
             List<String> checkpoints = new ArrayList<>();
             Files.list(Paths.get(checkpointDir))
@@ -460,6 +507,229 @@ public class CheckpointManager implements AutoCloseable {
         }
         
         log.info("CheckpointManager 已关闭");
+    }
+
+    private void writeJsonVersion(String spiderId, String json) throws IOException {
+        if (maxCheckpoints <= 0) {
+            return;
+        }
+
+        String versionSuffix = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss.SSSSSSSSS"));
+        Path versionPath = Paths.get(checkpointDir, spiderId + ".checkpoint." + versionSuffix + ".json");
+        Files.writeString(versionPath, json);
+    }
+
+    private void deleteHistoryFiles(String spiderId) throws IOException {
+        File dir = Paths.get(checkpointDir).toFile();
+        File[] historyFiles = dir.listFiles((currentDir, name) ->
+            name.startsWith(spiderId + ".checkpoint.")
+                && name.endsWith(".json")
+                && !name.equals(spiderId + ".checkpoint.json")
+        );
+        if (historyFiles == null) {
+            return;
+        }
+        for (File historyFile : historyFiles) {
+            Files.deleteIfExists(historyFile.toPath());
+        }
+    }
+
+    private void initSqliteStorage() throws IOException {
+        try (Connection connection = openSqliteConnection();
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS checkpoints (
+                    spider_id TEXT PRIMARY KEY,
+                    timestamp TEXT NOT NULL,
+                    visited_urls TEXT NOT NULL,
+                    pending_urls TEXT NOT NULL,
+                    stats TEXT NOT NULL,
+                    config TEXT NOT NULL,
+                    checksum TEXT NOT NULL
+                )
+                """);
+            statement.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS checkpoint_versions (
+                    version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    spider_id TEXT NOT NULL,
+                    version_timestamp TEXT NOT NULL,
+                    visited_urls TEXT NOT NULL,
+                    pending_urls TEXT NOT NULL,
+                    stats TEXT NOT NULL,
+                    config TEXT NOT NULL,
+                    checksum TEXT NOT NULL
+                )
+                """);
+            statement.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_checkpoint_versions_spider_time
+                ON checkpoint_versions (spider_id, version_timestamp DESC, version_id DESC)
+                """);
+        } catch (SQLException e) {
+            throw new IOException("初始化 SQLite 存储失败", e);
+        }
+    }
+
+    private void saveSqlite(String spiderId, CheckpointState state) throws IOException {
+        String visitedJson = objectMapper.writeValueAsString(state.getVisitedUrls());
+        String pendingJson = objectMapper.writeValueAsString(state.getPendingUrls());
+        String statsJson = objectMapper.writeValueAsString(state.getStats());
+        String configJson = objectMapper.writeValueAsString(state.getConfig());
+
+        try (Connection connection = openSqliteConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement upsert = connection.prepareStatement("""
+                    INSERT INTO checkpoints (
+                        spider_id, timestamp, visited_urls, pending_urls, stats, config, checksum
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(spider_id) DO UPDATE SET
+                        timestamp = excluded.timestamp,
+                        visited_urls = excluded.visited_urls,
+                        pending_urls = excluded.pending_urls,
+                        stats = excluded.stats,
+                        config = excluded.config,
+                        checksum = excluded.checksum
+                    """);
+                 PreparedStatement insertHistory = connection.prepareStatement("""
+                    INSERT INTO checkpoint_versions (
+                        spider_id, version_timestamp, visited_urls, pending_urls, stats, config, checksum
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """)) {
+                bindCheckpointStatement(upsert, spiderId, state, visitedJson, pendingJson, statsJson, configJson);
+                upsert.executeUpdate();
+
+                bindCheckpointStatement(insertHistory, spiderId, state, visitedJson, pendingJson, statsJson, configJson);
+                insertHistory.executeUpdate();
+
+                connection.commit();
+            } catch (SQLException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            throw new IOException("保存 SQLite checkpoint 失败", e);
+        }
+
+        cleanupOldCheckpoints(spiderId);
+    }
+
+    private CheckpointState loadSqlite(String spiderId) throws IOException {
+        try (Connection connection = openSqliteConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                SELECT spider_id, timestamp, visited_urls, pending_urls, stats, config, checksum
+                FROM checkpoints
+                WHERE spider_id = ?
+                """)) {
+            statement.setString(1, spiderId);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (!rs.next()) {
+                    return null;
+                }
+
+                CheckpointState state = new CheckpointState(
+                    rs.getString("spider_id"),
+                    rs.getString("timestamp"),
+                    readList(rs.getString("visited_urls")),
+                    readList(rs.getString("pending_urls")),
+                    readMap(rs.getString("stats")),
+                    readMap(rs.getString("config"))
+                );
+                state.setChecksum(rs.getString("checksum"));
+                return state;
+            }
+        } catch (SQLException e) {
+            throw new IOException("加载 SQLite checkpoint 失败", e);
+        }
+    }
+
+    private List<String> listSqliteCheckpoints() {
+        List<String> checkpoints = new ArrayList<>();
+        try (Connection connection = openSqliteConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                 "SELECT spider_id FROM checkpoints ORDER BY spider_id");
+             ResultSet rs = statement.executeQuery()) {
+            while (rs.next()) {
+                checkpoints.add(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            log.error("列出 SQLite checkpoint 失败", e);
+        }
+        return checkpoints;
+    }
+
+    private void deleteSqliteCheckpoint(String spiderId) throws IOException {
+        try (Connection connection = openSqliteConnection()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement deleteCurrent = connection.prepareStatement(
+                    "DELETE FROM checkpoints WHERE spider_id = ?");
+                 PreparedStatement deleteHistory = connection.prepareStatement(
+                    "DELETE FROM checkpoint_versions WHERE spider_id = ?")) {
+                deleteCurrent.setString(1, spiderId);
+                deleteCurrent.executeUpdate();
+                deleteHistory.setString(1, spiderId);
+                deleteHistory.executeUpdate();
+                connection.commit();
+                log.info("Checkpoint 已删除：{}", spiderId);
+            } catch (SQLException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            throw new IOException("删除 SQLite checkpoint 失败", e);
+        }
+    }
+
+    private void cleanupSqliteCheckpointVersions(String spiderId) {
+        try (Connection connection = openSqliteConnection();
+             PreparedStatement statement = connection.prepareStatement("""
+                DELETE FROM checkpoint_versions
+                WHERE version_id IN (
+                    SELECT version_id
+                    FROM checkpoint_versions
+                    WHERE spider_id = ?
+                    ORDER BY version_timestamp DESC, version_id DESC
+                    LIMIT -1 OFFSET ?
+                )
+                """)) {
+            statement.setString(1, spiderId);
+            statement.setInt(2, maxCheckpoints);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            log.error("清理 SQLite checkpoint 历史失败：{}", spiderId, e);
+        }
+    }
+
+    private Connection openSqliteConnection() throws SQLException {
+        return DriverManager.getConnection("jdbc:sqlite:" + sqliteDbPath.toAbsolutePath());
+    }
+
+    private void bindCheckpointStatement(
+        PreparedStatement statement,
+        String spiderId,
+        CheckpointState state,
+        String visitedJson,
+        String pendingJson,
+        String statsJson,
+        String configJson
+    ) throws SQLException {
+        statement.setString(1, spiderId);
+        statement.setString(2, state.getTimestamp());
+        statement.setString(3, visitedJson);
+        statement.setString(4, pendingJson);
+        statement.setString(5, statsJson);
+        statement.setString(6, configJson);
+        statement.setString(7, state.getChecksum());
+    }
+
+    private List<String> readList(String json) throws IOException {
+        return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+    }
+
+    private Map<String, Object> readMap(String json) throws IOException {
+        return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
     }
     
     /**

@@ -173,8 +173,8 @@ public class SpiderConfigManager {
         
         for (int i = 0; i < keys.length - 1; i++) {
             Object obj = current.get(keys[i]);
-            if (obj instanceof Map) {
-                current = (Map<String, Object>) obj;
+            if (obj instanceof Map<?, ?>) {
+                current = asObjectMap(obj);
             } else {
                 return null;
             }
@@ -256,8 +256,8 @@ public class SpiderConfigManager {
         
         for (int i = 0; i < keys.length - 1; i++) {
             Object obj = current.get(keys[i]);
-            if (obj instanceof Map) {
-                current = (Map<String, Object>) obj;
+            if (obj instanceof Map<?, ?>) {
+                current = asObjectMap(obj);
             } else {
                 Map<String, Object> newMap = new HashMap<>();
                 current.put(keys[i], newMap);
@@ -273,7 +273,7 @@ public class SpiderConfigManager {
      * @return 爬虫配置 Map
      */
     public Map<String, Object> getSpiderConfig() {
-        return (Map<String, Object>) config.get("spider");
+        return asObjectMap(config.get("spider"));
     }
     
     /**
@@ -281,7 +281,7 @@ public class SpiderConfigManager {
      * @return 下载器配置 Map
      */
     public Map<String, Object> getDownloaderConfig() {
-        return (Map<String, Object>) config.get("downloader");
+        return asObjectMap(config.get("downloader"));
     }
     
     /**
@@ -289,7 +289,7 @@ public class SpiderConfigManager {
      * @return 代理配置 Map
      */
     public Map<String, Object> getProxyConfig() {
-        return (Map<String, Object>) config.get("proxy");
+        return asObjectMap(config.get("proxy"));
     }
     
     /**
@@ -297,7 +297,7 @@ public class SpiderConfigManager {
      * @return 媒体配置 Map
      */
     public Map<String, Object> getMediaConfig() {
-        return (Map<String, Object>) config.get("media");
+        return asObjectMap(config.get("media"));
     }
     
     /**
@@ -305,7 +305,18 @@ public class SpiderConfigManager {
      * @return 浏览器配置 Map
      */
     public Map<String, Object> getBrowserConfig() {
-        return (Map<String, Object>) config.get("browser");
+        return asObjectMap(config.get("browser"));
+    }
+
+    private Map<String, Object> asObjectMap(Object value) {
+        if (value instanceof Map<?, ?> rawMap) {
+            Map<String, Object> typed = new HashMap<>();
+            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                typed.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            return typed;
+        }
+        return new HashMap<>();
     }
     
     /**

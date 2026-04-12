@@ -1,16 +1,23 @@
 package com.javaspider.selector;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
  * 可选择结果包装类
  */
 public class Selectable {
-    private String text;
+    private final String text;
+    private final List<String> values;
     
     public Selectable(String text) {
-        this.text = text;
+        this(text == null ? Collections.emptyList() : List.of(text));
+    }
+
+    public Selectable(List<String> values) {
+        this.values = values == null ? Collections.emptyList() : new ArrayList<>(values);
+        this.text = this.values.isEmpty() ? null : this.values.get(0);
     }
     
     public String get() {
@@ -18,18 +25,14 @@ public class Selectable {
     }
     
     public List<String> all() {
-        List<String> result = new ArrayList<>();
-        if (text != null) {
-            result.add(text);
-        }
-        return result;
+        return new ArrayList<>(values);
     }
     
     public Selectable jsonPath(String jsonPath) {
-        return new Selectable(text);
+        return new Selectable(values);
     }
     
     public Selectable aiExtract(String prompt) {
-        return new Selectable(text);
+        return new Selectable(values);
     }
 }

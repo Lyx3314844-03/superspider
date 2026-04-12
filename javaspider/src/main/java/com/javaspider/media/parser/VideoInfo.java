@@ -23,15 +23,18 @@ public class VideoInfo {
     private List<String> videoUrls;
     private List<String> audioUrls;
     private List<Quality> qualities;
+    private List<Map<String, Object>> formats;
+    private String videoUrl;
     private boolean isDRMProtected;
-    
+
     public VideoInfo() {
         this.videoUrls = new ArrayList<>();
         this.audioUrls = new ArrayList<>();
         this.qualities = new ArrayList<>();
+        this.formats = new ArrayList<>();
         this.isDRMProtected = false;
     }
-    
+
     /**
      * 清晰度类
      */

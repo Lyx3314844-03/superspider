@@ -1,5 +1,9 @@
 package com.javaspider.core;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.javaspider.contracts.AutoscaledFrontier;
+import com.javaspider.contracts.RuntimeArtifactStore;
+import com.javaspider.contracts.RuntimeObservability;
 import com.javaspider.downloader.Downloader;
 import com.javaspider.downloader.HttpClientDownloader;
 import com.javaspider.pipeline.Pipeline;
@@ -10,14 +14,18 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Spider - 爬虫主类 (修复版)
- * 
+ *
  * 修复问题:
  * 1. 内存优化 - 对象池、懒加载
  * 2. 启动优化 - 异步初始化
@@ -25,7 +33,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 4. 资源管理 - 自动关闭
  * 5. 错误处理 - 统一异常
  * 6. 线程安全 - 原子操作
- * 
+ *
  * @author Lan
  * @version 2.1.0
  * @since 2026-03-23
@@ -43,14 +51,17 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
     protected Downloader downloader;
     protected List<Pipeline> pipelines = new ArrayList<>();
     protected Scheduler scheduler;
+    protected AutoscaledFrontier frontier;
+    protected RuntimeObservability.ObservabilityCollector observabilityCollector = new RuntimeObservability.ObservabilityCollector();
+    protected RuntimeArtifactStore.FileArtifactStore artifactStore = new RuntimeArtifactStore.FileArtifactStore("artifacts/observability");
 
     // ========== 并发配置 (优化) ==========
 
     protected int threadCount = 5;
-    
+
     // 懒加载执行器
     protected volatile ExecutorService executorService;
-    
+
     // 使用原子操作
     protected volatile boolean running = false;
     protected volatile boolean paused = false;
@@ -62,6 +73,7 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
     protected AtomicLong successRequests = new AtomicLong(0);
     protected AtomicLong failedRequests = new AtomicLong(0);
     protected AtomicLong totalItems = new AtomicLong(0);
+    protected AtomicInteger inFlightRequests = new AtomicInteger(0);
     protected volatile long startTime = 0;
     protected volatile long endTime = 0;
 
@@ -70,7 +82,7 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
     // Page 对象池 - 减少 GC 压力
     protected final ArrayBlockingQueue<Page> pagePool;
     protected final int poolSize = 100;
-    
+
     // ========== 速率限制 ==========
 
     protected double rateLimit = 0; // 0 = 无限制
@@ -91,7 +103,7 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
         this.processor = processor;
         this.pagePool = new ArrayBlockingQueue<>(poolSize);
         this.rateLimiter = new Semaphore(1);
-        
+
         // 预创建 Page 对象
         for (int i = 0; i < poolSize; i++) {
             pagePool.offer(createEmptyPage());
@@ -156,19 +168,22 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
         if (!running) {
             synchronized (this) {
                 if (!running) {
-                    initAsync();
+                    initComponents();
                     running = true;
                     stopped = false;
                     startTime = System.currentTimeMillis();
-                    
+                    if (frontier != null && frontierPendingCount() == 0) {
+                        frontier.load();
+                    }
+
                     log.info("Spider [{}] started with {} threads", spiderName, threadCount);
-                    
+
                     try {
                         startProcessors();
                     } catch (Exception e) {
                         log.error("Spider error: {}", e.getMessage(), e);
-                        running = false;
                     } finally {
+                        running = false;
                         endTime = System.currentTimeMillis();
                         logStats();
                     }
@@ -180,16 +195,23 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
     /**
      * 异步初始化 (加快启动)
      */
-    private void initAsync() {
-        CompletableFuture.runAsync(() -> {
-            if (scheduler == null) {
-                scheduler = new QueueScheduler();
-            }
-            if (downloader == null) {
-                downloader = new HttpClientDownloader();
-            }
-            log.debug("Spider components initialized");
-        });
+    private void initComponents() {
+        if (site == null) {
+            site = Site.me();
+        }
+        if (scheduler == null) {
+            scheduler = new QueueScheduler();
+        }
+        if (frontier == null) {
+            AutoscaledFrontier.FrontierConfig config = new AutoscaledFrontier.FrontierConfig();
+            String checkpointName = (spiderName == null || spiderName.isBlank()) ? "runtime" : spiderName;
+            config.checkpointId = checkpointName + "-frontier-" + spiderId;
+            frontier = new AutoscaledFrontier(config);
+        }
+        if (downloader == null) {
+            downloader = new HttpClientDownloader();
+        }
+        log.debug("Spider components initialized");
     }
 
     /**
@@ -201,7 +223,10 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
         }
 
         List<Future<?>> futures = new ArrayList<>();
-        for (int i = 0; i < threadCount; i++) {
+        int workerCount = frontier != null
+            ? Math.max(1, Math.min(threadCount, frontier.getRecommendedConcurrency()))
+            : threadCount;
+        for (int i = 0; i < workerCount; i++) {
             Future<?> future = executorService.submit(this::process);
             futures.add(future);
         }
@@ -245,6 +270,11 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
      */
     private void process() {
         while (running && !stopped) {
+            if (frontier != null) {
+                frontier.reapExpiredLeases(site.getRetryTimes());
+            } else {
+                scheduler.reapExpiredLeases(System.currentTimeMillis(), site.getRetryTimes());
+            }
             // 检查暂停
             while (paused && running) {
                 try {
@@ -265,19 +295,33 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
 
             // 获取请求
             Request request = null;
-            try {
-                request = scheduler.poll();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("Scheduler interrupted");
-                break;
-            }
-            if (request == null) {
-                if (!running) break;
+            if (frontier != null) {
+                request = frontier.lease();
+                if (request == null && frontierPendingCount() > 0) {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        log.warn("Scheduler interrupted");
+                        break;
+                    }
+                }
+            } else {
                 try {
-                    Thread.sleep(100);
+                    request = scheduler.poll(200, TimeUnit.MILLISECONDS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    log.warn("Scheduler interrupted");
+                    break;
+                }
+            }
+            if (request == null) {
+                if (!running || stopped) {
+                    break;
+                }
+                if ((frontier != null && frontierPendingCount() == 0 && inFlightRequests.get() == 0)
+                    || (frontier == null && (scheduler == null || (scheduler.isEmpty() && inFlightRequests.get() == 0)))) {
+                    break;
                 }
                 continue;
             }
@@ -311,23 +355,36 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
      */
     private void processRequest(Request request) {
         totalRequests.incrementAndGet();
+        inFlightRequests.incrementAndGet();
+        AtomicBoolean stopHeartbeat = new AtomicBoolean(false);
+        Thread heartbeatThread = startLeaseHeartbeat(request, stopHeartbeat);
+        String traceId = observabilityCollector.startTrace("spider.request");
+        long startedAt = System.currentTimeMillis();
 
         try {
             // 执行中间件
             if (!executeRequestMiddlewares(request)) {
+                observabilityCollector.recordResult(request, System.currentTimeMillis() - startedAt, null, null, traceId);
+                observabilityCollector.endTrace(traceId, Map.of("status", "filtered"));
                 return;
             }
 
             // 下载页面
             Page page = downloader.download(request, site);
-            
-            if (page.isSkip()) {
-                return;
-            }
 
-            // 错误处理
-            if (!page.isSkip() && page.getResultItems() != null) {
-                page.getResultItems().put("error", "Download failed");
+            if (page.isSkip()) {
+                acknowledgeRequest(
+                    request,
+                    page.getError() == null || page.getStatusCode() == 304,
+                    System.currentTimeMillis() - startedAt,
+                    page.getError() == null ? null : new RuntimeException(page.getError()),
+                    page.getStatusCode() > 0 ? page.getStatusCode() : null
+                );
+                Throwable error = page.getError() == null ? null : new RuntimeException(page.getError());
+                Integer statusCode = page.getStatusCode() > 0 ? page.getStatusCode() : null;
+                observabilityCollector.recordResult(request, System.currentTimeMillis() - startedAt, statusCode, error, traceId);
+                observabilityCollector.endTrace(traceId, Map.of("status", "skipped"));
+                return;
             }
 
             // 执行处理器
@@ -342,11 +399,64 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
             recyclePage(page);
 
             successRequests.incrementAndGet();
+            acknowledgeRequest(
+                request,
+                true,
+                System.currentTimeMillis() - startedAt,
+                null,
+                page.getStatusCode() > 0 ? page.getStatusCode() : null
+            );
+            observabilityCollector.recordResult(
+                request,
+                System.currentTimeMillis() - startedAt,
+                page.getStatusCode() > 0 ? page.getStatusCode() : null,
+                null,
+                traceId
+            );
+            observabilityCollector.endTrace(traceId, Map.of("status", "ok"));
 
         } catch (Exception e) {
             log.error("Process request error: {}", e.getMessage(), e);
             failedRequests.incrementAndGet();
+            acknowledgeRequest(request, false, System.currentTimeMillis() - startedAt, e, null);
+            observabilityCollector.recordResult(request, System.currentTimeMillis() - startedAt, null, e, traceId);
+            observabilityCollector.endTrace(traceId, Map.of("status", "failed"));
+        } finally {
+            stopHeartbeat.set(true);
+            if (heartbeatThread != null) {
+                heartbeatThread.interrupt();
+                try {
+                    heartbeatThread.join(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            inFlightRequests.decrementAndGet();
         }
+    }
+
+    private Thread startLeaseHeartbeat(Request request, AtomicBoolean stopHeartbeat) {
+        Thread thread = new Thread(() -> {
+            while (!stopHeartbeat.get()) {
+                try {
+                    Thread.sleep(10_000L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                if (stopHeartbeat.get()) {
+                    break;
+                }
+                if (frontier != null) {
+                    frontier.heartbeat(request, 30);
+                } else {
+                    scheduler.heartbeat(request, 30_000L);
+                }
+            }
+        }, "enhanced-scheduler-heartbeat-" + spiderId);
+        thread.setDaemon(true);
+        thread.start();
+        return thread;
     }
 
     /**
@@ -436,11 +546,14 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
         running = false;
         stopped = true;
         endTime = System.currentTimeMillis();
-        
+        if (frontier != null) {
+            frontier.persist();
+        }
+
         if (executorService != null) {
             executorService.shutdownNow();
         }
-        
+
         log.info("Spider [{}] stopped", spiderName);
         logStats();
     }
@@ -465,7 +578,15 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
      * 添加请求
      */
     public void addRequest(Request request) {
-        if (scheduler != null) {
+        if (request == null || request.getUrl() == null || request.getUrl().isBlank()) {
+            return;
+        }
+        if (scheduler == null) {
+            initComponents();
+        }
+        if (frontier != null) {
+            frontier.push(request);
+        } else {
             scheduler.push(request);
         }
     }
@@ -474,23 +595,42 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
      * 获取统计信息
      */
     public SpiderStats getStats() {
+        Map<String, Object> observability = observabilityCollector.summary();
         return new SpiderStats(
             totalRequests.get(),
             successRequests.get(),
             failedRequests.get(),
             totalItems.get(),
             startTime,
-            endTime
+            endTime,
+            frontier != null ? frontier.getRecommendedConcurrency() : threadCount,
+            frontier != null ? frontier.getDeadLetterCount() : 0L,
+            longValue(observability.get("events")),
+            longValue(observability.get("traces"))
         );
+    }
+
+    public Map<String, Object> getRuntimeStats() {
+        Map<String, Object> runtime = new LinkedHashMap<>();
+        runtime.put("name", spiderName);
+        runtime.put("running", running);
+        runtime.put("paused", paused);
+        runtime.put("stopped", stopped);
+        runtime.put("queue_size", frontier != null ? frontierPendingCount() : (scheduler != null ? scheduler.size() : 0));
+        runtime.put("in_flight", inFlightRequests.get());
+        runtime.put("stats", getStats());
+        runtime.put("frontier", frontier != null ? frontier.snapshot() : Map.of());
+        runtime.put("observability", observabilityCollector.summary());
+        return runtime;
     }
 
     /**
      * 打印统计信息
      */
     private void logStats() {
-        long duration = endTime - startTime;
+        long duration = (startTime > 0 && endTime >= startTime) ? (endTime - startTime) : 0;
         double rps = duration > 0 ? (double) successRequests.get() / (duration / 1000.0) : 0;
-        
+
         log.info("===== Spider Stats =====");
         log.info("Total Requests: {}", totalRequests.get());
         log.info("Success: {}", successRequests.get());
@@ -498,7 +638,9 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
         log.info("Items: {}", totalItems.get());
         log.info("Duration: {}s", duration / 1000.0);
         log.info("Requests/sec: {}", String.format("%.2f", rps));
+        log.info("Observability: {}", observabilityCollector.summary());
         log.info("========================");
+        persistRuntimeArtifacts();
     }
 
     // ========== 资源清理 ==========
@@ -506,7 +648,7 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
     @Override
     public void close() {
         stop();
-        
+
         // 关闭下载器
         if (downloader != null && downloader instanceof AutoCloseable) {
             try {
@@ -515,10 +657,10 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
                 log.warn("Failed to close downloader: {}", e.getMessage());
             }
         }
-        
+
         // 清空对象池
         pagePool.clear();
-        
+
         log.info("Spider [{}] resources released", spiderName);
     }
 
@@ -531,18 +673,31 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
         public final long totalItems;
         public final long startTime;
         public final long endTime;
+        public final long recommendedConcurrency;
+        public final long deadLetters;
+        public final long observabilityEvents;
+        public final long observabilityTraces;
 
         public SpiderStats(long total, long success, long failed, long items, long start, long end) {
+            this(total, success, failed, items, start, end, 0L, 0L, 0L, 0L);
+        }
+
+        public SpiderStats(long total, long success, long failed, long items, long start, long end,
+                           long recommendedConcurrency, long deadLetters, long observabilityEvents, long observabilityTraces) {
             this.totalRequests = total;
             this.successRequests = success;
             this.failedRequests = failed;
             this.totalItems = items;
             this.startTime = start;
             this.endTime = end;
+            this.recommendedConcurrency = recommendedConcurrency;
+            this.deadLetters = deadLetters;
+            this.observabilityEvents = observabilityEvents;
+            this.observabilityTraces = observabilityTraces;
         }
 
         public long getDuration() {
-            return endTime - startTime;
+            return (startTime > 0 && endTime >= startTime) ? (endTime - startTime) : 0;
         }
 
         public double getRequestsPerSecond() {
@@ -553,11 +708,50 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
         @Override
         public String toString() {
             return String.format(
-                "Stats{total=%d, success=%d, failed=%d, items=%d, duration=%ds, rps=%.2f}",
+                "Stats{total=%d, success=%d, failed=%d, items=%d, duration=%ds, rps=%.2f, recommended=%d, deadLetters=%d, events=%d, traces=%d}",
                 totalRequests, successRequests, failedRequests, totalItems,
-                getDuration() / 1000.0, getRequestsPerSecond()
+                getDuration() / 1000.0, getRequestsPerSecond(), recommendedConcurrency, deadLetters, observabilityEvents, observabilityTraces
             );
         }
+    }
+
+    private void persistRuntimeArtifacts() {
+        try {
+            byte[] statsBytes = new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsBytes(getRuntimeStats());
+            byte[] observabilityBytes = new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsBytes(observabilityCollector.summary());
+            artifactStore.putBytes((spiderName == null ? "spider" : spiderName) + "-runtime", "json", statsBytes, Map.of());
+            artifactStore.putBytes((spiderName == null ? "spider" : spiderName) + "-observability", "json", observabilityBytes, Map.of());
+        } catch (Exception e) {
+            log.debug("Failed to persist runtime artifacts: {}", e.getMessage());
+        }
+    }
+
+    private void acknowledgeRequest(Request request, boolean success, long latencyMs, Throwable error, Integer statusCode) {
+        if (frontier != null) {
+            frontier.ack(request, success, latencyMs, error, statusCode, site != null ? site.getRetryTimes() : 3);
+            return;
+        }
+        if (scheduler != null) {
+            scheduler.ack(request, success);
+        }
+    }
+
+    private int frontierPendingCount() {
+        if (frontier == null) {
+            return 0;
+        }
+        Object rawPending = frontier.snapshot().get("pending");
+        if (rawPending instanceof java.util.Collection<?> collection) {
+            return collection.size();
+        }
+        return 0;
+    }
+
+    private static long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return 0L;
     }
 
     // ========== 链式调用 API ==========

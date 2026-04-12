@@ -7,6 +7,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -133,6 +136,88 @@ class CheckpointManagerTest {
         assertTrue(checkpoints.contains("spider_0"));
         assertTrue(checkpoints.contains("spider_1"));
         assertTrue(checkpoints.contains("spider_2"));
+    }
+
+    @Test
+    @DisplayName("测试保留最近 checkpoint 历史版本")
+    void testCheckpointRetentionKeepsRecentVersions() throws InterruptedException {
+        try (CheckpointManager manager = new CheckpointManager(
+            tempDir.toString(),
+            CheckpointManager.StorageType.JSON,
+            0,
+            2
+        )) {
+            String spiderId = "history_spider";
+            for (int i = 0; i < 3; i++) {
+                manager.save(
+                    spiderId,
+                    Collections.singletonList("url" + i),
+                    new ArrayList<>(),
+                    Map.of("seq", i),
+                    Collections.emptyMap(),
+                    true
+                );
+                Thread.sleep(5);
+            }
+
+            File[] historyFiles = tempDir.toFile().listFiles((dir, name) ->
+                name.startsWith(spiderId + ".checkpoint.")
+                    && name.endsWith(".json")
+                    && !name.equals(spiderId + ".checkpoint.json")
+            );
+            assertNotNull(historyFiles);
+            assertEquals(2, historyFiles.length);
+        }
+    }
+
+    @Test
+    @DisplayName("测试 SQLite 保存加载和历史版本保留")
+    void testSqliteRoundTripAndRetention() throws Exception {
+        String spiderId = "sqlite_spider";
+        try (CheckpointManager manager = new CheckpointManager(
+            tempDir.toString(),
+            CheckpointManager.StorageType.SQLITE,
+            0,
+            2
+        )) {
+            for (int i = 0; i < 3; i++) {
+                manager.save(
+                    spiderId,
+                    Arrays.asList("url" + i, "url" + (i + 1)),
+                    Collections.singletonList("pending" + i),
+                    Map.of("seq", i, "success", 1),
+                    Map.of("threads", 2),
+                    true
+                );
+                Thread.sleep(5);
+            }
+
+            assertTrue(manager.listCheckpoints().contains(spiderId));
+
+            CheckpointManager.CheckpointState state = manager.load(spiderId);
+            assertNotNull(state);
+            assertEquals(Collections.singletonList("pending2"), state.getPendingUrls());
+            assertEquals(2, state.getVisitedUrls().size());
+            assertEquals(2, ((Number) state.getStats().get("seq")).intValue());
+        }
+
+        Path dbPath = tempDir.resolve("checkpoints.sqlite3");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath.toAbsolutePath());
+             ResultSet rs = connection.createStatement().executeQuery(
+                 "SELECT COUNT(*) FROM checkpoint_versions WHERE spider_id = '" + spiderId + "'")) {
+            assertTrue(rs.next());
+            assertEquals(2, rs.getInt(1));
+        }
+
+        try (CheckpointManager manager = new CheckpointManager(
+            tempDir.toString(),
+            CheckpointManager.StorageType.SQLITE,
+            0,
+            2
+        )) {
+            manager.delete(spiderId);
+            assertNull(manager.load(spiderId));
+        }
     }
     
     @Test

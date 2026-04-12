@@ -13,6 +13,8 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.LogManager;
 
 /**
  * 浏览器自动化管理器
@@ -20,11 +22,16 @@ import java.util.Map;
  */
 public class BrowserManager {
     private static final Logger logger = LoggerFactory.getLogger(BrowserManager.class);
+    static {
+        suppressSeleniumWarnings();
+    }
 
     private WebDriver driver;
     private final BrowserType browserType;
     private final boolean headless;
     private final boolean incognito;
+    private final String customUserAgent;
+    private final String proxyServer;
     private WebDriverWait wait;
     private boolean isInitialized = false;
 
@@ -36,13 +43,31 @@ public class BrowserManager {
     }
 
     public BrowserManager() {
-        this(BrowserType.CHROME, true, false);
+        this(BrowserType.CHROME, true, false, "", "");
     }
 
     public BrowserManager(BrowserType browserType, boolean headless, boolean incognito) {
+        this(browserType, headless, incognito, "", "");
+    }
+
+    public BrowserManager(BrowserType browserType, boolean headless, boolean incognito, String customUserAgent, String proxyServer) {
         this.browserType = browserType;
         this.headless = headless;
         this.incognito = incognito;
+        this.customUserAgent = customUserAgent == null ? "" : customUserAgent;
+        this.proxyServer = proxyServer == null ? "" : proxyServer;
+    }
+
+    private static void suppressSeleniumWarnings() {
+        for (String name : new String[]{
+            "org.openqa.selenium",
+            "org.openqa.selenium.devtools.CdpVersionFinder",
+            "org.openqa.selenium.chromium.ChromiumDriver",
+            "org.openqa.selenium.manager.SeleniumManager",
+        }) {
+            java.util.logging.Logger.getLogger(name).setLevel(Level.SEVERE);
+        }
+        LogManager.getLogManager().getLogger("").setLevel(Level.INFO);
     }
 
     /**
@@ -92,6 +117,9 @@ public class BrowserManager {
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
         options.addArguments("--window-size=1920,1080");
+        if (!proxyServer.isBlank()) {
+            options.addArguments("--proxy-server=" + proxyServer);
+        }
         
         // 禁用自动化特征检测
         options.addArguments("--disable-blink-features=AutomationControlled");
@@ -103,7 +131,10 @@ public class BrowserManager {
         prefs.put("profile.default_content_setting_values.notifications", 2);
         options.setExperimentalOption("prefs", prefs);
         
-        options.addArguments("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        String userAgent = customUserAgent.isBlank()
+            ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            : customUserAgent;
+        options.addArguments("--user-agent=" + userAgent);
 
         return new ChromeDriver(options);
     }

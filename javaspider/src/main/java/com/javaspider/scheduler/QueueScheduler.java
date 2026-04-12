@@ -17,8 +17,8 @@ public class QueueScheduler implements Scheduler {
 
     private final BlockingQueue<Request> queue;
     private final Set<String> processedUrls;
-    private final AtomicInteger totalCount = new AtomicInteger(0);
-    private final AtomicInteger processedCount = new AtomicInteger(0);
+    private final AtomicInteger submittedCount = new AtomicInteger(0);  // 总提交数
+    private final AtomicInteger dequeuedCount = new AtomicInteger(0);  // 出队处理数
 
     public QueueScheduler() {
         this.queue = new PriorityBlockingQueue<>(100, Comparator.comparingInt(Request::getPriority));
@@ -29,7 +29,7 @@ public class QueueScheduler implements Scheduler {
     public void push(Request request) {
         if (request != null && processedUrls.add(request.getUrl())) {
             queue.offer(request);
-            totalCount.incrementAndGet();
+            submittedCount.incrementAndGet();
         }
     }
 
@@ -37,7 +37,7 @@ public class QueueScheduler implements Scheduler {
     public Request poll() throws InterruptedException {
         Request request = queue.take();
         if (request != null) {
-            processedCount.incrementAndGet();
+            dequeuedCount.incrementAndGet();
         }
         return request;
     }
@@ -46,7 +46,7 @@ public class QueueScheduler implements Scheduler {
     public Request poll(long timeout, TimeUnit unit) throws InterruptedException {
         Request request = queue.poll(timeout, unit);
         if (request != null) {
-            processedCount.incrementAndGet();
+            dequeuedCount.incrementAndGet();
         }
         return request;
     }
@@ -55,7 +55,7 @@ public class QueueScheduler implements Scheduler {
     public Request pollNow() {
         Request request = queue.poll();
         if (request != null) {
-            processedCount.incrementAndGet();
+            dequeuedCount.incrementAndGet();
         }
         return request;
     }
@@ -67,12 +67,12 @@ public class QueueScheduler implements Scheduler {
 
     @Override
     public int getTotalCount() {
-        return totalCount.get();
+        return submittedCount.get();
     }
 
     @Override
     public int getProcessedCount() {
-        return processedCount.get();
+        return dequeuedCount.get();
     }
 
     @Override
@@ -84,8 +84,8 @@ public class QueueScheduler implements Scheduler {
     public void clear() {
         queue.clear();
         processedUrls.clear();
-        totalCount.set(0);
-        processedCount.set(0);
+        submittedCount.set(0);
+        dequeuedCount.set(0);
     }
 
     @Override

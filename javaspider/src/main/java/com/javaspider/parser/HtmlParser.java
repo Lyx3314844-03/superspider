@@ -3,12 +3,19 @@ package com.javaspider.parser;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.parser.Parser;
 import org.jsoup.select.Elements;
+import org.jsoup.helper.W3CDom;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathFactory;
 
 /**
  * HTML 解析器
@@ -108,53 +115,46 @@ public class HtmlParser {
      * 使用 XPath 提取数据（简化版，使用 CSS 选择器模拟）
      */
     public List<String> xpath(String xpath) {
-        // 将简单的 XPath 转换为 CSS 选择器
-        String cssSelector = convertXPathToCss(xpath);
-        return css(cssSelector);
+        try {
+            Document xmlDocument = Jsoup.parse(html, "", Parser.xmlParser());
+            W3CDom w3cDom = new W3CDom();
+            org.w3c.dom.Document w3cDoc = w3cDom.fromJsoup(xmlDocument);
+            XPath xPath = XPathFactory.newInstance().newXPath();
+            NodeList nodeList = (NodeList) xPath.evaluate(xpath, w3cDoc, XPathConstants.NODESET);
+            List<String> results = new ArrayList<>();
+            for (int index = 0; index < nodeList.getLength(); index++) {
+                Node node = nodeList.item(index);
+                String value = node.getNodeType() == Node.ATTRIBUTE_NODE ? node.getNodeValue() : node.getTextContent();
+                if (value != null && !value.isBlank()) {
+                    results.add(value.trim());
+                }
+            }
+            return results;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("XPath evaluation error: " + xpath, e);
+        }
     }
 
     /**
      * 使用 XPath 提取单个数据
      */
     public String xpathFirst(String xpath) {
-        String cssSelector = convertXPathToCss(xpath);
-        return cssFirst(cssSelector);
-    }
-
-    /**
-     * 简单的 XPath 转 CSS 选择器（仅支持基本语法）
-     */
-    private String convertXPathToCss(String xpath) {
-        if (xpath == null || xpath.isEmpty()) {
-            return "*";
+        try {
+            Document xmlDocument = Jsoup.parse(html, "", Parser.xmlParser());
+            W3CDom w3cDom = new W3CDom();
+            org.w3c.dom.Document w3cDoc = w3cDom.fromJsoup(xmlDocument);
+            XPath xPath = XPathFactory.newInstance().newXPath();
+            NodeList nodeList = (NodeList) xPath.evaluate(xpath, w3cDoc, XPathConstants.NODESET);
+            if (nodeList != null && nodeList.getLength() > 0) {
+                Node node = nodeList.item(0);
+                String value = node.getNodeType() == Node.ATTRIBUTE_NODE ? node.getNodeValue() : node.getTextContent();
+                return value != null ? value.trim() : null;
+            }
+            String value = ((String) xPath.evaluate(xpath, w3cDoc, XPathConstants.STRING));
+            return value == null || value.isBlank() ? null : value.trim();
+        } catch (Exception e) {
+            throw new IllegalArgumentException("XPath evaluation error: " + xpath, e);
         }
-
-        String css = xpath;
-        
-        // 处理 // 后代选择器
-        css = css.replaceAll("//", " ");
-        
-        // 处理 / 子元素选择器
-        css = css.replaceAll("/", " > ");
-        
-        // 处理 [@id='xxx']
-        css = css.replaceAll("\\[@id='([^']+)'\\]", "#$1");
-        css = css.replaceAll("\\[@id=\"([^\"]+)\"\\]", "#$1");
-        
-        // 处理 [@class='xxx']
-        css = css.replaceAll("\\[@class='([^']+)'\\]", ".$1");
-        css = css.replaceAll("\\[@class=\"([^\"]+)\"\\]", ".$1");
-        
-        // 处理 [@xxx='yyy'] 属性选择器
-        css = css.replaceAll("\\[@([\\w-]+)='([^']+)'\\]", "[$1=$2]");
-        css = css.replaceAll("\\[@([\\w-]+)=\"([^\"]+)\"\\]", "[$1=$2]");
-        
-        // 处理 text()
-        if (css.contains("text()")) {
-            css = css.replace("text()", ":containsOwn(%)");
-        }
-
-        return css.trim();
     }
 
     /**
