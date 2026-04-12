@@ -1,0 +1,37 @@
+version: 1
+project:
+  name: pyspider-starter
+runtime: python
+crawl:
+  urls:
+    - https://example.com
+  concurrency: 2
+  max_requests: 20
+  max_depth: 1
+  timeout_seconds: 30
+browser:
+  enabled: true
+  headless: true
+  timeout_seconds: 30
+  user_agent: ""
+  screenshot_path: artifacts/browser/page.png
+  html_path: artifacts/browser/page.html
+anti_bot:
+  enabled: true
+  profile: chrome-stealth
+  proxy_pool: local
+  session_mode: sticky
+  stealth: true
+  challenge_policy: browser
+  captcha_provider: 2captcha
+  captcha_api_key: ""
+node_reverse:
+  enabled: true
+  base_url: http://localhost:3000
+storage:
+  checkpoint_dir: artifacts/checkpoints
+  dataset_dir: artifacts/datasets
+  export_dir: artifacts/exports
+export:
+  format: json
+  output_path: artifacts/exports/results.json

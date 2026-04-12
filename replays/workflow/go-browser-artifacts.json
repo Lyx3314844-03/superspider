@@ -1,0 +1,104 @@
+{
+  "name": "go-browser-artifacts",
+  "framework": "gospider",
+  "runtime": "browser",
+  "target": {
+    "url": "https://target.example/challenge"
+  },
+  "browser": {
+    "capture": ["html", "dom", "screenshot", "console", "network", "har"],
+    "actions": [
+      {
+        "type": "goto",
+        "url": "https://target.example/challenge"
+      },
+      {
+        "type": "type",
+        "selector": "#captcha",
+        "value": "1234"
+      },
+      {
+        "type": "click",
+        "selector": "#continue"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "type": "goto",
+      "url": "https://target.example/challenge"
+    },
+    {
+      "type": "type",
+      "selector": "#captcha",
+      "value": "1234"
+    },
+    {
+      "type": "click",
+      "selector": "#continue"
+    }
+  ],
+  "output": {
+    "directory": "artifacts/browser-replay",
+    "artifact_prefix": "go-browser-replay"
+  },
+  "metadata": {
+    "mock_browser": {
+      "html_fixture_path": "node-reverse-server/fixtures/anti-bot/cloudflare-challenge.html",
+      "screenshot_text": "go-browser-replay-shot",
+      "console_entries": [
+        { "type": "warning", "text": "challenge replay" }
+      ],
+      "network_entries": [
+        {
+          "request_id": "req-1",
+          "url": "https://target.example/challenge",
+          "method": "GET",
+          "resource_type": "Document",
+          "status": 200,
+          "mime_type": "text/html"
+        }
+      ],
+      "har": {
+        "log": {
+          "version": "1.2",
+          "entries": [
+            {
+              "request": { "url": "https://target.example/challenge" }
+            }
+          ]
+        }
+      },
+      "anti_bot": {
+        "challenge": "javascript",
+        "fingerprint_profile": "workflow-browser-replay",
+        "session_mode": "sticky",
+        "stealth": true
+      },
+      "recovery": {
+        "strategy": "challenge-bypass",
+        "recovered": true,
+        "events": [
+          { "phase": "detect", "signal": "javascript", "status": "passed" },
+          { "phase": "mitigate", "action": "bypass", "status": "passed" },
+          { "phase": "resume", "action": "continue", "status": "passed" }
+        ]
+      },
+      "warnings": ["go browser replay"]
+    }
+  },
+  "expected_text_tokens": [
+    "Checking your browser before accessing target.example.",
+    "__cf_bm=token"
+  ],
+  "expected_console_text": "challenge replay",
+  "expected_network_url": "https://target.example/challenge",
+  "expected_har_url": "https://target.example/challenge",
+  "expected_actions": [
+    "goto:https://target.example/challenge",
+    "type:#captcha=1234",
+    "click:#continue"
+  ],
+  "expected_recovery_strategy": "challenge-bypass",
+  "expected_warning": "go browser replay"
+}

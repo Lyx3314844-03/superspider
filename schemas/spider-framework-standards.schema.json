@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spider Framework Standards Report",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "frameworks"],
+  "properties": {
+    "command": { "const": "verify-framework-standards" },
+    "summary": { "enum": ["passed", "failed"] },
+    "summary_text": { "type": "string" },
+    "exit_code": { "type": "integer" },
+    "frameworks": {
+      "type": "object",
+      "required": ["javaspider", "pyspider", "gospider", "rustspider"],
+      "additionalProperties": {
+        "type": "object",
+        "required": ["runtime", "summary", "standards"],
+        "properties": {
+          "runtime": { "type": "string" },
+          "summary": { "enum": ["passed", "failed"] },
+          "standards": {
+            "type": "object",
+            "required": ["code_volume", "tests", "compile_validation", "distributed", "documentation"]
+          }
+        }
+      }
+    }
+  }
+}

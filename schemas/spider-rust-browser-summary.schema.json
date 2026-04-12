@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-rust-browser-summary.schema.json",
+  "title": "Rust Browser Summary",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "runtime", "checks", "metrics"],
+  "properties": {
+    "command": { "const": "verify-rust-browser-summary" },
+    "summary": { "type": "string", "enum": ["passed", "failed"] },
+    "summary_text": { "type": "string", "minLength": 1 },
+    "exit_code": { "type": "integer", "enum": [0, 1] },
+    "runtime": { "const": "rust" },
+    "checks": { "type": "array" },
+    "metrics": { "type": "object" }
+  }
+}

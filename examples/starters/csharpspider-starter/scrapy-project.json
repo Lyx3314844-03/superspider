@@ -1,0 +1,7 @@
+{
+  "name": "csharpspider-starter",
+  "runtime": "csharp",
+  "entry": "src/project/Program.cs",
+  "url": "https://example.com",
+  "output": "artifacts/exports/items.json"
+}

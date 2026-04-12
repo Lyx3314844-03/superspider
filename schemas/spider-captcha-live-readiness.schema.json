@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-captcha-live-readiness.schema.json",
+  "title": "Spider Captcha Live Readiness",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "frameworks"],
+  "properties": {
+    "command": { "const": "verify-captcha-live-readiness" },
+    "summary": { "type": "string", "enum": ["passed", "failed", "skipped"] },
+    "summary_text": { "type": "string", "minLength": 1 },
+    "exit_code": { "type": "integer", "enum": [0, 1] },
+    "frameworks": { "type": "object" }
+  }
+}

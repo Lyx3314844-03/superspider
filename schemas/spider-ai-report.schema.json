@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-ai-report.schema.json",
+  "title": "Spider AI Report Contract",
+  "type": "object",
+  "required": [
+    "command",
+    "runtime",
+    "mode",
+    "summary",
+    "summary_text",
+    "exit_code",
+    "engine",
+    "source",
+    "warnings",
+    "result"
+  ],
+  "properties": {
+    "command": {
+      "const": "ai"
+    },
+    "runtime": {
+      "type": "string",
+      "enum": ["java", "go", "rust", "python"]
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["extract", "understand", "generate-config"]
+    },
+    "summary": {
+      "type": "string",
+      "enum": ["passed", "failed"]
+    },
+    "summary_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exit_code": {
+      "type": "integer",
+      "enum": [0, 1]
+    },
+    "engine": {
+      "type": "string",
+      "enum": ["llm", "heuristic-fallback"]
+    },
+    "source": {
+      "type": "string",
+      "enum": ["url", "html-file", "config", "description"]
+    },
+    "url": {
+      "type": "string"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "result": {
+      "type": "object"
+    }
+  }
+}

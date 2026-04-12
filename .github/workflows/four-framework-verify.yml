@@ -70,6 +70,34 @@ jobs:
           python -m pip install --upgrade pip 2>&1 | tee artifacts/verify-env-pip-upgrade.log
           pip install -r pyspider/requirements.txt 2>&1 | tee artifacts/verify-env-pip-install.log
 
+      - name: Verify shared CLI contract
+        shell: bash
+        run: |
+          set -o pipefail
+          cd gospider
+          go run ./cmd/gospider config init --output artifacts/go-contract.yaml
+          go run ./cmd/gospider doctor --config artifacts/go-contract.yaml --json | tee ../artifacts/go-contract.json
+          cd ../javaspider
+          chmod +x run-framework.sh
+          ./run-framework.sh config init --output artifacts/java-contract.yaml
+          ./run-framework.sh doctor --config artifacts/java-contract.yaml --json | tee ../artifacts/java-contract.json
+          cd ../rustspider
+          cargo run -- config init --output artifacts/rust-contract.yaml
+          cargo run -- doctor --config artifacts/rust-contract.yaml --json | tee ../artifacts/rust-contract.json
+          cd ..
+          pyspider config init --output pyspider/artifacts/py-contract.yaml
+          pyspider doctor --config pyspider/artifacts/py-contract.yaml --json | tee artifacts/py-contract.json
+
+      - name: Validate generated contract configs
+        shell: bash
+        run: |
+          set -o pipefail
+          python validate_contract_configs.py --json \
+            --config java=artifacts/java-contract.yaml \
+            --config go=artifacts/go-contract.yaml \
+            --config rust=artifacts/rust-contract.yaml \
+            --config python=pyspider/artifacts/py-contract.yaml 2>&1 | tee artifacts/contract-config-validation.json
+
       - name: Run root release guard tests
         shell: bash
         run: |
@@ -94,6 +122,210 @@ jobs:
           set -o pipefail
           python smoke_test.py --json 2>&1 | tee artifacts/smoke-test.json
 
+      - name: Run runtime readiness verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_runtime_readiness.py --json 2>&1 | tee artifacts/runtime-readiness.json
+
+      - name: Run runtime stability verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_runtime_stability.py --json --markdown-out artifacts/runtime-stability.md 2>&1 | tee artifacts/runtime-stability.json
+
+      - name: Run result contracts verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_result_contracts.py --json --markdown-out artifacts/result-contracts.md 2>&1 | tee artifacts/result-contracts.json
+
+      - name: Run runtime core capabilities verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_runtime_core_capabilities.py --json 2>&1 | tee artifacts/runtime-core-capabilities.json
+
+      - name: Run operator products verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_operator_products.py --json --markdown-out artifacts/operator-products.md 2>&1 | tee artifacts/operator-products.json
+
+      - name: Run kernel homogeneity verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_kernel_homogeneity.py --json --markdown-out artifacts/kernel-homogeneity.md 2>&1 | tee artifacts/kernel-homogeneity.json
+
+      - name: Run observability evidence verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_observability_evidence.py --json --markdown-out artifacts/observability-evidence.md 2>&1 | tee artifacts/observability-evidence.json
+
+      - name: Run cache and incremental evidence verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_cache_incremental_evidence.py --json --markdown-out artifacts/cache-incremental-evidence.md 2>&1 | tee artifacts/cache-incremental-evidence.json
+
+      - name: Run ecosystem readiness verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_ecosystem_readiness.py --json --markdown-out artifacts/ecosystem-readiness.md 2>&1 | tee artifacts/ecosystem-readiness.json
+
+      - name: Run ecosystem marketplace verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_ecosystem_marketplace.py --json --markdown-out artifacts/ecosystem-marketplace.md 2>&1 | tee artifacts/ecosystem-marketplace.json
+
+      - name: Run industry proof surface verify
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_industry_proof_surface.py --json --markdown-out artifacts/industry-proof-surface.md 2>&1 | tee artifacts/industry-proof-surface.json
+
+      - name: Verify unified ultimate contract
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_ultimate_contract.py --json 2>&1 | tee artifacts/ultimate-contract.json
+
+      - name: Build ultimate trend report
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_ultimate_trends.py --json --snapshot-out artifacts/ultimate-history/current-ultimate.json 2>&1 | tee artifacts/ultimate-trends.json
+
+      - name: Build ultimate events report
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_ultimate_events.py --json --snapshot-out artifacts/ultimate-events-history/current-events.json --compact-out artifacts/ultimate-events-compact.json --ndjson-out artifacts/ultimate-events.ndjson 2>&1 | tee artifacts/ultimate-events.json
+
+      - name: Validate anti-bot replay corpus
+        shell: bash
+        run: |
+          set -o pipefail
+          python validate_antibot_replays.py --json 2>&1 | tee artifacts/antibot-replays.json
+
+      - name: Validate workflow replay corpus
+        shell: bash
+        run: |
+          set -o pipefail
+          python validate_workflow_replays.py --json 2>&1 | tee artifacts/workflow-replays.json
+
+      - name: Build JavaSpider captcha summary
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_javaspider_captcha_summary.py --json 2>&1 | tee artifacts/javaspider-captcha-summary.json
+
+      - name: Build captcha live readiness summary
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_captcha_live_readiness.py --json --markdown-out artifacts/captcha-live-readiness.md 2>&1 | tee artifacts/captcha-live-readiness.json
+
+      - name: Build PySpider concurrency summary
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_pyspider_concurrency_summary.py --json 2>&1 | tee artifacts/pyspider-concurrency-summary.json
+
+      - name: Build Rust browser summary
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_rust_browser_summary.py --json 2>&1 | tee artifacts/rust-browser-summary.json
+
+      - name: Build replay dashboard
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_replay_dashboard.py --json 2>&1 | tee artifacts/replay-dashboard.json
+
+      - name: Build replay trend report
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_replay_trends.py --json --snapshot-out artifacts/replay-history/current-dashboard.json 2>&1 | tee artifacts/replay-trends.json
+
+      - name: Build GoSpider distributed summary
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_gospider_distributed_summary.py --json 2>&1 | tee artifacts/gospider-distributed-summary.json
+
+      - name: Build Rust distributed summary
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_rust_distributed_summary.py --json 2>&1 | tee artifacts/rust-distributed-summary.json
+
+      - name: Build Rust preflight summary
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_rust_preflight_summary.py --json 2>&1 | tee artifacts/rust-preflight-summary.json
+
+      - name: Verify quality policy governance
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_quality_policy_governance.py --json 2>&1 | tee artifacts/quality-policy-governance.json
+
+      - name: Build framework scorecard
+        shell: bash
+        run: |
+          set -o pipefail
+          python generate_framework_scorecard.py --json --markdown-out artifacts/framework-scorecard.md 2>&1 | tee artifacts/framework-scorecard.json
+
+      - name: Build framework deep surfaces report
+        shell: bash
+        run: |
+          set -o pipefail
+          python generate_framework_deep_surfaces_report.py --json --markdown-out artifacts/framework-deep-surfaces.md 2>&1 | tee artifacts/framework-deep-surfaces.json
+
+      - name: Build benchmark and SLA report
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_benchmark_sla.py --json --markdown-out artifacts/benchmark-sla.md 2>&1 | tee artifacts/benchmark-sla.json
+
+      - name: Build blackbox e2e report
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_blackbox_e2e.py --json --markdown-out artifacts/blackbox-e2e.md 2>&1 | tee artifacts/blackbox-e2e.json
+
+      - name: Verify framework standards matrix
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_framework_standards.py --json --markdown-out artifacts/framework-standards.md 2>&1 | tee artifacts/framework-standards.json
+
+      - name: Run quality thresholds
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_quality_thresholds.py --json --profile default --markdown-out artifacts/quality-thresholds.md 2>&1 | tee artifacts/quality-thresholds.json
+
+      - name: Build quality events
+        shell: bash
+        run: |
+          set -o pipefail
+          python verify_quality_events.py --json --snapshot-out artifacts/quality-events-history/current-events.json --compact-out artifacts/quality-events.compact.json --ndjson-out artifacts/quality-events.ndjson 2>&1 | tee artifacts/quality-events.json
+
+      - name: Build release baseline bundle
+        shell: bash
+        run: |
+          set -o pipefail
+          python generate_baseline_bundle.py --json --quality-profile default --markdown-out artifacts/baseline-bundle.md 2>&1 | tee artifacts/baseline-bundle.json
+
       - name: Upload aggregate verify artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -103,9 +335,56 @@ jobs:
             artifacts/verify-env.json
             artifacts/verify-version.json
             artifacts/smoke-test.json
+            artifacts/runtime-readiness.json
+            artifacts/runtime-stability.json
+            artifacts/runtime-stability.md
+            artifacts/result-contracts.json
+            artifacts/result-contracts.md
+            artifacts/runtime-core-capabilities.json
+            artifacts/operator-products.json
+            artifacts/operator-products.md
+            artifacts/ecosystem-readiness.json
+            artifacts/ecosystem-readiness.md
+            artifacts/antibot-replays.json
+            artifacts/workflow-replays.json
+            artifacts/javaspider-captcha-summary.json
+            artifacts/captcha-live-readiness.json
+            artifacts/captcha-live-readiness.md
+            artifacts/pyspider-concurrency-summary.json
+            artifacts/rust-browser-summary.json
+            artifacts/replay-dashboard.json
+            artifacts/replay-trends.json
+            artifacts/gospider-distributed-summary.json
+            artifacts/rust-distributed-summary.json
+            artifacts/rust-preflight-summary.json
+            artifacts/quality-policy-governance.json
+            artifacts/framework-scorecard.json
+            artifacts/framework-scorecard.md
+            artifacts/framework-deep-surfaces.json
+            artifacts/framework-deep-surfaces.md
+            artifacts/benchmark-sla.json
+            artifacts/benchmark-sla.md
+            artifacts/blackbox-e2e.json
+            artifacts/blackbox-e2e.md
+            artifacts/framework-standards.json
+            artifacts/framework-standards.md
+            artifacts/quality-thresholds.json
+            artifacts/quality-thresholds.md
+            artifacts/quality-events.json
+            artifacts/quality-events.compact.json
+            artifacts/quality-events.ndjson
+            artifacts/quality-events-history/current-events.json
+            artifacts/baseline-bundle.json
+            artifacts/baseline-bundle.md
+            artifacts/replay-history/current-dashboard.json
             artifacts/root-tests.log
             artifacts/verify-env-pip-upgrade.log
             artifacts/verify-env-pip-install.log
+            artifacts/go-contract.json
+            artifacts/java-contract.json
+            artifacts/rust-contract.json
+            artifacts/py-contract.json
+            artifacts/contract-config-validation.json
 
   javaspider:
     name: Verify JavaSpider
@@ -247,6 +526,18 @@ jobs:
         run: |
           set -o pipefail
           cargo test 2>&1 | tee artifacts/cargo-test.log
+
+      - name: Run Rust distributed feature gate
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --features distributed --test distributed_scorecard 2>&1 | tee artifacts/cargo-distributed.log
+
+      - name: Run Rust distributed behavior scorecard
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --test distributed_behavior_scorecard 2>&1 | tee artifacts/cargo-distributed-behavior.log
 
       - name: Run Cargo fmt check
         shell: bash

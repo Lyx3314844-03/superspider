@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eruda 爬虫调试演示</title>
+    <!-- 使用本地 NPM 安装的 Eruda -->
+    <script src="./node_modules/eruda/eruda.js"></script>
+    <script>
+        // 初始化 Eruda
+        eruda.init();
+    </script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f0f2f5; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>🕷️ 爬虫调试演示</h2>
+        <p>请点击右下角的 <strong>🔧 图标</strong> 打开浏览器控制台！</p>
+        <button onclick="fetchData()">模拟发送加密请求</button>
+    </div>
+
+    <script>
+        function fetchData() {
+            // 模拟爬虫抓包看到的加密请求
+            console.log("🕸️ 爬虫拦截：准备发送请求...");
+            
+            const encryptedParams = "a1b2c3d4e5...加密字符串...";
+            
+            // 模拟 fetch 请求
+            fetch('https://httpbin.org/get?sign=' + encryptedParams)
+                .then(res => res.json())
+                .then(data => {
+                    console.log("✅ 请求成功:", data);
+                    alert("请求成功！请查看 Eruda Network 面板");
+                })
+                .catch(err => {
+                    console.error("❌ 请求失败:", err);
+                });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-framework.schema.json",
+  "title": "Spider Framework Contract",
+  "type": "object",
+  "required": ["version", "project", "runtime", "crawl", "storage", "export", "browser"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "project": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runtime": {
+      "type": "string",
+      "enum": ["java", "go", "rust", "python"]
+    },
+    "crawl": {
+      "type": "object",
+      "required": ["urls"],
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "concurrency": { "type": "integer", "minimum": 1 },
+        "max_requests": { "type": "integer", "minimum": 1 },
+        "max_depth": { "type": "integer", "minimum": 0 },
+        "timeout_seconds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "sitemap": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "url": { "type": "string" },
+        "max_urls": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "browser": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "headless": { "type": "boolean" },
+        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "user_agent": { "type": "string" },
+        "screenshot_path": { "type": "string" },
+        "html_path": { "type": "string" }
+      }
+    },
+    "anti_bot": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "profile": { "type": "string" },
+        "proxy_pool": { "type": "string" },
+        "session_mode": { "type": "string" },
+        "stealth": { "type": "boolean" },
+        "challenge_policy": { "type": "string" },
+        "captcha_provider": { "type": "string" },
+        "captcha_api_key": { "type": "string" }
+      }
+    },
+    "node_reverse": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "base_url": { "type": "string" }
+      }
+    },
+    "middleware": {
+      "type": "object",
+      "properties": {
+        "user_agent_rotation": { "type": "boolean" },
+        "respect_robots_txt": { "type": "boolean" },
+        "min_request_interval_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "pipeline": {
+      "type": "object",
+      "properties": {
+        "console": { "type": "boolean" },
+        "dataset": { "type": "boolean" },
+        "jsonl_path": { "type": "string" }
+      }
+    },
+    "auto_throttle": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "start_delay_ms": { "type": "integer", "minimum": 0 },
+        "max_delay_ms": { "type": "integer", "minimum": 1 },
+        "target_response_time_ms": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "plugins": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "manifest": { "type": "string" }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "properties": {
+        "checkpoint_dir": { "type": "string" },
+        "dataset_dir": { "type": "string" },
+        "export_dir": { "type": "string" }
+      }
+    },
+    "export": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": ["json", "csv", "md"]
+        },
+        "output_path": { "type": "string" }
+      }
+    },
+    "doctor": {
+      "type": "object",
+      "properties": {
+        "network_targets": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "redis_url": { "type": "string" }
+      }
+    }
+  }
+}

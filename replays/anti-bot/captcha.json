@@ -1,0 +1,25 @@
+{
+  "name": "captcha",
+  "fixture_path": "node-reverse-server/fixtures/anti-bot/datadome-block.html",
+  "marker_title": "Captcha Replay",
+  "expected_tokens": [
+    "datadome captcha required",
+    "window.ddjskey"
+  ],
+  "anti_bot": {
+    "challenge": "captcha",
+    "fingerprint_profile": "synthetic-captcha",
+    "session_mode": "sticky",
+    "stealth": true
+  },
+  "recovery": {
+    "strategy": "captcha-solve",
+    "recovered": true,
+    "events": [
+      { "phase": "detect", "signal": "captcha", "status": "passed" },
+      { "phase": "mitigate", "action": "solve", "status": "passed" },
+      { "phase": "resume", "action": "continue", "status": "passed" }
+    ]
+  },
+  "warning": "synthetic captcha recovery"
+}

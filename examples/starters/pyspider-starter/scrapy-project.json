@@ -1,0 +1,7 @@
+{
+  "name": "pyspider-starter",
+  "runtime": "python",
+  "entry": "scrapy_demo.py",
+  "url": "https://example.com",
+  "output": "artifacts/exports/pyspider-starter-items.json"
+}

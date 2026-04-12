@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spider Public Benchmarks</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: rgba(15, 23, 42, 0.86);
+      --line: rgba(148, 163, 184, 0.22);
+      --text: #e5eef7;
+      --muted: #9fb2c8;
+      --good: #34d399;
+      --bad: #fb7185;
+      --accent: #7dd3fc;
+      --accent-strong: #22d3ee;
+    }
+    body { margin: 0; font-family: "Segoe UI Variable", "Segoe UI", sans-serif; background:
+      radial-gradient(circle at top, rgba(34, 211, 238, 0.14), transparent 28%),
+      linear-gradient(180deg, #020617, #0f172a 56%, #111827); color: var(--text); }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { margin: 0 0 8px; font-size: 40px; letter-spacing: -0.03em; }
+    h2 { letter-spacing: -0.02em; }
+    p { color: var(--muted); }
+    .hero { display: grid; gap: 16px; align-items: end; }
+    .eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .16em; font-size: 12px; font-weight: 700; }
+    .lede { max-width: 760px; font-size: 17px; line-height: 1.6; }
+    .signal { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; background: rgba(15, 23, 42, 0.72); color: var(--muted); font-size: 14px; }
+    .signal strong { color: var(--text); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 28px 0; }
+    .card { background: var(--panel); backdrop-filter: blur(8px); border: 1px solid var(--line); border-radius: 18px; padding: 18px; box-shadow: 0 18px 40px rgba(2, 6, 23, .18); }
+    .card h2 { margin: 0 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .big { font-size: 34px; font-weight: 700; color: var(--accent-strong); }
+    section { margin-top: 28px; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; }
+    th { color: var(--muted); font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    .note { margin-top: 12px; color: var(--muted); font-size: 14px; }
+    .tag { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+    .tag.warn { background: rgba(245, 158, 11, 0.16); color: #fbbf24; }
+    .tag.fail { background: rgba(244, 63, 94, 0.18); color: #fda4af; }
+    .footer { margin-top: 28px; color: var(--muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <div class="eyebrow">Public Evidence Surface</div>
+        <h1>Spider Public Benchmarks</h1>
+        <p class="lede">Repository-generated evidence for runtime readiness, runtime stability, result contracts, operator products, kernel homogeneity, observability, cache/incremental maturity, ecosystem marketplace, industry proof surface, and trend history across the Java, Python, Go, and Rust runtimes.</p>
+      </div>
+      <div class="signal"><strong>Operator parity:</strong> shared control-plane lifecycle probes are now tracked as a first-class readiness metric.</div>
+    </div>
+
+    <div class="grid">
+      <div class="card"><h2>Benchmark SLA</h2><div class="big">failed</div></div>
+      <div class="card"><h2>Blackbox E2E</h2><div class="big">failed</div></div>
+      <div class="card"><h2>Runtime Readiness</h2><div class="big">failed</div></div>
+      <div class="card"><h2>Runtime Stability</h2><div class="big">passed</div></div>
+      <div class="card"><h2>Result Contracts</h2><div class="big">passed</div></div>
+      <div class="card"><h2>SuperSpider CP Benchmark</h2><div class="big">passed</div></div>
+      <div class="card"><h2>SuperSpider CP Release</h2><div class="big">passed</div></div>
+      <div class="card"><h2>Operator Products</h2><div class="big">passed</div></div>
+      <div class="card"><h2>Kernel</h2><div class="big">passed</div></div>
+      <div class="card"><h2>Observability</h2><div class="big">passed</div></div>
+      <div class="card"><h2>Cache / Incremental</h2><div class="big">passed</div></div>
+      <div class="card"><h2>Marketplace</h2><div class="big">passed</div></div>
+      <div class="card"><h2>Ecosystem</h2><div class="big">passed</div></div>
+      <div class="card"><h2>Industry Proof</h2><div class="big">passed</div></div>
+      <div class="card"><h2>Trend Report</h2><div class="big">failed</div></div>
+      <div class="card"><h2>History Depth</h2><div class="big">2</div></div>
+      <div class="card"><h2>Active Alerts</h2><div class="big">8</div></div>
+    </div>
+
+    <section>
+      <h2>Runtime Readiness</h2>
+      <p class="note">Success rate, workflow replay rate, and control-plane parity are shown together so release evidence reflects both runtime contracts and operator-facing task lifecycle behavior.</p>
+      <table>
+        <thead><tr><th>Framework</th><th>Runtime</th><th>Summary</th><th>Success Rate</th><th>Replay Rate</th><th>Control Plane</th></tr></thead>
+        <tbody><tr><td>javaspider</td><td>java</td><td>passed</td><td>1.00</td><td>1.00</td><td>1.00</td></tr><tr><td>pyspider</td><td>python</td><td>failed</td><td>0.38</td><td>0.00</td><td>1.00</td></tr><tr><td>gospider</td><td>go</td><td>failed</td><td>0.97</td><td>0.00</td><td>1.00</td></tr><tr><td>rustspider</td><td>rust</td><td>passed</td><td>1.00</td><td>1.00</td><td>1.00</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Benchmark SLA</h2>
+      <table>
+        <thead><tr><th>Framework</th><th>Runtime</th><th>Summary</th><th>Measured</th><th>Threshold</th><th>Gate</th></tr></thead>
+        <tbody><tr><td>javaspider</td><td>java</td><td>passed</td><td>3184ms</td><td>60000ms</td><td>pass</td></tr><tr><td>pyspider</td><td>python</td><td>passed</td><td>679ms</td><td>20000ms</td><td>pass</td></tr><tr><td>gospider</td><td>go</td><td>failed</td><td>1017ms</td><td>15000ms</td><td>pass</td></tr><tr><td>rustspider</td><td>rust</td><td>passed</td><td>11057ms</td><td>30000ms</td><td>pass</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Blackbox E2E</h2>
+      <table>
+        <thead><tr><th>Framework</th><th>Runtime</th><th>Summary</th></tr></thead>
+        <tbody><tr><td>javaspider</td><td>java</td><td>passed</td></tr><tr><td>pyspider</td><td>python</td><td>passed</td></tr><tr><td>gospider</td><td>go</td><td>failed</td></tr><tr><td>rustspider</td><td>rust</td><td>passed</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Runtime Stability</h2>
+      <p class="note">Long-running maturity evidence tracks frontier stress, recovery, distributed longevity, and soak-readiness so the public benchmark story is not limited to one-shot command success.</p>
+      <table>
+        <thead><tr><th>Framework</th><th>Runtime</th><th>Summary</th><th>Frontier Stress</th><th>Recovery</th><th>Distributed Longevity</th><th>Soak Ready</th></tr></thead>
+        <tbody><tr><td>javaspider</td><td>java</td><td>passed</td><td>1.00</td><td>1.00</td><td>n/a</td><td>yes</td></tr><tr><td>pyspider</td><td>python</td><td>passed</td><td>1.00</td><td>1.00</td><td>1.00</td><td>yes</td></tr><tr><td>gospider</td><td>go</td><td>passed</td><td>1.00</td><td>1.00</td><td>1.00</td><td>yes</td></tr><tr><td>rustspider</td><td>rust</td><td>passed</td><td>1.00</td><td>1.00</td><td>1.00</td><td>yes</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Result Contracts</h2>
+      <p class="note">This surface proves that task results and graph artifacts are not only implemented ad hoc, but checked against shared graph/result/artifact contracts and runtime-local result behavior.</p>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody><tr><td>contract-schemas</td><td>passed</td><td>graph/result schemas present</td></tr><tr><td>control-plane-doc</td><td>passed</td><td>web control-plane doc references result and graph contracts</td></tr><tr><td>gospider-web-result-contract</td><td>passed</td><td>ok  	gospider/web	0.188s</td></tr><tr><td>javaspider-web-result-contract</td><td>passed</td><td>2026-04-11 17:10:11.528 [Thread-3] INFO  com.javaspider.core.Spider - Spider [web-controller-test] started with 1 threads
+2026-04-11 17:10:11.629 [main] INFO  com.javaspider.core.Spider - Executor service shutdown, waiting for tasks to complete...
+2026-04-11 17:10:12.550 [main] INFO  com.javaspider.core.Spider - Spider [web-controller-test] stopped. Total: 0, Success: 0, Failed: 0, Duration: 105ms</td></tr><tr><td>pyspider-web-source-contract</td><td>passed</td><td>runtime source carries graph artifact refs</td></tr><tr><td>rustspider-web-source-contract</td><td>passed</td><td>runtime source carries graph artifact refs</td></tr><tr><td>go-web-source-contract</td><td>passed</td><td>runtime source carries graph artifact refs</td></tr><tr><td>java-web-source-contract</td><td>passed</td><td>runtime source carries graph artifact refs</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>SuperSpider Control Plane Benchmark</h2>
+      <p class="note">This surface tracks lightweight control-plane execution, latency, and dashboard proof so the suite-level control plane is measured alongside the runtime frameworks.</p>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody><tr><td>executions-total</td><td>passed</td><td>executions_total=5</td></tr><tr><td>success-rate</td><td>passed</td><td>success_rate=1.0</td></tr><tr><td>latency-surface</td><td>passed</td><td>p95_latency_ms=31</td></tr><tr><td>dashboard-surface</td><td>passed</td><td>executions_by_state={'succeeded': 5}</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>SuperSpider Control Plane Release</h2>
+      <p class="note">This surface tracks compiler/router parity, package publication, and release/runtime exposure for the standalone control-plane product shell.</p>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody><tr><td>superspider-control-plane</td><td>passed</td><td>19 passed, 0 failed</td></tr><tr><td>superspider-control-plane-package</td><td>passed</td><td>4 passed, 0 failed</td></tr><tr><td>superspider-control-plane-release</td><td>passed</td><td>11 passed, 0 failed</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Operator Products</h2>
+      <p class="note">This surface tracks whether the suite-level operator products are formally shipped and validated: JOBDIR, HTTP cache management, Playwright trace/HAR/mock/codegen tooling, autoscaling pool surfaces, and runtime console inspection.</p>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody><tr><td>manifest:javaspider</td><td>passed</td><td>operator products declared</td></tr><tr><td>manifest:gospider</td><td>passed</td><td>operator products declared</td></tr><tr><td>manifest:pyspider</td><td>passed</td><td>operator products declared</td></tr><tr><td>manifest:rustspider</td><td>passed</td><td>operator products declared</td></tr><tr><td>jobdir-tool</td><td>passed</td><td>jobdir init state='ready'</td></tr><tr><td>http-cache-tool</td><td>passed</td><td>backend='file-json' strategy='delta-fetch'</td></tr><tr><td>runtime-console-tool</td><td>passed</td><td>results_exists=True events_exists=True</td></tr><tr><td>playwright-tooling-helper</td><td>passed</td><td>shared Playwright helper exposes trace/HAR/mock/codegen flags</td></tr><tr><td>job-schema-operator-products</td><td>passed</td><td>job schema exposes jobdir/cache/pools/debug and browser tooling fields</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Kernel Homogeneity</h2>
+      <p class="note">This surface verifies that all runtimes still advertise the same shared kernel vocabulary even while native implementations continue to evolve independently.</p>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody><tr><td>docs-surface</td><td>passed</td><td>kernel homogeneity guide is present</td></tr><tr><td>runtime-core-schema</td><td>passed</td><td>runtime-core schema matches canonical kernel keys</td></tr><tr><td>manifest-alignment</td><td>passed</td><td>all runtimes advertise the same kernel contract set</td></tr><tr><td>contract-documentation</td><td>passed</td><td>framework contract documents the shared kernel vocabulary</td></tr><tr><td>control-plane-vendor-surface</td><td>passed</td><td>vendored control-plane helpers are present for cross-runtime routing</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Observability Evidence</h2>
+      <p class="note">This surface keeps metrics, trace, failure-classification, and monitoring surfaces visible as a release-grade requirement instead of an informal implementation detail.</p>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody><tr><td>docs-surface</td><td>passed</td><td>observability docs are present</td></tr><tr><td>schema-observability-envelope</td><td>passed</td><td>runtime-core schema exposes structured_logs / metrics / trace / failure_classification</td></tr><tr><td>runtime-manifest-observability</td><td>passed</td><td>all runtimes advertise observability in kernel contracts</td></tr><tr><td>monitoring-surface</td><td>passed</td><td>unified monitor tooling and monitoring directory exist</td></tr><tr><td>operations-language</td><td>passed</td><td>operations and stability docs mention metrics / trace / failure evidence</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Cache And Incremental Evidence</h2>
+      <p class="note">This surface tracks whether conditional requests, delta fetch, retention, and freshness are formalized beyond one-off cache tooling.</p>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody><tr><td>docs-and-tool-surface</td><td>passed</td><td>cache guide, framework contract, and shared HTTP cache tool are present</td></tr><tr><td>schema-cache-envelope</td><td>passed</td><td>runtime-core schema exposes enabled / store_path / delta_fetch / revalidate_seconds</td></tr><tr><td>runtime-cache-contract</td><td>passed</td><td>all runtimes advertise cache in kernel contracts</td></tr><tr><td>guide-language</td><td>passed</td><td>cache guide mentions conditional requests, delta fetch, retention, and freshness</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Benchmark Trends</h2>
+      <table>
+        <thead><tr><th>Framework</th><th>Runtime</th><th>Current SLA</th><th>Delta (ms)</th><th>Summary Changed</th></tr></thead>
+        <tbody><tr><td>javaspider</td><td>java</td><td>216ms / 60000ms</td><td>-736</td><td>True</td></tr><tr><td>pyspider</td><td>python</td><td>721ms / 20000ms</td><td>533</td><td>False</td></tr><tr><td>gospider</td><td>go</td><td>1419ms / 15000ms</td><td>942</td><td>True</td></tr><tr><td>rustspider</td><td>rust</td><td>1320ms / 30000ms</td><td>797</td><td>False</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Runtime Readiness Trends</h2>
+      <p class="note">The readiness trend view highlights whether task lifecycle parity stays stable across historical snapshots, with a dedicated delta for <code>control_plane_rate</code>.</p>
+      <table>
+        <thead><tr><th>Framework</th><th>Runtime</th><th>Current Summary</th><th>Previous Summary</th><th>Control Plane</th><th>Delta</th><th>Summary Changed</th></tr></thead>
+        <tbody><tr><td>javaspider</td><td>java</td><td>passed</td><td>passed</td><td>1.0</td><td>0.0</td><td>False</td></tr><tr><td>pyspider</td><td>python</td><td>passed</td><td>passed</td><td>1.0</td><td>0.0</td><td>False</td></tr><tr><td>gospider</td><td>go</td><td>failed</td><td>passed</td><td>1.0</td><td>0.0</td><td>True</td></tr><tr><td>rustspider</td><td>rust</td><td>passed</td><td>passed</td><td>1.0</td><td>0.0</td><td>False</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Current Alerts</h2>
+      <p class="note">Warnings and failed regressions from the current trend report are surfaced here so public readers can spot SLA or control-plane drift without opening the raw JSON artifacts.</p>
+      <table>
+        <thead><tr><th>Framework</th><th>Source</th><th>Severity</th><th>Details</th></tr></thead>
+        <tbody><tr><td>javaspider</td><td>benchmark-sla</td><td><span class="tag fail">failed</span></td><td>benchmark/SLA summary regressed from passed to failed</td></tr><tr><td>pyspider</td><td>benchmark-sla</td><td><span class="tag warn">warning</span></td><td>success_job_ms regressed from 188ms to 721ms</td></tr><tr><td>gospider</td><td>benchmark-sla</td><td><span class="tag warn">warning</span></td><td>success_job_ms regressed from 477ms to 1419ms</td></tr><tr><td>gospider</td><td>benchmark-sla</td><td><span class="tag fail">failed</span></td><td>benchmark/SLA summary regressed from passed to failed</td></tr><tr><td>rustspider</td><td>benchmark-sla</td><td><span class="tag warn">warning</span></td><td>success_job_ms regressed from 523ms to 1320ms</td></tr><tr><td>javaspider</td><td>blackbox-e2e</td><td><span class="tag fail">failed</span></td><td>blackbox e2e summary regressed from passed to failed</td></tr><tr><td>gospider</td><td>blackbox-e2e</td><td><span class="tag fail">failed</span></td><td>blackbox e2e summary regressed from passed to failed</td></tr><tr><td>gospider</td><td>runtime-readiness</td><td><span class="tag fail">failed</span></td><td>runtime readiness summary regressed from passed to failed</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Ecosystem Readiness</h2>
+      <p class="note">These checks capture the non-runtime maturity layer: docs, starters, external examples, and integration catalog discipline.</p>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody><tr><td>docs-surface</td><td>passed</td><td>ecosystem docs are present</td></tr><tr><td>starter-surface</td><td>passed</td><td>starter readmes exist for all runtimes</td></tr><tr><td>external-examples</td><td>passed</td><td>external example surfaces are present</td></tr><tr><td>adopter-validation-surface</td><td>passed</td><td>documented validation stories: 2</td></tr><tr><td>integration-catalog</td><td>passed</td><td>integration catalog exposes plugin and benchmark report surfaces</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Ecosystem Marketplace</h2>
+      <p class="note">This surface tracks plugin catalog, marketplace/support entrypoints, and starter/governance discipline as the foundation for a real public extension ecosystem.</p>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody><tr><td>docs-surface</td><td>passed</td><td>marketplace, support, governance, cookbook, and migration docs are present</td></tr><tr><td>catalog-entrypoints</td><td>passed</td><td>integration catalog exposes marketplace and support entrypoints</td></tr><tr><td>plugin-catalog</td><td>passed</td><td>plugin catalog exposes cache, incremental, and observability extension surfaces</td></tr><tr><td>starter-surface</td><td>passed</td><td>starter templates exist for ecosystem onboarding</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Industry Proof Surface</h2>
+      <p class="note">This surface distinguishes repository-owned proof from external proof claims by checking benchmark history depth, published artifacts, and validation story visibility.</p>
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody><tr><td>docs-surface</td><td>passed</td><td>industry proof docs are present</td></tr><tr><td>public-benchmark-surface</td><td>passed</td><td>public benchmark site and benchmark history directory exist</td></tr><tr><td>benchmark-history-depth</td><td>passed</td><td>benchmark history depth is 2</td></tr><tr><td>validation-stories</td><td>passed</td><td>public adopter/validation stories counted: 3</td></tr><tr><td>published-proof-artifacts</td><td>passed</td><td>core proof artifacts exist in artifacts/</td></tr></tbody>
+      </table>
+    </section>
+
+    <div class="footer">Generated from repository artifacts under <code>artifacts/</code>.</div>
+  </div>
+</body>
+</html>

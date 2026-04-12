@@ -1,0 +1,9 @@
+{
+	"id": "GmI0PWPoi3eAL0s",
+	"json": "{\"id\":\"GmI0PWPoi3eAL0s\",\"url\":\"https://www.youtube.com/watch?v=pDe00E3Gvh8\",\"loadedUrl\":\"https://www.youtube.com/watch?v=pDe00E3Gvh8\",\"uniqueKey\":\"https://www.youtube.com/watch?v=pDe00E3Gvh8\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[],\"headers\":{},\"userData\":{\"__crawlee\":{\"state\":4}},\"handledAt\":\"2026-04-06T13:31:02.121Z\"}",
+	"method": "GET",
+	"orderNo": null,
+	"retryCount": 0,
+	"uniqueKey": "https://www.youtube.com/watch?v=pDe00E3Gvh8",
+	"url": "https://www.youtube.com/watch?v=pDe00E3Gvh8"
+}

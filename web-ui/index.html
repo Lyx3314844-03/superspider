@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spider Framework Suite</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --bg-soft: #0f1b2e;
+      --panel: rgba(9, 18, 34, 0.82);
+      --line: rgba(148, 163, 184, 0.18);
+      --text: #e2e8f0;
+      --muted: #9fb0c6;
+      --sky: #38bdf8;
+      --mint: #34d399;
+      --amber: #f59e0b;
+      --rose: #fb7185;
+      --max: 1140px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "SF Pro Text", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 28%),
+        radial-gradient(circle at top right, rgba(52, 211, 153, 0.14), transparent 24%),
+        linear-gradient(180deg, #030712 0%, #07111f 52%, #0f1b2e 100%);
+    }
+
+    a { color: inherit; text-decoration: none; }
+    .wrap { width: min(var(--max), calc(100% - 32px)); margin: 0 auto; }
+    .nav {
+      position: sticky; top: 0; z-index: 10;
+      backdrop-filter: blur(16px);
+      background: rgba(3, 7, 18, 0.72);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; padding: 16px 0;
+    }
+    .brand { font-weight: 700; letter-spacing: 0.02em; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 14px; }
+    .hero { padding: 72px 0 40px; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 999px;
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      color: var(--sky); background: rgba(14, 165, 233, 0.08);
+      font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    h1 {
+      margin: 18px 0 16px;
+      font-size: clamp(42px, 7vw, 76px);
+      line-height: 0.96;
+      letter-spacing: -0.05em;
+      max-width: 900px;
+    }
+    .lede {
+      max-width: 760px;
+      color: var(--muted);
+      font-size: clamp(18px, 2.2vw, 22px);
+      line-height: 1.6;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 28px; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 48px; padding: 0 18px; border-radius: 14px;
+      border: 1px solid var(--line); background: rgba(255,255,255,0.02);
+      transition: transform .18s ease, border-color .18s ease, background .18s ease;
+      font-weight: 600;
+    }
+    .btn:hover { transform: translateY(-1px); border-color: rgba(56,189,248,.45); }
+    .btn.primary { background: linear-gradient(135deg, #0284c7, #0ea5e9); border-color: transparent; }
+    .metrics {
+      margin: 42px 0 0; display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px;
+    }
+    .metric, .card, .code, .timeline {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
+    }
+    .metric { padding: 20px; }
+    .metric .label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .metric .value { margin-top: 10px; font-size: 34px; font-weight: 700; }
+    section { padding: 26px 0; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+    .section-head h2 { margin: 0; font-size: 28px; letter-spacing: -0.03em; }
+    .section-head p { margin: 0; color: var(--muted); max-width: 720px; }
+    .grid-4, .grid-3, .grid-2 { display: grid; gap: 16px; }
+    .grid-4 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .card { padding: 20px; }
+    .card .tag { display: inline-block; margin-bottom: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--sky); }
+    .card h3 { margin: 0 0 10px; font-size: 22px; }
+    .card p { margin: 0; color: var(--muted); line-height: 1.6; }
+    .card ul { margin: 12px 0 0; padding-left: 18px; color: var(--muted); line-height: 1.7; }
+    .code { padding: 18px; overflow: auto; }
+    pre { margin: 0; font-family: Consolas, "SFMono-Regular", monospace; font-size: 14px; line-height: 1.7; color: #dbeafe; }
+    .timeline { padding: 18px; }
+    .timeline-item + .timeline-item { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .timeline-item strong { display: block; margin-bottom: 6px; }
+    .timeline-item span { color: var(--muted); line-height: 1.6; }
+    footer {
+      padding: 36px 0 56px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .footer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+    .footer-panel { padding: 18px; border-radius: 18px; background: rgba(2, 6, 23, 0.56); border: 1px solid var(--line); }
+
+    @media (max-width: 720px) {
+      .nav-inner { align-items: flex-start; flex-direction: column; }
+      .section-head { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="wrap nav-inner">
+      <div class="brand">Spider Framework Suite</div>
+      <div class="nav-links">
+        <a href="#runtimes">Runtimes</a>
+        <a href="#evidence">Evidence</a>
+        <a href="#starters">Starters</a>
+        <a href="#deploy">Deploy</a>
+        <a href="#story">Positioning</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section class="hero">
+      <div class="eyebrow">Multi-Runtime Crawler Platform</div>
+      <h1>One operator model across Java, Go, Python, and Rust.</h1>
+      <p class="lede">
+        Spider Framework Suite is not just one crawler library. It is a shared platform contract:
+        the same task model, the same config model, the same control-plane model, and comparable
+        release evidence across four native runtimes.
+      </p>
+      <div class="actions">
+        <a class="btn primary" href="public-benchmarks/">Open Public Benchmarks</a>
+        <a class="btn" href="docs/">Browse Docs</a>
+        <a class="btn" href="../docs/STARTERS.md">Browse Starters</a>
+        <a class="btn" href="../docs/COMPARE.md">Compare Against Scrapy / Colly / Crawlee</a>
+        <a class="btn" href="../examples/external/control-plane-demo/index.html">Open Control-Plane Demo</a>
+      </div>
+
+      <div class="metrics">
+        <div class="metric">
+          <div class="label">Native Runtimes</div>
+          <div class="value">4</div>
+        </div>
+        <div class="metric">
+          <div class="label">Shared CLI</div>
+          <div class="value">1</div>
+        </div>
+        <div class="metric">
+          <div class="label">Public Evidence Lanes</div>
+          <div class="value">3</div>
+        </div>
+        <div class="metric">
+          <div class="label">Operator Surface</div>
+          <div class="value">/api/tasks</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="runtimes">
+      <div class="section-head">
+        <h2>Runtime Fit</h2>
+        <p>Each runtime has a sharper best-fit lane, but the suite-level value is the shared contract across all four.</p>
+      </div>
+      <div class="grid-4">
+        <article class="card">
+          <div class="tag">Java</div>
+          <h3>JavaSpider</h3>
+          <p>Enterprise workflow-heavy runtime with stronger browser and integration posture.</p>
+        </article>
+        <article class="card">
+          <div class="tag">Go</div>
+          <h3>GoSpider</h3>
+          <p>Concurrent service-oriented runtime for lightweight deployment and control-plane friendly operations.</p>
+        </article>
+        <article class="card">
+          <div class="tag">Python</div>
+          <h3>PySpider</h3>
+          <p>Fast iteration lane for extraction, research orchestration, and AI-assisted crawling.</p>
+        </article>
+        <article class="card">
+          <div class="tag">Rust</div>
+          <h3>RustSpider</h3>
+          <p>Typed runtime core for reliability-sensitive and performance-aware crawling workloads.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="evidence">
+      <div class="section-head">
+        <h2>Evidence, Not Hype</h2>
+        <p>The suite already ships runtime readiness, benchmark/SLA, blackbox e2e, trend history, and release validation artifacts.</p>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <div class="tag">Verification</div>
+          <h3>Benchmark & Blackbox</h3>
+          <p>Public artifacts are generated from repository-owned reports rather than ad hoc screenshots or one-off claims.</p>
+          <ul>
+            <li>`verify_benchmark_sla.py`</li>
+            <li>`verify_blackbox_e2e.py`</li>
+            <li>`verify_benchmark_trends.py`</li>
+          </ul>
+        </article>
+        <article class="card">
+          <div class="tag">History</div>
+          <h3>Nightly Scale Lane</h3>
+          <p>Nightly workflows now preserve benchmark history and synthetic soak evidence instead of only single-run summaries.</p>
+          <ul>
+            <li>Benchmark history snapshots</li>
+            <li>Go synthetic soak logs</li>
+            <li>Public benchmark site refresh</li>
+          </ul>
+        </article>
+        <article class="card">
+          <div class="tag">Operator Model</div>
+          <h3>Shared Control Plane</h3>
+          <p>Task creation, lifecycle, logs, and results converge on one canonical surface across runtimes.</p>
+          <ul>
+            <li>`GET /api/tasks`</li>
+            <li>`GET /api/tasks/{id}/results`</li>
+            <li>`GET /api/tasks/{id}/logs`</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="starters">
+      <div class="section-head">
+        <h2>Starters And External Examples</h2>
+        <p>External adopters should not need to reverse-engineer the repo. Starter kits and control-plane clients are first-class surfaces now.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="tag">Starter Kits</div>
+          <h3>Copy, Run, Extend</h3>
+          <p>Each runtime starter includes a minimal config, a minimal job, and shell/PowerShell entrypoints.</p>
+          <ul>
+            <li>PySpider starter</li>
+            <li>GoSpider starter</li>
+            <li>JavaSpider starter</li>
+            <li>RustSpider starter</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="tag">External Examples</div>
+          <h3>API Clients And Demos</h3>
+          <p>There is now a static control-plane demo plus minimal Python and Node clients for the shared `/api/tasks` contract.</p>
+          <ul>
+            <li>Browser-only control-plane demo</li>
+            <li>Python control-plane client</li>
+            <li>Node control-plane client</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="deploy">
+      <div class="section-head">
+        <h2>Quick Deploy Surface</h2>
+        <p>Use the suite as a release-verified platform contract, then choose the runtime lane that matches your workload.</p>
+      </div>
+      <div class="grid-2">
+        <div class="code">
+<pre>python verify_runtime_readiness.py --json
+python verify_benchmark_sla.py --json --markdown-out artifacts/benchmark-sla.md
+python verify_blackbox_e2e.py --json --markdown-out artifacts/blackbox-e2e.md
+python verify_benchmark_trends.py --json --markdown-out artifacts/benchmark-trends.md \
+  --snapshot-out artifacts/benchmark-history/current-benchmark.json</pre>
+        </div>
+        <div class="timeline">
+          <div class="timeline-item">
+            <strong>1. Pick a runtime</strong>
+            <span>Choose Java, Go, Python, or Rust based on enterprise workflow, concurrency, iteration speed, or runtime reliability.</span>
+          </div>
+          <div class="timeline-item">
+            <strong>2. Start from a kit</strong>
+            <span>Use the runtime starter directory or external control-plane examples instead of beginning from a blank repo.</span>
+          </div>
+          <div class="timeline-item">
+            <strong>3. Publish evidence</strong>
+            <span>Use public benchmarks, trend history, and release artifacts to justify claims externally.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="story">
+      <div class="section-head">
+        <h2>Why This Is Different</h2>
+        <p>Most crawler frameworks optimize one language. This suite optimizes one platform model across four languages.</p>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <div class="tag">Positioning</div>
+          <h3>One Platform Story</h3>
+          <p>Same task model, same config model, same control-plane model, comparable evidence and artifacts.</p>
+        </article>
+        <article class="card">
+          <div class="tag">Comparison</div>
+          <h3>Honest Trade-Offs</h3>
+          <p>Scrapy, Colly, and Crawlee still have bigger ecosystems. This suite’s differentiator is cross-runtime contract consistency.</p>
+        </article>
+        <article class="card">
+          <div class="tag">Adoption</div>
+          <h3>Ready For Public Validation</h3>
+          <p>Adopter templates, contribution guides, public benchmark artifacts, and nightly history are now part of the repository surface.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-grid">
+      <div class="footer-panel">
+        <strong>Read</strong>
+        <div><a href="../docs/POSITIONING.md">Positioning</a></div>
+        <div><a href="../docs/COMPARE.md">Compare</a></div>
+        <div><a href="../docs/ADOPTERS.md">Adopters</a></div>
+      </div>
+      <div class="footer-panel">
+        <strong>Operate</strong>
+        <div><a href="../docs/OPERATIONS.md">Operations</a></div>
+        <div><a href="../docs/NIGHTLY_SCALE.md">Nightly Scale</a></div>
+        <div><a href="public-benchmarks/">Public Benchmarks</a></div>
+      </div>
+      <div class="footer-panel">
+        <strong>Integrate</strong>
+        <div><a href="docs/">Docs Portal</a></div>
+        <div><a href="../docs/STARTERS.md">Starters</a></div>
+        <div><a href="../docs/INTEGRATIONS.md">Integrations</a></div>
+        <div><a href="../examples/external/README.md">External Examples</a></div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

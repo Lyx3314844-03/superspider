@@ -1,0 +1,20 @@
+{
+  "name": "pyspider-starter-job",
+  "runtime": "ai",
+  "target": {
+    "url": "https://example.com"
+  },
+  "extract": [
+    {
+      "field": "title",
+      "type": "ai"
+    }
+  ],
+  "output": {
+    "format": "json",
+    "path": "artifacts/exports/job-output.json"
+  },
+  "metadata": {
+    "content": "<title>Starter Demo</title>"
+  }
+}

@@ -8,6 +8,16 @@ import sys
 from pathlib import Path
 
 
+def build_pyspider_command(system_name: str | None = None, subcommand: str = "version") -> list[str]:
+    system_name = system_name or platform.system()
+    executable = Path(sys.executable)
+    script_name = "pyspider.exe" if system_name == "Windows" else "pyspider"
+    console_script = executable.with_name(script_name)
+    if console_script.exists():
+        return [str(console_script), subcommand]
+    return [sys.executable, "-m", "pyspider", subcommand]
+
+
 def build_smoke_commands(system_name: str | None = None) -> dict[str, dict[str, str | list[str]]]:
     system_name = system_name or platform.system()
     if system_name == "Windows":
@@ -15,16 +25,13 @@ def build_smoke_commands(system_name: str | None = None) -> dict[str, dict[str, 
             "powershell",
             "-NoProfile",
             "-Command",
-            "& mvn -q compile '-Dexec.mainClass=com.javaspider.cli.MediaDownloaderCLI' '-Dexec.args=version' 'org.codehaus.mojo:exec-maven-plugin:3.6.1:java'",
+            "& mvn -q compile dependency:copy-dependencies; java -cp 'target/classes;target/dependency/*' com.javaspider.EnhancedSpider version",
         ]
     else:
         javaspider_command = [
-            "mvn",
-            "-q",
-            "compile",
-            "-Dexec.mainClass=com.javaspider.cli.MediaDownloaderCLI",
-            "-Dexec.args=version",
-            "org.codehaus.mojo:exec-maven-plugin:3.6.1:java",
+            "bash",
+            "-lc",
+            "mvn -q compile dependency:copy-dependencies && java -cp 'target/classes:target/dependency/*' com.javaspider.EnhancedSpider version",
         ]
 
     return {
@@ -32,13 +39,13 @@ def build_smoke_commands(system_name: str | None = None) -> dict[str, dict[str, 
             "cwd": "javaspider",
             "runtime": "java",
             "command": javaspider_command,
-            "expect": "MediaDownloader CLI v",
+            "expect": "JavaSpider Framework CLI v",
         },
         "pyspider": {
             "cwd": ".",
             "runtime": "python",
-            "command": [sys.executable, "-m", "pyspider.cli.video_downloader", "--help"],
-            "expect": "视频下载命令行工具",
+            "command": build_pyspider_command(system_name, "version"),
+            "expect": "pyspider 1.0.0",
         },
         "gospider": {
             "cwd": "gospider",
@@ -49,8 +56,8 @@ def build_smoke_commands(system_name: str | None = None) -> dict[str, dict[str, 
         "rustspider": {
             "cwd": "rustspider",
             "runtime": "rust",
-            "command": ["cargo", "run", "--quiet", "--bin", "preflight", "--", "--help"],
-            "expect": "rustspider preflight",
+            "command": ["cargo", "run", "--quiet", "--", "version"],
+            "expect": "rustspider 1.0.0",
         },
     }
 
@@ -99,10 +106,13 @@ def run_smoke_check(root: Path, framework: str) -> dict:
 
 def run_smoke_suite(root: Path) -> dict:
     checks = [run_smoke_check(root, framework) for framework in ("javaspider", "pyspider", "gospider", "rustspider")]
-    exit_code = 1 if any(check["exit_code"] != 0 for check in checks) else 0
+    passed = sum(1 for check in checks if check["summary"] == "passed")
+    failed = len(checks) - passed
+    exit_code = 1 if failed else 0
     return {
         "command": "smoke-test",
         "summary": "failed" if exit_code else "passed",
+        "summary_text": f"{passed} passed, {failed} failed",
         "exit_code": exit_code,
         "checks": checks,
     }

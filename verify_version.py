@@ -120,11 +120,27 @@ def collect_version_report(root: Path, git_ref: str | None = None) -> dict:
     return {
         "command": "verify-version",
         "summary": "failed" if has_failure else "passed",
+        "summary_text": _build_version_summary_text(targets, checks),
         "exit_code": exit_code,
         "expected_version": expected_version,
         "checks": checks,
         "targets": targets,
     }
+
+
+def _build_version_summary_text(targets: list[dict], checks: list[dict]) -> str:
+    target_passed = sum(1 for target in targets if target["status"] == "passed")
+    target_failed = len(targets) - target_passed
+    check_counts = {"passed": 0, "failed": 0, "skipped": 0}
+    for check in checks:
+        status = check["status"]
+        if status in check_counts:
+            check_counts[status] += 1
+    return (
+        f"{target_passed} targets passed, {target_failed} targets failed, "
+        f"{check_counts['passed']} checks passed, {check_counts['failed']} checks failed, "
+        f"{check_counts['skipped']} checks skipped"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

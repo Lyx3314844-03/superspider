@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-framework-deep-surfaces-report.schema.json",
+  "title": "Spider Framework Deep Surfaces Report",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "frameworks"],
+  "properties": {
+    "command": { "const": "generate-framework-deep-surfaces-report" },
+    "summary": { "type": "string", "enum": ["passed"] },
+    "summary_text": { "type": "string", "minLength": 1 },
+    "exit_code": { "type": "integer", "enum": [0] },
+    "frameworks": { "type": "object" }
+  }
+}

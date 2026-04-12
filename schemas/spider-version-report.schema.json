@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-version-report.schema.json",
+  "title": "Spider Version Report Contract",
+  "type": "object",
+  "required": [
+    "command",
+    "summary",
+    "summary_text",
+    "exit_code",
+    "expected_version",
+    "checks",
+    "targets"
+  ],
+  "properties": {
+    "command": {
+      "const": "verify-version"
+    },
+    "summary": {
+      "type": "string",
+      "enum": ["passed", "failed"]
+    },
+    "summary_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exit_code": {
+      "type": "integer",
+      "enum": [0, 1]
+    },
+    "expected_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "details"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed", "skipped"]
+          },
+          "details": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "expected", "actual", "status"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actual": {
+            "type": ["string", "null"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed"]
+          }
+        }
+      }
+    }
+  }
+}

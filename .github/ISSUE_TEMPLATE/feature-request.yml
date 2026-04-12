@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a feature for one runtime or the shared contract
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: input
+    id: scope
+    attributes:
+      label: Scope
+      description: Which runtime or shared surface is in scope
+      placeholder: shared / javaspider / gospider / pyspider / rustspider
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this solve
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Contract impact
+      description: Does this change CLI, config, web control plane, or artifacts
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Benchmark or user evidence
+      description: Include data, workload, or user feedback if available

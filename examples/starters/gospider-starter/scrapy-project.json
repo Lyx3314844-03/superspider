@@ -1,0 +1,8 @@
+{
+  "name": "gospider-starter",
+  "runtime": "go",
+  "entry": "main.go",
+  "runner": "dist/gospider-project",
+  "url": "https://example.com",
+  "output": "artifacts/exports/gospider-starter-items.json"
+}

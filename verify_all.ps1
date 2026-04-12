@@ -4,7 +4,7 @@ Write-Host "===== 验证所有框架代码 =====" -ForegroundColor Cyan
 # 1. pyspider
 Write-Host "`n[1/4] 检查 pyspider..." -ForegroundColor Yellow
 cd pyspider
-python -m py_compile core/spider_enhanced.py core/exceptions.py core/security.py downloader/downloader_enhanced.py 2>&1
+python -m py_compile core/spider.py core/exceptions.py core/security.py downloader/downloader.py 2>&1
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ pyspider Python 语法检查通过" -ForegroundColor Green
 } else {

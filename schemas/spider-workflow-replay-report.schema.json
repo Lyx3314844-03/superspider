@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-workflow-replay-report.schema.json",
+  "title": "Spider Workflow Replay Validation Report",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "checks"],
+  "properties": {
+    "command": { "const": "validate-workflow-replays" },
+    "summary": {
+      "type": "string",
+      "enum": ["passed", "failed"]
+    },
+    "summary_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exit_code": {
+      "type": "integer",
+      "enum": [0, 1]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "path", "details"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["passed", "failed"] },
+          "path": { "type": "string", "minLength": 1 },
+          "details": { "type": "string" }
+        }
+      }
+    }
+  }
+}

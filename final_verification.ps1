@@ -11,7 +11,7 @@ $passedTests = 0
 # 1. pyspider
 Write-Host "[1/4] pyspider 验证..." -ForegroundColor Yellow
 cd pyspider
-python -m py_compile core/spider_enhanced.py core/exceptions.py core/security.py downloader/downloader_enhanced.py 2>&1
+python -m py_compile core/spider.py core/exceptions.py core/security.py downloader/downloader.py 2>&1
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Python 语法检查通过" -ForegroundColor Green
     $passedTests++

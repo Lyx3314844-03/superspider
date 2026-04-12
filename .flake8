@@ -1,0 +1,20 @@
+[flake8]
+exclude =
+    .git,
+    __pycache__,
+    .pytest_cache,
+    build,
+    dist,
+    artifacts,
+    downloads,
+    pyspider/tests,
+    pyspider/examples
+max-line-length = 120
+extend-ignore =
+    E203,
+    E501,
+    W293,
+    W291,
+    E302,
+    E305,
+    E402

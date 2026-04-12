@@ -1,0 +1,37 @@
+{
+  "name": "spider-reverse-engine",
+  "version": "10.0.0",
+  "description": "业界最强大的逆向工程服务 - 60+ APIs",
+  "main": "server-maximum.js",
+  "scripts": {
+    "start": "node server-maximum.js",
+    "start:v3": "node server-enhanced.js",
+    "dev": "nodemon server-maximum.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@babel/generator": "^7.29.1",
+    "@babel/parser": "^7.23.6",
+    "@babel/traverse": "^7.23.6",
+    "@babel/types": "^7.29.0",
+    "cors": "^2.8.5",
+    "crypto-js": "^4.2.0",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2"
+  },
+  "keywords": [
+    "reverse-engineering",
+    "crypto",
+    "spider",
+    "crawler",
+    "ast",
+    "webpack",
+    "browser-fingerprint",
+    "anti-detection"
+  ],
+  "author": "Spider Team",
+  "license": "MIT"
+}

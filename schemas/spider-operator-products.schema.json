@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-operator-products.schema.json",
+  "title": "Spider Operator Products Report",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "checks", "required_operator_products"],
+  "properties": {
+    "command": { "const": "verify-operator-products" },
+    "summary": { "type": "string", "enum": ["passed", "failed"] },
+    "summary_text": { "type": "string", "minLength": 1 },
+    "exit_code": { "type": "integer", "enum": [0, 1] },
+    "required_operator_products": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 5
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "details"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["passed", "failed"] },
+          "details": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

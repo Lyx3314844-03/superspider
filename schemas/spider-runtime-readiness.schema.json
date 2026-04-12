@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-runtime-readiness.schema.json",
+  "title": "Spider Runtime Readiness Report Contract",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "frameworks"],
+  "properties": {
+    "command": {
+      "const": "verify-runtime-readiness"
+    },
+    "summary": {
+      "type": "string",
+      "enum": ["passed", "failed"]
+    },
+    "summary_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exit_code": {
+      "type": "integer",
+      "enum": [0, 1]
+    },
+    "frameworks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "runtime", "summary", "exit_code", "metrics", "checks"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["javaspider", "pyspider", "gospider", "rustspider"]
+          },
+          "runtime": {
+            "type": "string",
+            "enum": ["java", "python", "go", "rust"]
+          },
+          "summary": {
+            "type": "string",
+            "enum": ["passed", "failed"]
+          },
+          "exit_code": {
+            "type": "integer",
+            "enum": [0, 1]
+          },
+          "metrics": {
+            "type": "object",
+            "required": ["checks_passed", "checks_failed", "checks_total", "success_rate", "resilience_rate", "consistency_rate", "artifact_integrity_rate", "anti_bot_scenario_rate", "recovery_signal_rate", "workflow_replay_rate", "control_plane_rate", "durations_ms"],
+            "properties": {
+              "checks_passed": { "type": "integer", "minimum": 0 },
+              "checks_failed": { "type": "integer", "minimum": 0 },
+              "checks_total": { "type": "integer", "minimum": 0 },
+              "success_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+              "resilience_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+              "consistency_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+              "artifact_integrity_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+              "anti_bot_scenario_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+              "recovery_signal_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+              "workflow_replay_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+              "control_plane_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+              "durations_ms": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "status", "details"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["passed", "failed", "skipped"]
+                },
+                "details": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

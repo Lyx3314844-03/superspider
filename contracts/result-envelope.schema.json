@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superspider.local/contracts/result-envelope.schema.json",
+  "title": "Spider Task Result Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "task_id",
+    "url",
+    "final_url",
+    "status",
+    "http_status",
+    "content_type",
+    "title",
+    "bytes",
+    "duration_ms",
+    "created_at"
+  ],
+  "properties": {
+    "id": { "type": ["string", "integer"] },
+    "task_id": { "type": ["string", "integer"] },
+    "url": { "type": "string" },
+    "final_url": { "type": "string" },
+    "status": { "type": "string" },
+    "http_status": { "type": "integer", "minimum": 0 },
+    "content_type": { "type": "string" },
+    "title": { "type": "string" },
+    "bytes": { "type": "integer", "minimum": 0 },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": { "$ref": "result-artifact.schema.json" }
+    },
+    "artifact_refs": {
+      "type": "object",
+      "additionalProperties": { "$ref": "result-artifact.schema.json" }
+    },
+    "graph": { "$ref": "graph.schema.json" },
+    "error": { "type": "string" }
+  }
+}

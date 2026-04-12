@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-pyspider-concurrency-summary.schema.json",
+  "title": "PySpider Concurrency Summary",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "runtime", "checks", "metrics"],
+  "properties": {
+    "command": { "const": "verify-pyspider-concurrency-summary" },
+    "summary": { "type": "string", "enum": ["passed", "failed"] },
+    "summary_text": { "type": "string", "minLength": 1 },
+    "exit_code": { "type": "integer", "enum": [0, 1] },
+    "runtime": { "const": "python" },
+    "checks": { "type": "array" },
+    "metrics": { "type": "object" }
+  }
+}

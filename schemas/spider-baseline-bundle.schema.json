@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-baseline-bundle.schema.json",
+  "title": "Spider Baseline Bundle",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "generated_at", "quality_profile", "components", "reports", "framework_scores"],
+  "properties": {
+    "command": { "const": "generate-baseline-bundle" },
+    "summary": { "type": "string", "enum": ["passed", "failed"] },
+    "summary_text": { "type": "string", "minLength": 1 },
+    "exit_code": { "type": "integer", "enum": [0, 1] },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "quality_profile": { "type": "string", "minLength": 1 },
+    "components": { "type": "array" },
+    "reports": { "type": "object" },
+    "framework_scores": { "type": "object" }
+  }
+}

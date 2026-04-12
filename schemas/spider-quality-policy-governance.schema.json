@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-quality-policy-governance.schema.json",
+  "title": "Spider Quality Policy Governance Report",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "checks"],
+  "properties": {
+    "command": { "const": "verify-quality-policy-governance" },
+    "summary": { "type": "string", "enum": ["passed", "failed"] },
+    "summary_text": { "type": "string", "minLength": 1 },
+    "exit_code": { "type": "integer", "enum": [0, 1] },
+    "checks": { "type": "array" }
+  }
+}

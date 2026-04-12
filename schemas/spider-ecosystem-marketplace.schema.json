@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "checks"],
+  "properties": {
+    "command": { "const": "verify-ecosystem-marketplace" },
+    "summary": { "type": "string" },
+    "summary_text": { "type": "string" },
+    "exit_code": { "type": "integer" },
+    "checks": { "type": "array" }
+  }
+}

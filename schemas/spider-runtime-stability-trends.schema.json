@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-runtime-stability-trends.schema.json",
+  "title": "Spider Runtime Stability Trend Report Contract",
+  "type": "object",
+  "required": ["command", "summary", "summary_text", "exit_code", "history_depth", "stability_trends", "alerts"],
+  "properties": {
+    "command": { "const": "verify-runtime-stability-trends" },
+    "summary": { "type": "string", "enum": ["passed", "failed"] },
+    "summary_text": { "type": "string", "minLength": 1 },
+    "exit_code": { "type": "integer", "enum": [0, 1] },
+    "history_depth": { "type": "integer", "minimum": 0 },
+    "stability_trends": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["runtime", "current", "previous", "delta", "summary_changed"],
+        "properties": {
+          "runtime": { "type": "string", "enum": ["java", "python", "go", "rust"] },
+          "current": { "type": "object" },
+          "previous": { "type": "object" },
+          "delta": { "type": "object" },
+          "summary_changed": { "type": ["boolean", "null"] }
+        }
+      }
+    },
+    "alerts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["framework", "source", "severity", "details"],
+        "properties": {
+          "framework": { "type": "string", "enum": ["javaspider", "pyspider", "gospider", "rustspider"] },
+          "source": { "type": "string" },
+          "severity": { "type": "string", "enum": ["failed", "warning"] },
+          "details": { "type": "string" }
+        }
+      }
+    }
+  }
+}

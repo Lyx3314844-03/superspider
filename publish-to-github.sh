@@ -9,7 +9,7 @@ echo "================================"
 
 # 配置
 GITHUB_USERNAME="${GITHUB_USERNAME:-YOUR_USERNAME}"
-REPO_NAME="superspider"
+REPO_NAME="spider"
 REPO_URL="https://github.com/${GITHUB_USERNAME}/${REPO_NAME}.git"
 PUBLISH_MODE="${PUBLISH_MODE:-}"
 
@@ -86,6 +86,22 @@ else
 fi
 
 echo -e "${GREEN}✅ Python 已安装：${PYTHON_BIN}${NC}"
+
+default_superspider_root="$(cd .. && pwd)/superspider"
+if [ -z "${SUPERSPIDER_ROOT:-}" ]; then
+    if [ -d "${default_superspider_root}" ]; then
+        export SUPERSPIDER_ROOT="${default_superspider_root}"
+        echo -e "${GREEN}✅ 使用 SUPERSPIDER_ROOT: ${SUPERSPIDER_ROOT}${NC}"
+    else
+        echo -e "${RED}❌ 未找到 superspider 仓库，请设置 SUPERSPIDER_ROOT 或在同级目录提供 superspider${NC}"
+        exit 1
+    fi
+else
+    echo -e "${GREEN}✅ 使用环境变量 SUPERSPIDER_ROOT: ${SUPERSPIDER_ROOT}${NC}"
+fi
+
+mkdir -p artifacts artifacts/quality-events-history artifacts/replay-history downloads
+echo -e "${GREEN}✅ 发布产物目录已准备${NC}"
 "${PYTHON_BIN}" ./verify_env.py --json
 echo -e "${GREEN}✅ 聚合环境校验通过${NC}"
 
@@ -98,6 +114,187 @@ echo ""
 echo "🔥 运行发布后 smoke test..."
 "${PYTHON_BIN}" ./smoke_test.py --json
 echo -e "${GREEN}✅ smoke test 通过${NC}"
+
+echo ""
+echo "📈 运行运行时生产基线校验..."
+"${PYTHON_BIN}" ./verify_runtime_readiness.py --json
+echo -e "${GREEN}✅ 运行时生产基线校验通过${NC}"
+
+echo ""
+echo "🧱 运行长周期稳定性校验..."
+"${PYTHON_BIN}" ./verify_runtime_stability.py --json --markdown-out artifacts/runtime-stability.md
+echo -e "${GREEN}✅ 长周期稳定性校验通过${NC}"
+
+echo ""
+echo "🧩 运行 graph/result contracts 校验..."
+"${PYTHON_BIN}" ./verify_result_contracts.py --json --markdown-out RESULT_CONTRACTS_REPORT.md
+echo -e "${GREEN}✅ graph/result contracts 校验通过${NC}"
+
+echo ""
+echo "🧬 运行统一核心能力面校验..."
+"${PYTHON_BIN}" ./verify_runtime_core_capabilities.py --json
+echo -e "${GREEN}✅ 统一核心能力面校验通过${NC}"
+
+echo ""
+echo "🛠️ 运行 operator products 校验..."
+"${PYTHON_BIN}" ./verify_operator_products.py --json --markdown-out OPERATOR_PRODUCTS_REPORT.md
+echo -e "${GREEN}✅ operator products 校验通过${NC}"
+
+echo ""
+echo "💻 运行三系统支持校验..."
+"${PYTHON_BIN}" ./verify_operating_system_support.py --json --markdown-out artifacts/operating-system-support.md
+echo -e "${GREEN}✅ 三系统支持校验通过${NC}"
+
+echo ""
+echo "🧬 运行内核同构校验..."
+"${PYTHON_BIN}" ./verify_kernel_homogeneity.py --json --markdown-out KERNEL_HOMOGENEITY_REPORT.md
+echo -e "${GREEN}✅ 内核同构校验通过${NC}"
+
+echo ""
+echo "📡 运行可观测性证据校验..."
+"${PYTHON_BIN}" ./verify_observability_evidence.py --json --markdown-out OBSERVABILITY_EVIDENCE_REPORT.md
+echo -e "${GREEN}✅ 可观测性证据校验通过${NC}"
+
+echo ""
+echo "🗃️ 运行缓存与增量抓取证据校验..."
+"${PYTHON_BIN}" ./verify_cache_incremental_evidence.py --json --markdown-out CACHE_INCREMENTAL_EVIDENCE_REPORT.md
+echo -e "${GREEN}✅ 缓存与增量抓取证据校验通过${NC}"
+
+echo ""
+echo "🌐 运行生态面成熟度校验..."
+"${PYTHON_BIN}" ./verify_ecosystem_readiness.py --json --markdown-out ECOSYSTEM_READINESS_REPORT.md
+echo -e "${GREEN}✅ 生态面成熟度校验通过${NC}"
+
+echo ""
+echo "🛒 运行生态市场面校验..."
+"${PYTHON_BIN}" ./verify_ecosystem_marketplace.py --json --markdown-out ECOSYSTEM_MARKETPLACE_REPORT.md
+echo -e "${GREEN}✅ 生态市场面校验通过${NC}"
+
+echo ""
+echo "📦 运行公开安装链路校验..."
+"${PYTHON_BIN}" ./verify_public_install_chain.py --json --markdown-out PUBLIC_INSTALL_CHAIN_REPORT.md
+echo -e "${GREEN}✅ 公开安装链路校验通过${NC}"
+
+echo ""
+echo "🏭 运行行业证明面校验..."
+"${PYTHON_BIN}" ./verify_industry_proof_surface.py --json --markdown-out INDUSTRY_PROOF_SURFACE_REPORT.md
+echo -e "${GREEN}✅ 行业证明面校验通过${NC}"
+
+echo ""
+echo "🧪 运行 anti-bot 回放语料校验..."
+"${PYTHON_BIN}" ./validate_antibot_replays.py --json
+echo -e "${GREEN}✅ anti-bot 回放语料校验通过${NC}"
+
+echo ""
+echo "🧭 运行 workflow/browser 回放校验..."
+"${PYTHON_BIN}" ./validate_workflow_replays.py --json
+echo -e "${GREEN}✅ workflow/browser 回放校验通过${NC}"
+
+echo ""
+echo "☕ 生成 JavaSpider captcha 闭环摘要..."
+"${PYTHON_BIN}" ./verify_javaspider_captcha_summary.py --json
+echo -e "${GREEN}✅ JavaSpider captcha 闭环摘要通过${NC}"
+
+echo ""
+echo "🐍 生成 PySpider 高并发摘要..."
+"${PYTHON_BIN}" ./verify_pyspider_concurrency_summary.py --json
+echo -e "${GREEN}✅ PySpider 高并发摘要通过${NC}"
+
+echo ""
+echo "🦀 生成 Rust browser live-like 摘要..."
+"${PYTHON_BIN}" ./verify_rust_browser_summary.py --json
+echo -e "${GREEN}✅ Rust browser live-like 摘要通过${NC}"
+
+echo ""
+echo "📊 生成 replay 总看板..."
+"${PYTHON_BIN}" ./verify_replay_dashboard.py --json
+echo -e "${GREEN}✅ replay 总看板通过${NC}"
+
+echo ""
+echo "📉 生成 replay 趋势报告..."
+"${PYTHON_BIN}" ./verify_replay_trends.py --json
+echo -e "${GREEN}✅ replay 趋势报告通过${NC}"
+
+echo ""
+echo "🕸️ 生成 GoSpider distributed 韧性摘要..."
+"${PYTHON_BIN}" ./verify_gospider_distributed_summary.py --json
+echo -e "${GREEN}✅ GoSpider distributed 韧性摘要通过${NC}"
+
+echo ""
+echo "🧩 生成 Rust distributed 摘要..."
+"${PYTHON_BIN}" ./verify_rust_distributed_summary.py --json
+echo -e "${GREEN}✅ Rust distributed 摘要通过${NC}"
+
+echo ""
+echo "🦀 生成 Rust preflight 摘要..."
+"${PYTHON_BIN}" ./verify_rust_preflight_summary.py --json
+echo -e "${GREEN}✅ Rust preflight 摘要通过${NC}"
+
+echo ""
+echo "📚 校验质量策略治理..."
+"${PYTHON_BIN}" ./verify_quality_policy_governance.py --json
+echo -e "${GREEN}✅ 质量策略治理校验通过${NC}"
+
+echo ""
+echo "🧾 生成框架评分卡..."
+"${PYTHON_BIN}" ./generate_framework_scorecard.py --json --markdown-out artifacts/framework-scorecard.md
+echo -e "${GREEN}✅ 框架评分卡生成通过${NC}"
+
+echo ""
+echo "📏 校验框架标准矩阵..."
+"${PYTHON_BIN}" ./verify_framework_standards.py --json --markdown-out artifacts/framework-standards.md
+echo -e "${GREEN}✅ 框架标准矩阵校验通过${NC}"
+
+echo ""
+echo "🚦 运行质量阈值校验..."
+"${PYTHON_BIN}" ./verify_quality_thresholds.py --json --profile strict --markdown-out artifacts/quality-thresholds.md
+echo -e "${GREEN}✅ 质量阈值校验通过${NC}"
+
+echo ""
+echo "📣 生成质量事件流..."
+"${PYTHON_BIN}" ./verify_quality_events.py --json --snapshot-out artifacts/quality-events-history/current-events.json --compact-out artifacts/quality-events.compact.json --ndjson-out artifacts/quality-events.ndjson
+echo -e "${GREEN}✅ 质量事件流通过${NC}"
+
+echo ""
+echo "📦 生成 release baseline bundle..."
+"${PYTHON_BIN}" ./generate_baseline_bundle.py --json --quality-profile strict --markdown-out artifacts/baseline-bundle.md
+echo -e "${GREEN}✅ release baseline bundle 生成通过${NC}"
+
+echo ""
+echo "📘 生成统一完成度报告..."
+"${PYTHON_BIN}" ./generate_framework_completion_report.py --json --markdown-out CURRENT_FRAMEWORK_COMPLETION_REPORT.md
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ 统一完成度报告生成失败，已停止发布${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ 统一完成度报告通过${NC}"
+
+echo ""
+echo "🔗 运行本地集成联调..."
+"${PYTHON_BIN}" ./verify_local_integrations.py --json --markdown-out LOCAL_INTEGRATIONS_REPORT.md
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ 本地集成联调失败，已停止发布${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ 本地集成联调通过${NC}"
+
+echo ""
+echo "🎞️ 运行媒体黑盒验证..."
+"${PYTHON_BIN}" ./verify_media_blackbox.py --json --markdown-out MEDIA_BLACKBOX_REPORT.md
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ 媒体黑盒验证失败，已停止发布${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ 媒体黑盒验证通过${NC}"
+
+echo ""
+echo "🚦 运行发布就绪门禁..."
+"${PYTHON_BIN}" ./verify_release_ready.py --json --markdown-out RELEASE_READINESS_REPORT.md
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ 发布就绪门禁失败，已停止发布${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ 发布就绪门禁通过${NC}"
 
 echo ""
 echo "📦 准备发布文件..."
@@ -234,6 +431,12 @@ else
     echo -e "${YELLOW}⚠️  Git 仓库已存在${NC}"
 fi
 
+if current_origin=$(git remote get-url origin 2>/dev/null); then
+    echo "🔗 当前 origin: ${current_origin}"
+else
+    echo "🔗 当前 origin: <未配置>"
+fi
+
 # 添加所有文件
 git add .
 echo -e "${GREEN}✅ 文件已添加到暂存区${NC}"
@@ -287,9 +490,15 @@ case $choice in
         REPO_URL="https://github.com/${username}/${REPO_NAME}.git"
         
         echo "📤 推送到 GitHub..."
+        existing_origin="$(git remote get-url origin 2>/dev/null || true)"
         if git remote add origin ${REPO_URL} 2>/dev/null; then
             echo -e "${GREEN}✅ 远程仓库添加成功${NC}"
         else
+            if [ -n "${existing_origin}" ] && [ "${existing_origin}" != "${REPO_URL}" ]; then
+                echo -e "${YELLOW}⚠️  origin 与目标仓库不一致，正在修正${NC}"
+                echo -e "${YELLOW}   旧值: ${existing_origin}${NC}"
+                echo -e "${YELLOW}   新值: ${REPO_URL}${NC}"
+            fi
             git remote set-url origin ${REPO_URL}
             echo -e "${YELLOW}⚠️  更新远程仓库 URL${NC}"
         fi
@@ -312,9 +521,15 @@ case $choice in
         REPO_URL="git@github.com:${username}/${REPO_NAME}.git"
         
         echo "📤 推送到 GitHub..."
+        existing_origin="$(git remote get-url origin 2>/dev/null || true)"
         if git remote add origin ${REPO_URL} 2>/dev/null; then
             echo -e "${GREEN}✅ 远程仓库添加成功${NC}"
         else
+            if [ -n "${existing_origin}" ] && [ "${existing_origin}" != "${REPO_URL}" ]; then
+                echo -e "${YELLOW}⚠️  origin 与目标仓库不一致，正在修正${NC}"
+                echo -e "${YELLOW}   旧值: ${existing_origin}${NC}"
+                echo -e "${YELLOW}   新值: ${REPO_URL}${NC}"
+            fi
             git remote set-url origin ${REPO_URL}
             echo -e "${YELLOW}⚠️  更新远程仓库 URL${NC}"
         fi
@@ -331,7 +546,7 @@ case $choice in
         echo -e "${YELLOW}⚠️  已跳过推送${NC}"
         echo ""
         echo "💡 提示：稍后可以手动推送:"
-        echo "   git remote add origin https://github.com/YOUR_USERNAME/superspider.git"
+        echo "   git remote set-url origin https://github.com/YOUR_USERNAME/spider.git"
         echo "   git push -u origin main"
         ;;
     

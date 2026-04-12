@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.spider/schemas/spider-ultimate-trend-report.schema.json",
+  "title": "Spider Ultimate Trend Report Contract",
+  "type": "object",
+  "required": [
+    "command",
+    "summary",
+    "summary_text",
+    "exit_code",
+    "framework_metrics",
+    "framework_trends",
+    "alerts",
+    "history"
+  ],
+  "properties": {
+    "command": {
+      "const": "verify-ultimate-trends"
+    },
+    "summary": {
+      "type": "string",
+      "enum": ["passed", "warning", "failed"]
+    },
+    "summary_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exit_code": {
+      "type": "integer",
+      "enum": [0, 1]
+    },
+    "framework_metrics": {
+      "type": "object"
+    },
+    "framework_trends": {
+      "type": "object"
+    },
+    "alerts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["event_id", "framework", "source", "key", "severity", "details"],
+        "properties": {
+          "event_id": { "type": "string", "minLength": 1 },
+          "framework": { "type": "string", "enum": ["javaspider", "pyspider", "gospider", "rustspider"] },
+          "source": { "const": "ultimate" },
+          "key": { "type": "string", "minLength": 1 },
+          "severity": { "type": "string", "enum": ["warning", "failed"] },
+          "details": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "history": {
+      "type": "object",
+      "required": ["count", "generated_at"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "generated_at": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

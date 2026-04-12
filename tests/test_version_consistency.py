@@ -21,6 +21,7 @@ def test_collect_version_report_uses_root_version_and_all_targets():
 
     assert report["expected_version"] == "1.0.0"
     assert report["summary"] == "passed"
+    assert report["summary_text"] == "6 targets passed, 0 targets failed, 1 checks passed, 0 checks failed, 0 checks skipped"
     assert report["exit_code"] == 0
     assert {item["path"] for item in report["targets"]} == {
         "javaspider/pom.xml",
@@ -36,6 +37,7 @@ def test_collect_version_report_rejects_tag_version_mismatch():
     report = verify_version.collect_version_report(ROOT, git_ref="refs/tags/v9.9.9")
 
     assert report["summary"] == "failed"
+    assert report["summary_text"] == "6 targets passed, 0 targets failed, 1 checks passed, 1 checks failed, 0 checks skipped"
     assert report["exit_code"] == 1
     assert any(check["name"] == "git-tag" and check["status"] == "failed" for check in report["checks"])
 
@@ -44,6 +46,7 @@ def test_collect_version_report_accepts_matching_tag():
     report = verify_version.collect_version_report(ROOT, git_ref="refs/tags/v1.0.0")
 
     assert report["summary"] == "passed"
+    assert report["summary_text"] == "6 targets passed, 0 targets failed, 2 checks passed, 0 checks failed, 0 checks skipped"
     assert report["exit_code"] == 0
     assert any(check["name"] == "git-tag" and check["status"] == "passed" for check in report["checks"])
 
@@ -55,3 +58,16 @@ def test_main_prints_json_report(capsys):
 
     assert exit_code == 0
     assert report["expected_version"] == "1.0.0"
+
+
+def test_verify_version_contract_is_documented_and_schema_exists():
+    contract = (ROOT / "docs" / "framework-contract.md").read_text(encoding="utf-8")
+    schema = json.loads((ROOT / "schemas" / "spider-version-report.schema.json").read_text(encoding="utf-8"))
+
+    assert "Root Verify-Version JSON Envelope" in contract
+    assert schema["properties"]["command"]["const"] == "verify-version"
+    assert schema["properties"]["checks"]["items"]["properties"]["status"]["enum"] == [
+        "passed",
+        "failed",
+        "skipped",
+    ]

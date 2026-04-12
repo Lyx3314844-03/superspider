@@ -49,6 +49,13 @@ Thumbs.db
 test_*.db
 *.pkl
 *.png
+artifacts/
+downloads/
+build/
+examples/__pycache__/
+**/__pycache__/
+*.db
+*.ts
 
 # 文档 (保留核心文档)
 *_REPORT.md

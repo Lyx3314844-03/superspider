@@ -1,0 +1,26 @@
+{
+  "name": "proxy",
+  "fixture_path": "replays/anti-bot/fixtures/proxy-rotation.html",
+  "marker_title": "Proxy Replay",
+  "expected_tokens": [
+    "Proxy rotation required",
+    "fresh residential route"
+  ],
+  "anti_bot": {
+    "challenge": "proxy-rotation",
+    "fingerprint_profile": "synthetic-proxy",
+    "session_mode": "rotating",
+    "stealth": true,
+    "proxy_id": "proxy-synthetic-1"
+  },
+  "recovery": {
+    "strategy": "proxy-rotate",
+    "recovered": true,
+    "events": [
+      { "phase": "detect", "signal": "proxy-rotation", "status": "passed" },
+      { "phase": "mitigate", "action": "rotate-proxy", "status": "passed" },
+      { "phase": "resume", "action": "retry", "status": "passed" }
+    ]
+  },
+  "warning": "synthetic proxy rotation"
+}

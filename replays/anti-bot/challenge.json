@@ -1,0 +1,25 @@
+{
+  "name": "challenge",
+  "fixture_path": "node-reverse-server/fixtures/anti-bot/cloudflare-challenge.html",
+  "marker_title": "Challenge Replay",
+  "expected_tokens": [
+    "Checking your browser before accessing target.example.",
+    "__cf_bm=token"
+  ],
+  "anti_bot": {
+    "challenge": "javascript",
+    "fingerprint_profile": "synthetic-challenge",
+    "session_mode": "sticky",
+    "stealth": true
+  },
+  "recovery": {
+    "strategy": "challenge-bypass",
+    "recovered": true,
+    "events": [
+      { "phase": "detect", "signal": "javascript", "status": "passed" },
+      { "phase": "mitigate", "action": "bypass", "status": "passed" },
+      { "phase": "resume", "action": "continue", "status": "passed" }
+    ]
+  },
+  "warning": "synthetic challenge bypass"
+}

@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a defect in one or more runtimes or shared contracts
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      description: Which runtime is affected
+      placeholder: javaspider / gospider / pyspider / rustspider / shared
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Include command, input, and observed output
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Include smoke, runtime readiness, benchmark, or blackbox evidence if available

@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superspider.local/contracts/job.schema.json",
+  "title": "Spider JobSpec V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "runtime", "target", "output"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "runtime": { "type": "string", "enum": ["http", "browser", "media", "ai"] },
+    "priority": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "target": { "$ref": "#/$defs/target" },
+    "extract": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/extract" }
+    },
+    "output": { "$ref": "#/$defs/output" },
+    "resources": { "$ref": "#/$defs/resources" },
+    "browser": { "$ref": "#/$defs/browser" },
+    "jobdir": { "$ref": "#/$defs/jobdir" },
+    "cache": { "$ref": "#/$defs/cache" },
+    "pools": { "$ref": "#/$defs/pools" },
+    "debug": { "$ref": "#/$defs/debug" },
+    "anti_bot": { "$ref": "#/$defs/antiBot" },
+    "policy": { "$ref": "#/$defs/policy" },
+    "schedule": { "$ref": "#/$defs/schedule" },
+    "metadata": { "type": "object" }
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "method": { "type": "string", "default": "GET" },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "cookies": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "body": { "type": "string" },
+        "proxy": { "type": "string" },
+        "timeout_ms": { "type": "integer", "minimum": 1 },
+        "allowed_domains": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "extract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "type"],
+      "properties": {
+        "field": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["css", "css_attr", "xpath", "regex", "json_path", "media", "ai"]
+        },
+        "expr": { "type": "string" },
+        "attr": { "type": "string" },
+        "schema": { "type": "object" },
+        "required": { "type": "boolean", "default": false }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format"],
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": ["json", "jsonl", "csv", "parquet", "artifact"]
+        },
+        "path": { "type": "string" },
+        "directory": { "type": "string" },
+        "artifact_prefix": { "type": "string" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": { "type": "integer", "minimum": 1 },
+        "retries": { "type": "integer", "minimum": 0 },
+        "timeout_ms": { "type": "integer", "minimum": 1 },
+        "rate_limit_per_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "download_dir": { "type": "string" },
+        "temp_dir": { "type": "string" }
+      }
+    },
+    "browser": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headless": { "type": "boolean", "default": true },
+        "viewport": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "profile": { "type": "string" },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/browserAction" }
+        },
+        "capture": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["html", "screenshot", "har", "console", "dom", "trace"]
+          }
+        },
+        "trace_path": { "type": "string" },
+        "har_path": { "type": "string" },
+        "har_replay": { "type": "string" },
+        "route_manifest": { "type": "string" },
+        "codegen_out": { "type": "string" },
+        "codegen_language": {
+          "type": "string",
+          "enum": ["python", "javascript"]
+        }
+      }
+    },
+    "jobdir": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" },
+        "state_path": { "type": "string" },
+        "control_plane_dir": { "type": "string" },
+        "checkpoints_dir": { "type": "string" },
+        "cache_dir": { "type": "string" },
+        "exports_dir": { "type": "string" },
+        "browser_dir": { "type": "string" }
+      }
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "backend": { "type": "string", "enum": ["file-json", "memory"] },
+        "strategy": { "type": "string", "enum": ["revalidate", "delta-fetch"] },
+        "store_path": { "type": "string" },
+        "revalidate_seconds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "pools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request_queue": { "type": "string", "enum": ["priority", "dedup", "leased"] },
+        "autoscale": { "type": "boolean", "default": true },
+        "session_pool_size": { "type": "integer", "minimum": 1 },
+        "browser_pool_size": { "type": "integer", "minimum": 1 },
+        "request_concurrency": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "debug": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "control_plane_dir": { "type": "string" },
+        "jobdir_path": { "type": "string" },
+        "console_lines": { "type": "integer", "minimum": 1 },
+        "interactive": { "type": "boolean", "default": false }
+      }
+    },
+    "browserAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["goto", "wait", "click", "type", "scroll", "hover", "eval", "select", "screenshot", "listen_network"]
+        },
+        "selector": { "type": "string" },
+        "value": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "timeout_ms": { "type": "integer", "minimum": 1 },
+        "optional": { "type": "boolean", "default": false },
+        "save_as": { "type": "string" },
+        "extra": { "type": "object" }
+      }
+    },
+    "antiBot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity_profile": { "type": "string" },
+        "proxy_pool": { "type": "string" },
+        "session_mode": {
+          "type": "string",
+          "enum": ["stateless", "sticky", "leased"]
+        },
+        "stealth": { "type": "boolean", "default": true },
+        "fallback_runtime": {
+          "type": "string",
+          "enum": ["http", "browser", "media", "ai"]
+        },
+        "challenge_policy": { "type": "string" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_pages": { "type": "integer", "minimum": 1 },
+        "max_depth": { "type": "integer", "minimum": 0 },
+        "respect_robots_txt": { "type": "boolean" },
+        "same_domain_only": { "type": "boolean" },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requests": { "type": "integer", "minimum": 1 },
+            "bytes_in": { "type": "integer", "minimum": 1 },
+            "wall_time_ms": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["once", "queued", "distributed", "scheduled"]
+        },
+        "cron": { "type": "string" },
+        "queue_name": { "type": "string" },
+        "delay_seconds": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

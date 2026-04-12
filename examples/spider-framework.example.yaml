@@ -1,0 +1,75 @@
+version: 1
+project:
+  name: example-spider
+runtime: python
+
+crawl:
+  urls:
+    - https://example.com
+  concurrency: 5
+  max_requests: 100
+  max_depth: 3
+  timeout_seconds: 30
+
+sitemap:
+  enabled: false
+  url: https://example.com/sitemap.xml
+  max_urls: 50
+
+browser:
+  enabled: true
+  headless: true
+  timeout_seconds: 30
+  user_agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  screenshot_path: artifacts/browser/page.png
+  html_path: artifacts/browser/page.html
+  storage_state_file: ""
+  cookies_file: ""
+  auth_file: ""
+
+anti_bot:
+  enabled: true
+  profile: chrome-stealth
+  proxy_pool: local
+  session_mode: sticky
+  stealth: true
+  challenge_policy: browser
+  captcha_provider: 2captcha
+  captcha_api_key: ""
+
+node_reverse:
+  enabled: true
+  base_url: http://localhost:3000
+
+middleware:
+  user_agent_rotation: true
+  respect_robots_txt: true
+  min_request_interval_ms: 200
+
+pipeline:
+  console: true
+  dataset: true
+  jsonl_path: artifacts/exports/results.jsonl
+
+auto_throttle:
+  enabled: true
+  start_delay_ms: 200
+  max_delay_ms: 5000
+  target_response_time_ms: 2000
+
+plugins:
+  enabled: true
+  manifest: contracts/integration-catalog.json
+
+storage:
+  checkpoint_dir: artifacts/checkpoints
+  dataset_dir: artifacts/datasets
+  export_dir: artifacts/exports
+
+export:
+  format: json
+  output_path: artifacts/exports/results.json
+
+doctor:
+  network_targets:
+    - https://example.com

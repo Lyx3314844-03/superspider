@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "name": "spider-framework-suite-integrations",
+  "entrypoints": [
+    {
+      "id": "shared-cli",
+      "kind": "cli",
+      "contract": "shared runtime CLI contract",
+      "artifacts": ["config", "crawl", "browser", "doctor", "export", "job", "version"]
+    },
+    {
+      "id": "web-control-plane",
+      "kind": "http",
+      "contract": "/api/tasks",
+      "artifacts": ["tasks", "results", "logs", "stats"]
+    },
+    {
+      "id": "control-plane-jsonl",
+      "kind": "artifact",
+      "contract": "artifacts/control-plane/*.jsonl",
+      "artifacts": ["results.jsonl", "events.jsonl", "runtime audit streams"]
+    },
+    {
+      "id": "benchmark-reports",
+      "kind": "report",
+      "contract": "repository verification reports",
+      "artifacts": ["runtime-readiness", "framework-scorecard", "benchmark-sla", "blackbox-e2e", "benchmark-trends"]
+    },
+    {
+      "id": "marketplace",
+      "kind": "catalog",
+      "contract": "plugin and starter governance surface",
+      "artifacts": ["plugin-governance", "starters", "migration-guide", "support"]
+    },
+    {
+      "id": "support",
+      "kind": "docs",
+      "contract": "public support and contribution surface",
+      "artifacts": ["contributing", "adopters", "cookbook", "support"]
+    }
+  ],
+  "plugins": [
+    {
+      "id": "profile-site",
+      "kind": "builtin",
+      "description": "Profile a target before crawling"
+    },
+    {
+      "id": "sitemap-discover",
+      "kind": "builtin",
+      "description": "Discover sitemap URLs before crawling"
+    },
+    {
+      "id": "selector-studio",
+      "kind": "builtin",
+      "description": "Test selectors and extraction expressions"
+    },
+    {
+      "id": "anti-bot",
+      "kind": "builtin",
+      "description": "Run anti-bot diagnostics"
+    },
+    {
+      "id": "node-reverse",
+      "kind": "builtin",
+      "description": "Call the NodeReverse service directly"
+    },
+    {
+      "id": "http-cache",
+      "kind": "builtin",
+      "description": "Shared HTTP cache backend and incremental crawl tooling"
+    },
+    {
+      "id": "incremental-crawl",
+      "kind": "builtin",
+      "description": "Delta fetch, conditional request, and retention policy helpers"
+    },
+    {
+      "id": "observability-monitor",
+      "kind": "builtin",
+      "description": "Unified monitoring, metrics, trace, and report aggregation"
+    }
+  ]
+}
