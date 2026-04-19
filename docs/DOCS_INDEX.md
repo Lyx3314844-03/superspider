@@ -1,51 +1,75 @@
-# Docs Index
+# SuperSpider Documentation Index
 
-Updated: 2026-04-12
+Updated: 2026-04-19
+
+---
 
 ## Start Here
 
-If you only need the current release-facing docs, read these first:
+1. `README.md` — project overview, framework comparison, install matrix
+2. `docs/FRAMEWORK_CAPABILITIES.md` — detailed per-framework capability descriptions
+3. `docs/FRAMEWORK_CAPABILITY_MATRIX.md` — full capability comparison tables
+4. `docs/SUPERSPIDER_INSTALLS.md` — install instructions for all three OS
 
-1. `README.md`
-2. `MEDIA_PARITY_REPORT.md`
-3. `LATEST_FRAMEWORK_COMPLETION_REPORT.md`
+---
 
-## Canonical Docs
+## Capability Docs
 
-### Product Surface
+| Document | Description |
+| --- | --- |
+| `docs/FRAMEWORK_CAPABILITIES.md` | Per-framework capability descriptions with install details |
+| `docs/FRAMEWORK_CAPABILITY_MATRIX.md` | Full capability comparison tables across all four runtimes |
+| `docs/SUPERSPIDER_INSTALLS.md` | Install matrix, prerequisites, and verification steps |
 
-- `docs/FRAMEWORK_CAPABILITIES.md`
-- `docs/FRAMEWORK_CAPABILITY_MATRIX.md`
-- `docs/SUPERSPIDER_INSTALLS.md`
+---
 
-### Current Status
+## Status Reports
 
-- `MEDIA_PARITY_REPORT.md`
-- `LATEST_FRAMEWORK_COMPLETION_REPORT.md`
-- `CURRENT_FRAMEWORK_COMPLETION_REPORT.md`
+| Document | Description |
+| --- | --- |
+| `LATEST_FRAMEWORK_COMPLETION_REPORT.md` | Latest completion status for all four runtimes |
+| `MEDIA_PARITY_REPORT.md` | Media platform coverage evidence and verification |
+| `CURRENT_FRAMEWORK_COMPLETION_REPORT.md` | Previous completion report |
 
-### Release Surface
+---
 
-- `docs/RELEASE_NOTES_v1.0.0.md`
-- `docs/GITHUB_RELEASE_TEMPLATE.md`
-- `docs/release-canvas.html`
+## Usage Guides
 
-### Guides
+| Document | Description |
+| --- | --- |
+| `PUBLISH_GUIDE.md` | How to publish SuperSpider to GitHub |
+| `ADVANCED_USAGE_GUIDE.md` | Advanced crawling scenarios (WAF bypass, proxy, distributed, AI) |
+| `ENCRYPTED_SITE_CRAWLING_GUIDE.md` | Crawling JS-encrypted sites |
+| `NODE_REVERSE_INTEGRATION_GUIDE.md` | Node.js reverse engineering bridge |
+| `ULTIMATE_ENHANCEMENT_GUIDE.md` | Full capability enhancement reference |
 
-- `PUBLISH_GUIDE.md`
-- `ADVANCED_USAGE_GUIDE.md`
-- `ENCRYPTED_SITE_CRAWLING_GUIDE.md`
-- `NODE_REVERSE_INTEGRATION_GUIDE.md`
-- `ULTIMATE_ENHANCEMENT_GUIDE.md`
+---
+
+## Release Docs
+
+| Document | Description |
+| --- | --- |
+| `docs/RELEASE_NOTES_v1.0.0.md` | v1.0.0 release notes |
+| `docs/GITHUB_RELEASE_TEMPLATE.md` | GitHub release body template |
+| `CHANGELOG.md` | Version history |
+| `CONTRIBUTING.md` | Contribution guide |
+
+---
+
+## Per-Framework README Files
+
+| File | Framework |
+| --- | --- |
+| `pyspider/README.md` | PySpider |
+| `gospider/README.md` | GoSpider |
+| `rustspider/README.md` | RustSpider |
+| `javaspider/README.md` | JavaSpider |
+
+---
 
 ## Historical Archive
 
-Historical reports that are no longer the primary source of truth have been moved under:
+Older reports that are no longer the primary source of truth:
 
 - `docs/archive/HISTORICAL_REPORTS.md`
 - `docs/archive/reports/`
-
-The current release-facing conclusion should come from:
-
-- `MEDIA_PARITY_REPORT.md`
-- `LATEST_FRAMEWORK_COMPLETION_REPORT.md`
