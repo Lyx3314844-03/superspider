@@ -4,6 +4,7 @@
 
 pub mod antibot;
 pub mod enhanced;
+pub mod night_mode;
 
 use rand::Rng;
 use std::collections::HashMap;
@@ -132,6 +133,9 @@ pub struct AntiBotConfig {
     pub min_delay: u64,
     pub max_delay: u64,
     pub max_retries: u32,
+    pub night_mode: bool,
+    pub night_start_hour: u8,
+    pub night_end_hour: u8,
 }
 
 impl Default for AntiBotConfig {
@@ -143,6 +147,20 @@ impl Default for AntiBotConfig {
             min_delay: 1000,
             max_delay: 3000,
             max_retries: 3,
+            night_mode: true,
+            night_start_hour: 23,
+            night_end_hour: 6,
+        }
+    }
+}
+
+impl AntiBotConfig {
+    pub fn night_mode_policy(&self) -> night_mode::NightModePolicy {
+        night_mode::NightModePolicy {
+            enabled: self.night_mode,
+            start_hour: self.night_start_hour,
+            end_hour: self.night_end_hour,
+            ..night_mode::NightModePolicy::default()
         }
     }
 }

@@ -10,8 +10,9 @@ from typing import Any, Dict
 from urllib.parse import urlparse
 
 from pyspider import __version__
+from pyspider.browser.compat import browser_compatibility_matrix
+from pyspider.feature_gates import catalog as feature_gate_catalog
 from pyspider.research.job import ResearchJob
-from pyspider.runtime.async_runtime import AsyncResearchRuntime
 from pyspider.runtime.orchestrator import ResearchRuntime
 from pyspider.runtime.sinks import FileAuditSink, FileResultSink
 
@@ -21,6 +22,7 @@ FRAMEWORK_CLI_COMMANDS = {
     "browser",
     "ai",
     "doctor",
+    "preflight",
     "export",
     "curl",
     "web",
@@ -35,6 +37,8 @@ FRAMEWORK_CLI_COMMANDS = {
     "drm",
     "artifact",
     "youtube",
+    "audit",
+    "workflow",
     "sitemap-discover",
     "plugins",
     "selector-studio",
@@ -72,6 +76,75 @@ def _schema_from_extract_list(extract_list: list[dict]) -> dict:
     return {"properties": properties} if properties else {}
 
 
+def _inline_job_content(job_spec: Dict[str, Any], content: str | None) -> str | None:
+    metadata = job_spec.get("metadata") if isinstance(job_spec.get("metadata"), dict) else {}
+    target = job_spec.get("target") if isinstance(job_spec.get("target"), dict) else {}
+    for value in (
+        content,
+        metadata.get("content"),
+        metadata.get("mock_html"),
+        target.get("body"),
+    ):
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _artifact_texts_from_metadata(job_spec: Dict[str, Any]) -> list[str]:
+    metadata = job_spec.get("metadata") if isinstance(job_spec.get("metadata"), dict) else {}
+    collected: list[str] = []
+    for key in ("artifact_texts", "mock_artifact_texts"):
+        value = metadata.get(key)
+        if isinstance(value, list):
+            collected.extend(str(item) for item in value if str(item).strip())
+    for key in ("network", "network_text", "har", "har_text"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            collected.append(value)
+    return collected
+
+
+def _infer_media_platform(url: str) -> str:
+    lower = url.lower()
+    if "youtube.com" in lower or "youtu.be" in lower:
+        return "youtube"
+    if "youku.com" in lower or "youku.tv" in lower:
+        return "youku"
+    if "bilibili.com" in lower or "b23.tv" in lower:
+        return "bilibili"
+    if "iqiyi.com" in lower:
+        return "iqiyi"
+    if "qq.com" in lower or "v.qq.com" in lower:
+        return "tencent"
+    if "douyin.com" in lower:
+        return "douyin"
+    return "generic"
+
+
+def _infer_media_id(url: str) -> str:
+    patterns = (
+        r"[?&]v=([A-Za-z0-9_-]+)",
+        r"youtu\.be/([A-Za-z0-9_-]+)",
+        r"id_([A-Za-z0-9=]+)",
+        r"/video/((?:BV|av)[A-Za-z0-9]+)",
+        r"/bangumi/play/(ep\d+)",
+        r"/v_(\w+)\.html",
+        r"/play/(\w+)",
+        r"[?&]curid=([^&]+)",
+        r"/x/cover/[^/]+/([A-Za-z0-9]+)\.html",
+        r"/x/page/([A-Za-z0-9]+)\.html",
+        r"/x/([A-Za-z0-9]+)\.html",
+        r"[?&]vid=([A-Za-z0-9]+)",
+        r"/video/(\d+)",
+        r"modal_id=(\d+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, url, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return ""
+
+
 def _build_research_job(job_spec: Dict[str, Any]) -> ResearchJob:
     metadata = job_spec.get("metadata") or {}
     extract_schema = metadata.get("extract_schema")
@@ -90,6 +163,158 @@ def _build_research_job(job_spec: Dict[str, Any]) -> ResearchJob:
         policy=job_spec.get("policy") or {},
         output=output,
     )
+
+
+def _persist_dataset_if_requested(
+    runtime: ResearchRuntime, job: ResearchJob, extract: Dict[str, Any]
+) -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    output_target = job.output or {}
+    if output_target.get("path"):
+        result["dataset"] = runtime.writer.write([extract], output_target)
+    return result
+
+
+def _run_http_runtime(
+    job_spec: Dict[str, Any], job: ResearchJob, content: str | None
+) -> Dict[str, Any]:
+    return ResearchRuntime().run(job, content=content)
+
+
+def _run_browser_runtime(
+    job_spec: Dict[str, Any], job: ResearchJob, content: str | None
+) -> Dict[str, Any]:
+    runtime = ResearchRuntime()
+    seed = job.seed_urls[0]
+    resolved_content = content or f"<title>{seed}</title>"
+    profile = runtime.profiler.profile(seed, resolved_content)
+    extracted = runtime.studio.run(
+        resolved_content, job.extract_schema, job.extract_specs
+    )
+    result: Dict[str, Any] = {
+        "seed": seed,
+        "profile": profile,
+        "extract": extracted,
+        "dispatch": {
+            "runtime": "browser",
+            "actions": list(
+                ((job_spec.get("browser") or {}).get("actions") or [])
+                if isinstance(job_spec.get("browser"), dict)
+                else []
+            ),
+            "capture": list(
+                ((job_spec.get("browser") or {}).get("capture") or [])
+                if isinstance(job_spec.get("browser"), dict)
+                else []
+            ),
+        },
+    }
+    result.update(_persist_dataset_if_requested(runtime, job, extracted))
+    return result
+
+
+def _media_extract_payload(video: Any) -> Dict[str, Any]:
+    if video is None:
+        return {}
+    payload = {
+        "title": getattr(video, "title", "") or "",
+        "video_id": getattr(video, "video_id", "") or "",
+        "platform": getattr(video, "platform", "") or "",
+        "m3u8_url": getattr(video, "m3u8_url", None),
+        "dash_url": getattr(video, "dash_url", None),
+        "mp4_url": getattr(video, "mp4_url", None),
+        "download_url": getattr(video, "download_url", None),
+        "cover_url": getattr(video, "cover_url", None),
+        "duration": getattr(video, "duration", 0) or 0,
+        "description": getattr(video, "description", "") or "",
+        "quality_options": list(getattr(video, "quality_options", []) or []),
+    }
+    return {
+        key: value
+        for key, value in payload.items()
+        if value not in (None, "", [])
+        or key in {"duration"}
+    }
+
+
+def _run_media_runtime(
+    job_spec: Dict[str, Any], job: ResearchJob, content: str | None
+) -> Dict[str, Any]:
+    from pyspider.media.video_parser import UniversalParser
+
+    runtime = ResearchRuntime()
+    seed = job.seed_urls[0]
+    resolved_content = content or ""
+    artifact_texts = _artifact_texts_from_metadata(job_spec)
+    parser = UniversalParser()
+    video = None
+    if resolved_content or artifact_texts:
+        video = parser.parse_artifacts(
+            seed, html=resolved_content, artifact_texts=artifact_texts
+        )
+    if video is None:
+        video = parser.parse(seed)
+    if video is None:
+        return runtime.run(job, content=resolved_content or None)
+
+    media_extract = _media_extract_payload(video)
+    inferred_platform = _infer_media_platform(seed)
+    inferred_video_id = _infer_media_id(seed)
+    if media_extract.get("platform") in {"", "generic", "generic-artifact"}:
+        media_extract["platform"] = inferred_platform
+    if inferred_video_id and (
+        not media_extract.get("video_id")
+        or re.fullmatch(r"[0-9a-f]{16}", str(media_extract["video_id"]))
+    ):
+        media_extract["video_id"] = inferred_video_id
+    extracted = dict(media_extract)
+    if job.extract_specs:
+        extracted = runtime.studio.run(
+            resolved_content or json.dumps(media_extract, ensure_ascii=False),
+            job.extract_schema,
+            job.extract_specs,
+        )
+        for field, value in media_extract.items():
+            if field not in extracted and value not in ("", None, []):
+                extracted[field] = value
+
+    profile = runtime.profiler.profile(
+        seed,
+        resolved_content or f"<title>{media_extract.get('title', seed)}</title>",
+    )
+    result: Dict[str, Any] = {
+        "seed": seed,
+        "profile": profile,
+        "extract": extracted,
+        "dispatch": {"runtime": "media"},
+    }
+    result.update(_persist_dataset_if_requested(runtime, job, extracted))
+    return result
+
+
+def _run_ai_runtime(
+    job_spec: Dict[str, Any], job: ResearchJob, content: str | None
+) -> Dict[str, Any]:
+    result = ResearchRuntime().run(job, content=content)
+    result["dispatch"] = {"runtime": "ai"}
+    return result
+
+
+def _execute_sync_runtime(
+    job_spec: Dict[str, Any], job: ResearchJob, content: str | None
+) -> Dict[str, Any]:
+    runtime = str(job_spec.get("runtime", "http")).strip()
+    executors = {
+        "http": _run_http_runtime,
+        "browser": _run_browser_runtime,
+        "media": _run_media_runtime,
+        "ai": _run_ai_runtime,
+    }
+    try:
+        executor = executors[runtime]
+    except KeyError as exc:
+        raise ValueError(f"unsupported runtime in pyspider job runtime: {runtime}") from exc
+    return executor(job_spec, job, content)
 
 
 def _extract_host(url: str) -> str:
@@ -298,6 +523,7 @@ def _persist_runtime_payload(
     sink_dir = _sink_dir(job_spec, output)
     job_name = str(job_spec.get("name") or "job")
     audit_sink = FileAuditSink(sink_dir / f"{job_name}-audit.jsonl")
+    connector_sink = FileResultSink(sink_dir / f"{job_name}-connector.jsonl")
     result_sink = FileResultSink(sink_dir / "results.jsonl")
     audit_sink.emit(
         "job_state",
@@ -307,6 +533,17 @@ def _persist_runtime_payload(
             "state": state,
             "url": (job_spec.get("target") or {}).get("url"),
         },
+    )
+    connector_sink.write(
+        {
+            "job_name": job_name,
+            "runtime": job_spec.get("runtime"),
+            "state": state,
+            "url": (job_spec.get("target") or {}).get("url"),
+            "output": output or {},
+            "artifact_refs": payload.get("artifact_refs", {}),
+            "extract": payload.get("extract", {}),
+        }
     )
     result_sink.write(payload)
 
@@ -463,18 +700,26 @@ def _run_legacy_url_mode(
     content: str | None,
     output_path: str | None,
     output_format: str,
+    runtime: str = "http",
 ) -> int:
     output = {}
     if output_path:
         output = {"path": output_path, "format": output_format}
 
+    job_spec: Dict[str, Any] = {
+        "name": "inline-run",
+        "runtime": runtime,
+        "target": {"url": url},
+        "output": output,
+        "metadata": {"content": content} if content else {},
+    }
+    _validate_job_policies(job_spec)
     job = ResearchJob(
         seed_urls=[url],
         extract_schema=json.loads(schema),
         output=output,
     )
-    runtime = ResearchRuntime()
-    result = runtime.run(job, content=content)
+    result = _execute_sync_runtime(job_spec, job, content)
     _print_result(result)
     return 0
 
@@ -494,15 +739,13 @@ def _run_job_file(path: str, content: str | None = None) -> int:
         print(json.dumps(failure_payload, ensure_ascii=False, indent=2))
         print(f"injected failure: {injected_failure}", file=sys.stderr)
         return 1
-    inline_content = (
-        content or metadata.get("content") or job_spec.get("target", {}).get("body")
-    )
+    inline_content = _inline_job_content(job_spec, content)
     try:
         _validate_job_policies(job_spec)
         job = _build_research_job(job_spec)
         _apply_rate_limit(job_spec)
         started = time.perf_counter()
-        result = ResearchRuntime().run(job, content=inline_content)
+        result = _execute_sync_runtime(job_spec, job, inline_content)
         latency_ms = int((time.perf_counter() - started) * 1000)
         _enforce_job_budget(job_spec, inline_content, latency_ms)
         payload = _build_result_payload(
@@ -537,9 +780,7 @@ def _run_job_file(path: str, content: str | None = None) -> int:
 async def _run_async_job_file(path: str, content: str | None = None) -> int:
     job_spec = json.loads(Path(path).read_text(encoding="utf-8"))
     metadata = job_spec.get("metadata") or {}
-    inline_content = (
-        content or metadata.get("content") or job_spec.get("target", {}).get("body")
-    )
+    inline_content = _inline_job_content(job_spec, content)
     output = (
         job_spec.get("output") if isinstance(job_spec.get("output"), dict) else None
     )
@@ -547,19 +788,24 @@ async def _run_async_job_file(path: str, content: str | None = None) -> int:
         _validate_job_policies(job_spec)
         job = _build_research_job(job_spec)
         _apply_rate_limit(job_spec)
-        result = await AsyncResearchRuntime().run_single(job, inline_content)
-        _enforce_job_budget(job_spec, inline_content, int(round(result.duration_ms)))
+        started = time.perf_counter()
+        result = await asyncio.to_thread(
+            _execute_sync_runtime, job_spec, job, inline_content
+        )
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        _enforce_job_budget(job_spec, inline_content, latency_ms)
         printable = {
-            "seed": result.seed,
-            "duration_ms": round(result.duration_ms, 2),
-            "extract": result.extract,
-            "error": result.error,
+            "seed": result["seed"],
+            "duration_ms": round(latency_ms, 2),
+            "extract": result["extract"],
+            "error": "",
         }
-        if result.profile:
+        if result.get("profile"):
+            profile = result["profile"]
             printable["profile"] = {
-                "url": result.profile.url,
-                "page_type": result.profile.page_type,
-                "risk_level": result.profile.risk_level,
+                "url": profile.url,
+                "page_type": profile.page_type,
+                "risk_level": profile.risk_level,
             }
         reverse = _job_reverse_payload(job_spec, inline_content)
         if reverse:
@@ -570,7 +816,7 @@ async def _run_async_job_file(path: str, content: str | None = None) -> int:
             "job_name": job_spec.get("name"),
         }
         graph_artifacts = _build_graph_artifact(
-            job_spec, output, inline_content, result.extract
+            job_spec, output, inline_content, result.get("extract") or {}
         )
         if graph_artifacts:
             payload["artifacts"] = graph_artifacts
@@ -598,6 +844,7 @@ def _print_capabilities() -> int:
             "browser",
             "ai",
             "doctor",
+            "preflight",
             "export",
             "curl",
             "web",
@@ -605,9 +852,11 @@ def _print_capabilities() -> int:
             "run",
             "job",
             "async-job",
+            "workflow",
             "jobdir",
             "http-cache",
             "console",
+            "audit",
             "sitemap-discover",
             "plugins",
             "selector-studio",
@@ -625,6 +874,15 @@ def _print_capabilities() -> int:
             "core.contracts",
             "core.incremental",
             "core.curlconverter",
+            "workflow.WorkflowRunner",
+            "events.FileEventBus",
+            "runtime.audit",
+            "connectors.FileConnector",
+            "ai_extractor.sentiment_analyzer",
+            "ai_extractor.summarizer",
+            "ai_extractor.entity_extractor",
+            "feature_gates",
+            "bridge.crawlee_bridge",
             "profiler.site_profiler",
             "extract.studio",
             "dataset.writer",
@@ -649,6 +907,14 @@ def _print_capabilities() -> int:
             "scrapy-plugins-manifest",
             "web-control-plane",
         ],
+        "feature_gates": feature_gate_catalog(),
+        "ai_capabilities": {
+            "providers": ["openai", "anthropic", "claude"],
+            "few_shot": True,
+            "sentiment_analysis": True,
+            "summarization": True,
+            "entity_extraction_specialized": True,
+        },
         "operator_products": {
             "jobdir": {
                 "pause_resume": True,
@@ -676,7 +942,54 @@ def _print_capabilities() -> int:
                 "tail": True,
                 "control_plane_jsonl": True,
             },
+            "queue_backends": {
+                "native": ["redis", "rabbitmq", "kafka"],
+            },
+            "event_system": {
+                "topics": [
+                    "task:created",
+                    "task:queued",
+                    "task:running",
+                    "task:succeeded",
+                    "task:failed",
+                    "task:cancelled",
+                    "task:deleted",
+                    "task:result",
+                    "workflow.job.started",
+                    "workflow.step.started",
+                    "workflow.step.succeeded",
+                    "workflow.job.completed",
+                ],
+                "pubsub": "in-memory",
+                "jsonl_sink": True,
+            },
+            "connectors": {
+                "native": ["memory", "jsonl"],
+            },
+            "workflow": {
+                "step_types": [
+                    "goto",
+                    "wait",
+                    "click",
+                    "type",
+                    "select",
+                    "hover",
+                    "scroll",
+                    "eval",
+                    "listen_network",
+                    "extract",
+                    "download",
+                    "screenshot",
+                ],
+                "connectors": True,
+                "events": True,
+            },
+            "crawlee_bridge": {
+                "client": True,
+                "endpoint": "/api/crawl",
+            },
         },
+        "browser_compatibility": browser_compatibility_matrix(),
         "control_plane": {
             "task_api": True,
             "result_envelope": True,
@@ -750,6 +1063,7 @@ def main(argv: list[str] | None = None) -> int:
     run_cmd.add_argument("--content", default=None)
     run_cmd.add_argument("--output", default=None)
     run_cmd.add_argument("--format", default="jsonl")
+    run_cmd.add_argument("--runtime", default="http", choices=sorted(SUPPORTED_JOB_RUNTIMES))
 
     job_cmd = subparsers.add_parser("job", help="Run a normalized JobSpec JSON file")
     job_cmd.add_argument("--file", required=True)
@@ -766,7 +1080,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "run":
         return _run_legacy_url_mode(
-            args.url, args.schema, args.content, args.output, args.format
+            args.url, args.schema, args.content, args.output, args.format, args.runtime
         )
     if args.command == "job":
         return _run_job_file(args.file, args.content)

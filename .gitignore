@@ -35,7 +35,7 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
-# 通用
+# General
 *.log
 *.tmp
 .DS_Store
@@ -45,7 +45,7 @@ Thumbs.db
 *.swp
 *.swo
 
-# 测试数据
+# Test data and build artifacts
 test_*.db
 *.pkl
 *.png
@@ -60,15 +60,5 @@ examples/__pycache__/
 *.db
 *.ts
 
-# 文档 (保留核心文档)
-*_REPORT.md
-*_COMPLETE.md
-*_ENHANCEMENT.md
-*_PLAN.md
-*_GUIDE.md
-*_SUMMARY.md
-*_ANALYSIS.md
-*_CHECK.md
-*_STATUS.md
-*_FIX.md
+# Backup files
 *.md.bak

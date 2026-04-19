@@ -18,11 +18,13 @@ import org.openqa.selenium.WebElement;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URI;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class SeleniumWorkflowExecutionContext implements WorkflowExecutionContext {
     private static final List<String> DEFAULT_CAPTCHA_IMAGE_SELECTORS = List.of(
@@ -96,20 +98,23 @@ public class SeleniumWorkflowExecutionContext implements WorkflowExecutionContex
 
     @Override
     public void waitFor(long timeoutMillis) {
+        pauseForBehavior("wait");
         dynamicWait.waitForPageLoad(timeoutMillis <= 0 ? 500L : timeoutMillis);
     }
 
     @Override
     public void click(String selector) {
+        pauseForBehavior("click");
         if (!formInteractor.click(selector)) {
-            browser.click(selector, By.cssSelector(selector));
+            browser.clickHumanized(selector, By.cssSelector(selector));
         }
     }
 
     @Override
     public void type(String selector, String value) {
+        pauseForBehavior("type");
         if (!formInteractor.inputText(selector, value)) {
-            browser.type(selector, By.cssSelector(selector), value);
+            browser.typeHumanized(selector, By.cssSelector(selector), value);
         }
     }
 
@@ -157,17 +162,15 @@ public class SeleniumWorkflowExecutionContext implements WorkflowExecutionContex
 
     @Override
     public void hover(String selector) {
+        pauseForBehavior("hover");
         if (!formInteractor.hover(selector)) {
-            browser.executeScript(
-                "var el = document.querySelector(arguments[0]);" +
-                    "if (el) { el.dispatchEvent(new MouseEvent('mouseover', {bubbles: true})); }",
-                selector
-            );
+            browser.hoverHumanized(selector, By.cssSelector(selector));
         }
     }
 
     @Override
     public void scroll(String selector, Map<String, Object> options) {
+        pauseForBehavior("scroll");
         String mode = optionString(options, "mode");
         int maxScrolls = (int) optionLong(options, "max_scrolls", 1L);
         if (selector != null && !selector.isBlank()) {
@@ -179,10 +182,10 @@ public class SeleniumWorkflowExecutionContext implements WorkflowExecutionContex
             return;
         }
         if (maxScrolls > 1) {
-            scrollLoader.scrollToBottom(50, maxScrolls, 2);
+            browser.scrollToBottomHumanized(maxScrolls);
             return;
         }
-        browser.scrollToBottom();
+        browser.scrollToBottomHumanized(1);
     }
 
     @Override
@@ -365,6 +368,41 @@ public class SeleniumWorkflowExecutionContext implements WorkflowExecutionContex
             return rotator.getBrowserUserAgent("edge");
         }
         return rotator.getBrowserUserAgent("chrome");
+    }
+
+    static boolean isNightModeActiveAt(int hour, int startHour, int endHour) {
+        if (startHour == endHour) {
+            return false;
+        }
+        if (startHour < endHour) {
+            return hour >= startHour && hour < endHour;
+        }
+        return hour >= startHour || hour < endHour;
+    }
+
+    static long randomizedActionDelayMillis(String action, int hour) {
+        long base = switch (action.toLowerCase(Locale.ROOT)) {
+            case "click" -> 45L;
+            case "type" -> 35L;
+            case "hover" -> 55L;
+            case "scroll" -> 65L;
+            default -> 30L;
+        };
+        long jitter = ThreadLocalRandom.current().nextLong(10L, 50L);
+        double multiplier = isNightModeActiveAt(hour, 0, 6) ? 1.75 : 1.0;
+        return Math.max(0L, Math.round((base + jitter) * multiplier));
+    }
+
+    private void pauseForBehavior(String action) {
+        long delay = randomizedActionDelayMillis(action, LocalTime.now().getHour());
+        if (delay <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(delay);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     static String resolveProxy(SessionProfile sessionProfile) {

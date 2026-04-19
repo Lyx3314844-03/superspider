@@ -243,6 +243,212 @@ fn rust_cli_node_reverse_tls_fingerprint_command_runs_against_mock_service() {
 }
 
 #[test]
+fn rust_cli_node_reverse_canvas_fingerprint_command_runs_against_mock_service() {
+    let server = start_mock_server(|method, path| {
+        let body = match (method, path) {
+            ("POST", "/api/canvas/fingerprint") => {
+                r#"{"success":true,"hash":"mock-canvas"}"#.to_string()
+            }
+            _ => r#"{"status":"missing"}"#.to_string(),
+        };
+        (200, "application/json".to_string(), body)
+    });
+
+    let output = run_cargo_cli(&[
+        "run",
+        "--quiet",
+        "--",
+        "node-reverse",
+        "canvas-fingerprint",
+        "--base-url",
+        server.url().as_str(),
+    ]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("mock-canvas"));
+}
+
+#[test]
+fn rust_cli_node_reverse_signature_reverse_command_runs_against_mock_service() {
+    let server = start_mock_server(|method, path| {
+        let body = match (method, path) {
+            ("POST", "/api/signature/reverse") => {
+                r#"{"success":true,"functionName":"sign"}"#.to_string()
+            }
+            _ => r#"{"status":"missing"}"#.to_string(),
+        };
+        (200, "application/json".to_string(), body)
+    });
+
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let code_path = temp_dir.path().join("sign.js");
+    std::fs::write(&code_path, "function sign(v){return v;}").expect("fixture should be written");
+
+    let output = run_cargo_cli(&[
+        "run",
+        "--quiet",
+        "--",
+        "node-reverse",
+        "signature-reverse",
+        "--base-url",
+        server.url().as_str(),
+        "--code-file",
+        code_path.to_string_lossy().as_ref(),
+        "--input-data",
+        "left",
+        "--expected-output",
+        "left",
+    ]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"functionName\": \"sign\""));
+}
+
+#[test]
+fn rust_cli_node_reverse_ast_command_runs_against_mock_service() {
+    let server = start_mock_server(|method, path| {
+        let body = match (method, path) {
+            ("POST", "/api/ast/analyze") => {
+                r#"{"success":true,"results":{"obfuscation":[{"type":"eval-packer"}]}}"#.to_string()
+            }
+            _ => r#"{"status":"missing"}"#.to_string(),
+        };
+        (200, "application/json".to_string(), body)
+    });
+
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let code_path = temp_dir.path().join("bundle.js");
+    std::fs::write(&code_path, "eval(function(p,a,c,k,e,d){return p;})")
+        .expect("fixture should be written");
+
+    let output = run_cargo_cli(&[
+        "run",
+        "--quiet",
+        "--",
+        "node-reverse",
+        "ast",
+        "--base-url",
+        server.url().as_str(),
+        "--code-file",
+        code_path.to_string_lossy().as_ref(),
+        "--analysis",
+        "obfuscation",
+    ]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("eval-packer"));
+}
+
+#[test]
+fn rust_cli_node_reverse_webpack_command_runs_against_mock_service() {
+    let server = start_mock_server(|method, path| {
+        let body = match (method, path) {
+            ("POST", "/api/webpack/analyze") => {
+                r#"{"success":true,"entrypoints":["main"]}"#.to_string()
+            }
+            _ => r#"{"status":"missing"}"#.to_string(),
+        };
+        (200, "application/json".to_string(), body)
+    });
+
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let code_path = temp_dir.path().join("webpack.js");
+    std::fs::write(&code_path, "__webpack_require__(1)").expect("fixture should be written");
+
+    let output = run_cargo_cli(&[
+        "run",
+        "--quiet",
+        "--",
+        "node-reverse",
+        "webpack",
+        "--base-url",
+        server.url().as_str(),
+        "--code-file",
+        code_path.to_string_lossy().as_ref(),
+    ]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"main\""));
+}
+
+#[test]
+fn rust_cli_node_reverse_function_call_command_runs_against_mock_service() {
+    let server = start_mock_server(|method, path| {
+        let body = match (method, path) {
+            ("POST", "/api/function/call") => {
+                r#"{"success":true,"result":"left|right"}"#.to_string()
+            }
+            _ => r#"{"status":"missing"}"#.to_string(),
+        };
+        (200, "application/json".to_string(), body)
+    });
+
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let code_path = temp_dir.path().join("call.js");
+    std::fs::write(&code_path, "function sign(a,b){return a+'|'+b;}")
+        .expect("fixture should be written");
+
+    let output = run_cargo_cli(&[
+        "run",
+        "--quiet",
+        "--",
+        "node-reverse",
+        "function-call",
+        "--base-url",
+        server.url().as_str(),
+        "--code-file",
+        code_path.to_string_lossy().as_ref(),
+        "--function-name",
+        "sign",
+        "--arg",
+        "left",
+        "--arg",
+        "right",
+    ]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("left|right"));
+}
+
+#[test]
+fn rust_cli_node_reverse_browser_simulate_command_runs_against_mock_service() {
+    let server = start_mock_server(|method, path| {
+        let body = match (method, path) {
+            ("POST", "/api/browser/simulate") => {
+                r#"{"success":true,"result":{"ok":true},"cookies":"session=1"}"#.to_string()
+            }
+            _ => r#"{"status":"missing"}"#.to_string(),
+        };
+        (200, "application/json".to_string(), body)
+    });
+
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let code_path = temp_dir.path().join("browser.js");
+    std::fs::write(&code_path, "navigator.userAgent").expect("fixture should be written");
+
+    let output = run_cargo_cli(&[
+        "run",
+        "--quiet",
+        "--",
+        "node-reverse",
+        "browser-simulate",
+        "--base-url",
+        server.url().as_str(),
+        "--code-file",
+        code_path.to_string_lossy().as_ref(),
+    ]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("session=1"));
+}
+
+#[test]
 fn rust_cli_antibot_profile_command_detects_blocked_fixture() {
     let temp_dir = tempfile::tempdir().expect("temp dir");
     let html_path = temp_dir.path().join("blocked.html");
@@ -287,6 +493,12 @@ fn rust_cli_profile_site_command_builds_profile() {
             ("POST", "/api/tls/fingerprint") => {
                 r#"{"success":true,"fingerprint":{"ja3":"mock-ja3"}}"#.to_string()
             }
+            ("POST", "/api/canvas/fingerprint") => {
+                r#"{"success":true,"hash":"mock-canvas"}"#.to_string()
+            }
+            ("POST", "/api/crypto/analyze") => {
+                r#"{"success":true,"crypto_types":[{"name":"AES","confidence":0.9,"modes":["CBC"]}],"keys":[],"ivs":[],"analysis":{"keyFlowChains":[{"variable":"sessionKey","source":{"kind":"storage.localStorage","expression":"localStorage.getItem('session-key')"},"derivations":[{"variable":"derivedKey","kind":"hash","expression":"sha256(sessionKey)"}],"sinks":["crypto.subtle.encrypt"],"confidence":0.87}]}}"#.to_string()
+            }
             _ => r#"{"status":"missing"}"#.to_string(),
         };
         (200, "application/json".to_string(), body)
@@ -317,6 +529,13 @@ fn rust_cli_profile_site_command_builds_profile() {
     assert!(stdout.contains("\"page_type\": \"detail\""));
     assert!(stdout.contains("\"reverse\""));
     assert!(stdout.contains("mock-ja3"));
+    assert!(stdout.contains("mock-canvas"));
+    assert!(stdout.contains("\"canvas_fingerprint\""));
+    assert!(stdout.contains("\"crypto_analysis\""));
+    assert!(stdout.contains("AES"));
+    assert!(stdout.contains("\"reverse_focus\""));
+    assert!(stdout.contains("sessionKey"));
+    assert!(stdout.contains("crypto.subtle.encrypt"));
 }
 
 #[test]
@@ -392,6 +611,7 @@ fn rust_cli_plugins_run_dispatches_builtin_plugin() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("\"command\": \"selector-studio\""));
     assert!(stdout.contains("\"count\": 1"));
+    assert!(stdout.contains("\"suggested_xpaths\""));
 }
 
 #[test]
@@ -421,4 +641,5 @@ fn rust_cli_selector_studio_extracts_values() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("\"command\": \"selector-studio\""));
     assert!(stdout.contains("\"count\": 1"));
+    assert!(stdout.contains("\"suggested_xpaths\""));
 }

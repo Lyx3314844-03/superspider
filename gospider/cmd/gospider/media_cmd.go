@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"gospider/extractors/bilibili"
+	"gospider/extractors/douyin"
 	"gospider/extractors/iqiyi"
 	"gospider/extractors/tencent"
 	"gospider/extractors/youku"
@@ -36,7 +37,7 @@ func mediaCommand(args []string) {
 	url := mediaCmd.String("url", "", "媒体 URL")
 	outputDir := mediaCmd.String("output", "./media", "输出目录")
 	download := mediaCmd.Bool("download", false, "下载媒体")
-	platform := mediaCmd.String("platform", "auto", "平台类型 (auto, youtube, youku, iqiyi, tencent, bilibili)")
+	platform := mediaCmd.String("platform", "auto", "平台类型 (auto, youtube, youku, iqiyi, tencent, bilibili, douyin)")
 	htmlFile := mediaCmd.String("html-file", "", "浏览器抓取的 HTML artifact")
 	networkFile := mediaCmd.String("network-file", "", "浏览器抓取的 network artifact")
 	harFile := mediaCmd.String("har-file", "", "浏览器抓取的 HAR artifact")
@@ -97,6 +98,8 @@ func mediaCommand(args []string) {
 		err = handleTencent(*url, *outputDir, *download)
 	case "bilibili":
 		err = handleBilibili(*url, *outputDir, *download)
+	case "douyin":
+		err = handleDouyin(*url, *outputDir, *download)
 	default:
 		err = handleGeneric(*url, *outputDir, *download)
 	}
@@ -208,7 +211,7 @@ func detectPlatform(url string) string {
 	switch {
 	case strings.Contains(lower, "youtube.com") || strings.Contains(lower, "youtu.be"):
 		return "youtube"
-	case strings.Contains(lower, "youku.com"):
+	case strings.Contains(lower, "youku.com") || strings.Contains(lower, "youku.tv"):
 		return "youku"
 	case strings.Contains(lower, "iqiyi.com"):
 		return "iqiyi"
@@ -216,6 +219,8 @@ func detectPlatform(url string) string {
 		return "tencent"
 	case strings.Contains(lower, "bilibili.com") || strings.Contains(lower, "b23.tv"):
 		return "bilibili"
+	case strings.Contains(lower, "douyin.com"):
+		return "douyin"
 	default:
 		return "unknown"
 	}
@@ -379,9 +384,9 @@ func inspectDRMTarget(url, input, inlineContent, contentFile string) (map[string
 				return nil, detectErr
 			}
 			return map[string]any{
-				"command": "media drm",
-				"runtime": "go",
-				"source": map[string]any{"kind": sourceKind, "value": sourceValue},
+				"command":       "media drm",
+				"runtime":       "go",
+				"source":        map[string]any{"kind": sourceKind, "value": sourceValue},
 				"manifest_type": "binary",
 				"drm_info": map[string]any{
 					"is_drm_protected": isDRM,
@@ -835,6 +840,43 @@ func handleBilibili(url, outputDir string, download bool) error {
 	}
 
 	fmt.Printf("✅ 下载完成：%s\n", result.Path)
+	return nil
+}
+
+func handleDouyin(url, outputDir string, download bool) error {
+	fmt.Println("📺 Douyin 视频")
+	extractor := douyin.NewExtractor()
+	info, err := extractor.Extract(url)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("标题：%s\n", info.Title)
+	if info.Description != "" {
+		fmt.Printf("描述：%s\n", info.Description)
+	}
+	if info.CoverURL != "" {
+		fmt.Printf("封面：%s\n", info.CoverURL)
+	}
+	if info.Duration > 0 {
+		fmt.Printf("时长：%d 秒\n", info.Duration)
+	}
+	for _, format := range info.Formats {
+		fmt.Printf("  - %s\n", format)
+	}
+	fmt.Println()
+
+	if !download {
+		fmt.Println("使用 -download 参数开始下载")
+		return nil
+	}
+
+	downloader := media.NewMultiPlatformDownloader(outputDir)
+	output, err := downloader.Download(url, "best")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("✅ 下载结果：%s\n", strings.TrimSpace(output))
 	return nil
 }
 

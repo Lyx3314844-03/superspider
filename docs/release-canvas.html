@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -320,6 +320,39 @@
       line-height: 1.75;
     }
 
+    .scope-grid {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .scope-card {
+      padding: 20px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.85);
+      box-shadow: 0 12px 28px rgba(24, 32, 43, 0.08);
+    }
+
+    .scope-card h3 {
+      margin: 0 0 10px;
+      font-size: 1.15rem;
+      letter-spacing: -0.03em;
+    }
+
+    .scope-card p {
+      margin: 0 0 12px;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    .scope-card ul {
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.7;
+    }
+
     .footer {
       margin-top: 24px;
       display: flex;
@@ -335,7 +368,8 @@
       .hero,
       .note,
       .framework-grid,
-      .install-grid {
+      .install-grid,
+      .scope-grid {
         grid-template-columns: 1fr;
       }
 
@@ -519,6 +553,59 @@
       </div>
     </section>
 
+    <section class="section">
+      <div class="section-title">
+        <h2>Capability range</h2>
+        <p>This release is designed so each runtime has a clear delivery boundary, not just a language label.</p>
+      </div>
+
+      <div class="scope-grid">
+        <article class="scope-card">
+          <h3>PySpider</h3>
+          <p>Best when the crawler is an evolving project rather than a single packaged binary.</p>
+          <ul>
+            <li>Project runtime and plugin injection</li>
+            <li>AI extraction and research workflows</li>
+            <li>Hybrid browser + HTTP crawling</li>
+            <li>Flexible Python-side data handling</li>
+          </ul>
+        </article>
+
+        <article class="scope-card">
+          <h3>GoSpider</h3>
+          <p>Best when the crawler is an executable unit that needs concurrency and operations-friendly rollout.</p>
+          <ul>
+            <li>Binary-first deployment</li>
+            <li>Concurrent task dispatch</li>
+            <li>Worker / queue / storage model</li>
+            <li>Service-side crawling workloads</li>
+          </ul>
+        </article>
+
+        <article class="scope-card">
+          <h3>RustSpider</h3>
+          <p>Best when the release boundary must be explicit and performance is a first-order concern.</p>
+          <ul>
+            <li>Strongly typed release binary</li>
+            <li>Feature-gated shipping surface</li>
+            <li>Preflight and contract-heavy runtime</li>
+            <li>High-performance deployment profile</li>
+          </ul>
+        </article>
+
+        <article class="scope-card">
+          <h3>JavaSpider</h3>
+          <p>Best when browser workflows must sit inside Maven packaging and Java enterprise pipelines.</p>
+          <ul>
+            <li>Maven / JAR delivery</li>
+            <li>Browser workflow execution</li>
+            <li>Audit and connector paths</li>
+            <li>Enterprise Java integration</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
     <section class="note">
       <div>
         <h3>What the repository now contains</h3>
@@ -531,7 +618,7 @@
       <ul>
         <li><strong>Source:</strong> `pyspider`, `gospider`, `rustspider`, `javaspider`</li>
         <li><strong>Install docs:</strong> `docs/SUPERSPIDER_INSTALLS.md`</li>
-        <li><strong>Capability docs:</strong> `docs/FRAMEWORK_CAPABILITIES.md`, `docs/FRAMEWORK_CAPABILITY_MATRIX.md`</li>
+        <li><strong>Primary docs:</strong> `docs/DOCS_INDEX.md`, `MEDIA_PARITY_REPORT.md`, `LATEST_FRAMEWORK_COMPLETION_REPORT.md`, `docs/archive/HISTORICAL_REPORTS.md`</li>
         <li><strong>Brand:</strong> `docs/assets/superspider-wordmark.svg`, `docs/assets/superspider-icon.svg`</li>
       </ul>
     </section>

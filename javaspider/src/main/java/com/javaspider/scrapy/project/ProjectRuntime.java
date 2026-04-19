@@ -388,11 +388,13 @@ public final class ProjectRuntime {
             JsonNode profile = client.profileAntiBot(html, "", Collections.emptyMap(), "", 200, targetUrl);
             JsonNode spoof = client.spoofFingerprint("chrome", "windows");
             JsonNode tls = client.generateTlsFingerprint("chrome", "120");
+            JsonNode canvas = client.canvasFingerprint();
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("detect", detect);
             payload.put("profile", profile);
             payload.put("fingerprint_spoof", spoof);
             payload.put("tls_fingerprint", tls);
+            payload.put("canvas_fingerprint", canvas);
             String scriptSample = extractScriptSample(html);
             if (!scriptSample.isBlank()) {
                 payload.put("crypto_analysis", client.analyzeCrypto(scriptSample));

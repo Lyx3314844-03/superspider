@@ -37,6 +37,20 @@ class EncryptedSiteCrawlerEnhanced:
         """
         print("\n🔐 开始自动签名逆向分析...")
 
+        if sample_inputs and sample_output:
+            service_result = self.reverse_client.reverse_signature(
+                code, sample_inputs, sample_output
+            )
+            if service_result.get("success"):
+                return {
+                    "success": True,
+                    "function_name": service_result.get("functionName"),
+                    "input": sample_inputs,
+                    "output": sample_output,
+                    "total_functions": service_result.get("totalFunctions", 0),
+                    "success_count": service_result.get("successCount", 1),
+                }
+
         # AST 分析查找签名函数
         ast_result = self.reverse_client.analyze_ast(code, ["crypto", "obfuscation"])
 
@@ -279,19 +293,21 @@ class EncryptedSiteCrawlerEnhanced:
             Canvas 指纹信息
         """
         print("\n🎨 生成 Canvas 指纹...")
+        result = self.reverse_client.canvas_fingerprint()
+        if not result.get("success"):
+            fingerprint_data = (
+                "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAABQCAY..."
+            )
+            import hashlib
 
-        # 模拟 Canvas 指纹
-        fingerprint_data = (
-            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAABQCAY..."
-        )
+            hash_value = hashlib.md5(fingerprint_data.encode()).hexdigest()
+            result = {
+                "success": True,
+                "fingerprint": fingerprint_data,
+                "hash": hash_value,
+            }
 
-        import hashlib
-
-        hash_value = hashlib.md5(fingerprint_data.encode()).hexdigest()
-
-        result = {"success": True, "fingerprint": fingerprint_data, "hash": hash_value}
-
-        print(f"  ✅ Canvas 指纹生成成功: {hash_value}")
+        print(f"  ✅ Canvas 指纹生成成功: {result.get('hash', '')}")
         return result
 
     def get_enhanced_headers(self) -> Dict[str, str]:

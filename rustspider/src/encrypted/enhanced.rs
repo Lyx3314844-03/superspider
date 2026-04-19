@@ -85,6 +85,38 @@ impl EncryptedSiteCrawlerEnhanced {
     ) -> Result<SignatureReverseResult, Box<dyn std::error::Error>> {
         println!("\n🔐 开始自动签名逆向分析...");
 
+        if let (Some(input), Some(output)) = (sample_inputs, sample_output) {
+            if let Ok(service_result) = self
+                .reverse_client
+                .reverse_signature(code, input, output)
+                .await
+            {
+                if service_result
+                    .get("success")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false)
+                {
+                    return Ok(SignatureReverseResult {
+                        success: true,
+                        function_name: service_result
+                            .get("functionName")
+                            .and_then(|value| value.as_str())
+                            .map(str::to_string),
+                        input: Some(input.to_string()),
+                        output: Some(output.to_string()),
+                        total_functions: service_result
+                            .get("totalFunctions")
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or_default() as usize,
+                        success_count: service_result
+                            .get("successCount")
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or(1) as usize,
+                    });
+                }
+            }
+        }
+
         // AST 分析查找签名函数
         let ast_result = self
             .reverse_client
@@ -264,9 +296,31 @@ impl EncryptedSiteCrawlerEnhanced {
     ) -> Result<CanvasFingerprint, Box<dyn std::error::Error>> {
         println!("\n🎨 生成 Canvas 指纹...");
 
+        if let Ok(payload) = self.reverse_client.canvas_fingerprint().await {
+            if payload
+                .get("success")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+            {
+                let result = CanvasFingerprint {
+                    success: true,
+                    fingerprint: payload
+                        .get("fingerprint")
+                        .map(|value| value.to_string())
+                        .unwrap_or_default(),
+                    hash: payload
+                        .get("hash")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                };
+                println!("  ✅ Canvas 指纹生成成功: {}", result.hash);
+                return Ok(result);
+            }
+        }
+
         let fingerprint =
             "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAABQCAY...".to_string();
-        // 使用简单的哈希代替 md5
         let hash = format!("{:x}", fingerprint.len() as u64 * 1234567890);
 
         let result = CanvasFingerprint {

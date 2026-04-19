@@ -15,7 +15,7 @@ public class SpiderAssistant {
         this(new AIExtractor(
             apiKey,
             "https://api.openai.com/v1",
-            "gpt-3.5-turbo"
+            "gpt-5.2"
         ));
     }
 

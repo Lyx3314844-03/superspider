@@ -359,8 +359,12 @@ func checkBrowserDeps() doctorCheck {
 }
 
 func renderDoctorReport(report doctorReport) string {
+	return renderDoctorReportForCommand(report, "doctor")
+}
+
+func renderDoctorReportForCommand(report doctorReport, commandName string) string {
 	var builder strings.Builder
-	builder.WriteString("gospider 环境检查\n")
+	builder.WriteString(fmt.Sprintf("gospider %s\n", commandName))
 	builder.WriteString("================\n")
 
 	for _, check := range report.Checks {
@@ -389,6 +393,10 @@ func renderDoctorReport(report doctorReport) string {
 }
 
 func renderDoctorReportJSON(report doctorReport) (string, error) {
+	return renderDoctorReportJSONForCommand(report, "doctor")
+}
+
+func renderDoctorReportJSONForCommand(report doctorReport, commandName string) (string, error) {
 	type jsonCheck struct {
 		Name    string `json:"name"`
 		Status  string `json:"status"`
@@ -410,7 +418,7 @@ func renderDoctorReportJSON(report doctorReport) (string, error) {
 	}
 
 	payload := map[string]any{
-		"command":      "doctor",
+		"command":      commandName,
 		"framework":    "gospider",
 		"runtime":      "go",
 		"version":      version,

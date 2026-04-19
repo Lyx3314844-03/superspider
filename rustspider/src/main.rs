@@ -17,7 +17,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ContractConfig {
@@ -482,14 +482,19 @@ fn main() {
         "crawl" => handle_crawl(&args[2..]),
         "browser" => handle_browser(&args[2..]),
         "ai" => handle_ai(&args[2..]),
-        "doctor" => handle_doctor(&args[2..]),
+        "doctor" => handle_doctor(&args[2..], "doctor"),
+        "preflight" => handle_doctor(&args[2..], "preflight"),
         "export" => handle_export(&args[2..]),
         "curl" => handle_curl(&args[2..]),
+        "run" => handle_run(&args[2..]),
         "job" => handle_job(&args[2..]),
+        "async-job" => handle_async_job(&args[2..]),
+        "workflow" => handle_workflow(&args[2..]),
         "jobdir" => handle_jobdir(&args[2..]),
         "http-cache" => handle_http_cache(&args[2..]),
         "console" => handle_console(&args[2..]),
         "audit" => handle_audit(&args[2..]),
+        "web" => handle_web(&args[2..]),
         "media" => handle_media(&args[2..]),
         "ultimate" => handle_ultimate(&args[2..]),
         "sitemap-discover" => handle_sitemap_discover(&args[2..]),
@@ -497,6 +502,7 @@ fn main() {
         "selector-studio" => handle_selector_studio(&args[2..]),
         "scrapy" => handle_scrapy(&args[2..]),
         "profile-site" => handle_profile_site(&args[2..]),
+        "research" => handle_research(&args[2..]),
         "node-reverse" => handle_node_reverse(&args[2..]),
         "anti-bot" | "antibot" => handle_antibot(&args[2..]),
         "capabilities" => {
@@ -539,12 +545,20 @@ fn print_help() {
     println!("          usage: ai --url <url> [--instructions <text>] [--schema-json <json>]");
     println!("  doctor  run runtime preflight checks");
     println!("          usage: doctor [--json] [--config <path>] [--writable-path <path>] [--network-target <host:port>]");
+    println!("  preflight run runtime preflight checks through the main CLI surface");
+    println!("          usage: preflight [--json] [--config <path>] [--writable-path <path>] [--network-target <host:port>]");
     println!("  export  export contract-aligned data");
-    println!("          usage: export --input <path> --format <json|csv|md> --output <path>");
+    println!("          usage: export --input <path> --format <json|jsonl|csv|md> --output <path>");
     println!("  curl    convert curl commands into Rust code");
     println!("          usage: curl convert --command <curl> [--target <rust|reqwest|ureq>]");
+    println!("  run     execute an inline pyspider-style URL job");
+    println!("          usage: run <url> [--runtime <http|browser|media|ai>] [--output <path>]");
     println!("  job     execute a normalized JobSpec JSON file");
     println!("          usage: job --file <job.json>");
+    println!("  async-job execute a normalized JobSpec through the async parity surface");
+    println!("          usage: async-job --file <job.json>");
+    println!("  workflow execute the lightweight workflow orchestration surface");
+    println!("          usage: workflow run --file <workflow.json>");
     println!("  jobdir  manage a shared pause/resume job directory");
     println!("          usage: jobdir <init|status|pause|resume|clear> --path <jobdir>");
     println!("  http-cache inspect or seed the shared HTTP cache store");
@@ -553,6 +567,8 @@ fn print_help() {
     println!("          usage: console <snapshot|tail> --control-plane <dir>");
     println!("  audit   inspect audit/event traces through the shared control-plane view");
     println!("          usage: audit <snapshot|tail> --control-plane <dir>");
+    println!("  web     launch the embedded web surface");
+    println!("          usage: web [--mode <ui|api>] [--host <host>] [--port <port>]");
     println!("  media   inspect or download media resources");
     println!("          usage: media --url <url> [--output <dir>] [--download]");
     println!("  ultimate run the advanced ultimate spider");
@@ -572,8 +588,10 @@ fn print_help() {
     println!("          usage: scrapy plan-ai|sync-ai|auth-validate|auth-capture|scaffold-ai --project <dir> [--url <url>]");
     println!("  profile-site analyze a target before crawling");
     println!("          usage: profile-site --url <url> [--html-file <path>] [--base-url <url>]");
+    println!("  research run the pyspider-style research runtime surfaces");
+    println!("          usage: research <run|async|soak> ...");
     println!("  node-reverse call the NodeReverse service directly");
-    println!("          usage: node-reverse <health|profile|detect|fingerprint-spoof|tls-fingerprint|analyze-crypto> [options]");
+    println!("          usage: node-reverse <health|profile|detect|fingerprint-spoof|tls-fingerprint|canvas-fingerprint|analyze-crypto|signature-reverse|ast|webpack|function-call|browser-simulate> [options]");
     println!("  anti-bot run anti-bot utilities and local block profiling");
     println!("          usage: anti-bot <headers|profile> [options]");
     println!("  capabilities  print integrated runtime capabilities");
@@ -1072,7 +1090,7 @@ fn validate_contract_config(
         errors.push("storage.export_dir must be a non-empty string".to_string());
     }
     if !matches!(config.export.format.as_str(), "json" | "csv" | "md") {
-        errors.push("export.format must be one of [json, csv, md]".to_string());
+        errors.push("export.format must be one of [json, jsonl, csv, md]".to_string());
     }
     if config.export.output_path.trim().is_empty() {
         errors.push("export.output_path must be a non-empty string".to_string());
@@ -1827,7 +1845,527 @@ fn handle_console(args: &[String]) -> i32 {
 }
 
 fn handle_audit(args: &[String]) -> i32 {
-    handle_console(args)
+    let Some(subcommand) = args.first().map(|value| value.as_str()) else {
+        eprintln!("usage: rustspider audit <snapshot|tail> --control-plane <dir>");
+        return 2;
+    };
+    if subcommand != "snapshot" && subcommand != "tail" {
+        eprintln!("usage: rustspider audit <snapshot|tail> --control-plane <dir>");
+        return 2;
+    }
+
+    let mut control_plane = String::from("artifacts/control-plane");
+    let mut job_name = String::new();
+    let mut stream = String::from("all");
+    let mut lines = String::from("20");
+    let mut i = 1usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--control-plane" if i + 1 < args.len() => {
+                control_plane = args[i + 1].clone();
+                i += 2;
+            }
+            "--job-name" if i + 1 < args.len() => {
+                job_name = args[i + 1].clone();
+                i += 2;
+            }
+            "--stream" if i + 1 < args.len() => {
+                stream = args[i + 1].clone();
+                i += 2;
+            }
+            "--lines" if i + 1 < args.len() => {
+                lines = args[i + 1].clone();
+                i += 2;
+            }
+            other => {
+                eprintln!("unknown audit argument: {other}");
+                return 2;
+            }
+        }
+    }
+
+    let mut tool_args = vec![
+        subcommand.to_string(),
+        "--control-plane".to_string(),
+        control_plane,
+        "--job-name".to_string(),
+        job_name,
+        "--lines".to_string(),
+        lines,
+    ];
+    if subcommand == "tail" {
+        tool_args.push("--stream".to_string());
+        tool_args.push(stream);
+    }
+    run_shared_python_tool("audit_console.py", &tool_args)
+}
+
+fn handle_web(args: &[String]) -> i32 {
+    let mut host = String::from("0.0.0.0");
+    let mut port: u16 = 9090;
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--host" if i + 1 < args.len() => {
+                host = args[i + 1].clone();
+                i += 2;
+            }
+            "--port" if i + 1 < args.len() => {
+                match args[i + 1].parse::<u16>() {
+                    Ok(value) => port = value,
+                    Err(err) => {
+                        eprintln!("invalid port: {err}");
+                        return 2;
+                    }
+                }
+                i += 2;
+            }
+            "--mode" if i + 1 < args.len() => {
+                i += 2;
+            }
+            other => {
+                eprintln!("unknown web argument: {other}");
+                return 2;
+            }
+        }
+    }
+
+    #[cfg(feature = "web")]
+    {
+        match tokio::runtime::Runtime::new() {
+            Ok(runtime) => match runtime.block_on(rustspider::web::run_server(&host, port)) {
+                Ok(()) => 0,
+                Err(err) => {
+                    eprintln!("web server failed: {err}");
+                    1
+                }
+            },
+            Err(err) => {
+                eprintln!("failed to initialize async runtime: {err}");
+                1
+            }
+        }
+    }
+
+    #[cfg(not(feature = "web"))]
+    {
+        let _ = (host, port);
+        eprintln!("rustspider web server requires the `web` feature");
+        1
+    }
+}
+
+fn handle_research(args: &[String]) -> i32 {
+    let Some(subcommand) = args.first().map(|value| value.as_str()) else {
+        eprintln!("usage: rustspider research <run|async|soak> ...");
+        return 2;
+    };
+    match subcommand {
+        "run" => {
+            let mut url = String::new();
+            let mut content = String::new();
+            let mut schema_json = String::from("{}");
+            let mut output = String::new();
+            let mut i = 1usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--url" if i + 1 < args.len() => {
+                        url = args[i + 1].clone();
+                        i += 2;
+                    }
+                    "--content" if i + 1 < args.len() => {
+                        content = args[i + 1].clone();
+                        i += 2;
+                    }
+                    "--schema-json" if i + 1 < args.len() => {
+                        schema_json = args[i + 1].clone();
+                        i += 2;
+                    }
+                    "--output" if i + 1 < args.len() => {
+                        output = args[i + 1].clone();
+                        i += 2;
+                    }
+                    other if !other.starts_with("--") && url.is_empty() => {
+                        url = other.to_string();
+                        i += 1;
+                    }
+                    other => {
+                        eprintln!("unknown research run argument: {other}");
+                        return 2;
+                    }
+                }
+            }
+            if url.trim().is_empty() {
+                eprintln!("research run requires --url");
+                return 2;
+            }
+            let job = match build_research_job(
+                vec![url],
+                &schema_json,
+                if output.is_empty() {
+                    None
+                } else {
+                    Some(output)
+                },
+            ) {
+                Ok(job) => job,
+                Err(err) => {
+                    eprintln!("invalid research schema: {err}");
+                    return 2;
+                }
+            };
+            match rustspider::research::ResearchRuntime::new().run(&job, Some(&content)) {
+                Ok(payload) => print_json_payload(&payload),
+                Err(err) => {
+                    eprintln!("research run failed: {err}");
+                    1
+                }
+            }
+        }
+        "async" | "soak" => {
+            let mut urls = Vec::new();
+            let mut content = String::new();
+            let mut schema_json = String::from("{}");
+            let mut rounds: usize = 1;
+            let mut concurrency: usize = 5;
+            let mut i = 1usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--url" if i + 1 < args.len() => {
+                        urls.push(args[i + 1].clone());
+                        i += 2;
+                    }
+                    "--content" if i + 1 < args.len() => {
+                        content = args[i + 1].clone();
+                        i += 2;
+                    }
+                    "--schema-json" if i + 1 < args.len() => {
+                        schema_json = args[i + 1].clone();
+                        i += 2;
+                    }
+                    "--rounds" if i + 1 < args.len() => {
+                        rounds = args[i + 1].parse::<usize>().unwrap_or(1);
+                        i += 2;
+                    }
+                    "--concurrency" if i + 1 < args.len() => {
+                        concurrency = args[i + 1].parse::<usize>().unwrap_or(5);
+                        i += 2;
+                    }
+                    other => {
+                        eprintln!("unknown research {} argument: {other}", subcommand);
+                        return 2;
+                    }
+                }
+            }
+            if urls.is_empty() {
+                eprintln!("research async/soak requires at least one --url");
+                return 2;
+            }
+            let mut jobs = Vec::new();
+            let mut contents = Vec::new();
+            for (index, url) in urls.iter().enumerate() {
+                match build_research_job(vec![url.clone()], &schema_json, None) {
+                    Ok(job) => jobs.push(job),
+                    Err(err) => {
+                        eprintln!("invalid research schema: {err}");
+                        return 2;
+                    }
+                }
+                if content.trim().is_empty() {
+                    contents.push(format!("<title>Research {}</title>", index + 1));
+                } else {
+                    contents.push(content.clone());
+                }
+            }
+            let runtime = rustspider::async_research::AsyncResearchRuntime::new(Some(
+                rustspider::async_research::AsyncResearchConfig {
+                    max_concurrent: concurrency.max(1),
+                    timeout_seconds: 30.0,
+                    enable_streaming: false,
+                },
+            ));
+            match tokio::runtime::Runtime::new() {
+                Ok(rt) => {
+                    if subcommand == "soak" {
+                        let payload = rt.block_on(runtime.run_soak(jobs, Some(contents), rounds));
+                        print_json_payload(&payload)
+                    } else {
+                        let results = rt.block_on(runtime.run_multiple(jobs, Some(contents)));
+                        let payload = serde_json::json!({
+                            "command": "research async",
+                            "runtime": "rust",
+                            "results": results,
+                            "metrics": runtime.snapshot_metrics(),
+                        });
+                        print_json_payload(&payload)
+                    }
+                }
+                Err(err) => {
+                    eprintln!("failed to initialize async runtime: {err}");
+                    1
+                }
+            }
+        }
+        _ => {
+            eprintln!("usage: rustspider research <run|async|soak> ...");
+            2
+        }
+    }
+}
+
+fn build_research_job(
+    seed_urls: Vec<String>,
+    schema_json: &str,
+    output: Option<String>,
+) -> Result<rustspider::research::ResearchJob, String> {
+    let schema_value: serde_json::Value = serde_json::from_str(if schema_json.trim().is_empty() {
+        "{}"
+    } else {
+        schema_json
+    })
+    .map_err(|err| format!("invalid schema json: {err}"))?;
+    let extract_schema = schema_value
+        .as_object()
+        .cloned()
+        .unwrap_or_else(serde_json::Map::new);
+    let mut output_map = serde_json::Map::new();
+    if let Some(path) = output.filter(|value| !value.trim().is_empty()) {
+        output_map.insert("path".to_string(), serde_json::Value::String(path));
+    }
+    Ok(rustspider::research::ResearchJob {
+        seed_urls,
+        extract_schema,
+        output: output_map,
+        ..rustspider::research::ResearchJob::default()
+    })
+}
+
+fn print_json_payload(payload: &serde_json::Value) -> i32 {
+    match serde_json::to_string_pretty(payload) {
+        Ok(text) => {
+            println!("{text}");
+            0
+        }
+        Err(err) => {
+            eprintln!("failed to render json: {err}");
+            1
+        }
+    }
+}
+
+fn handle_run(args: &[String]) -> i32 {
+    let mut url = String::new();
+    let mut runtime_name = String::from("http");
+    let mut name = String::new();
+    let mut output_path = String::new();
+    let mut content = String::new();
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--url" if i + 1 < args.len() => {
+                url = args[i + 1].clone();
+                i += 2;
+            }
+            "--runtime" if i + 1 < args.len() => {
+                runtime_name = args[i + 1].clone();
+                i += 2;
+            }
+            "--name" if i + 1 < args.len() => {
+                name = args[i + 1].clone();
+                i += 2;
+            }
+            "--output" if i + 1 < args.len() => {
+                output_path = args[i + 1].clone();
+                i += 2;
+            }
+            "--content" if i + 1 < args.len() => {
+                content = args[i + 1].clone();
+                i += 2;
+            }
+            other if !other.starts_with("--") && url.is_empty() => {
+                url = other.to_string();
+                i += 1;
+            }
+            other => {
+                eprintln!("unknown run argument: {other}");
+                return 2;
+            }
+        }
+    }
+
+    if url.trim().is_empty() {
+        eprintln!(
+            "usage: rustspider run <url> [--runtime <http|browser|media|ai>] [--output <path>]"
+        );
+        return 2;
+    }
+
+    let job_name = if name.trim().is_empty() {
+        format!(
+            "rust-inline-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|value| value.as_millis())
+                .unwrap_or_default()
+        )
+    } else {
+        name
+    };
+    let output_path = if output_path.trim().is_empty() {
+        format!("artifacts/exports/{job_name}.json")
+    } else {
+        output_path
+    };
+    let metadata = if content.trim().is_empty() {
+        None
+    } else {
+        Some(serde_json::json!({ "content": content }))
+    };
+    let job = RuntimeJobSpec {
+        name: job_name,
+        runtime: runtime_name,
+        priority: None,
+        target: RuntimeTargetSection {
+            url,
+            method: default_method(),
+            headers: HashMap::new(),
+            cookies: HashMap::new(),
+            body: None,
+            proxy: None,
+            timeout_ms: None,
+            allowed_domains: Vec::new(),
+        },
+        extract: Vec::new(),
+        output: RuntimeOutputSection {
+            format: "json".to_string(),
+            path: Some(output_path),
+            directory: None,
+            artifact_prefix: None,
+        },
+        resources: None,
+        browser: None,
+        anti_bot: None,
+        policy: None,
+        schedule: None,
+        metadata,
+    };
+    run_inline_job(job)
+}
+
+fn handle_async_job(args: &[String]) -> i32 {
+    handle_job(args)
+}
+
+fn handle_workflow(args: &[String]) -> i32 {
+    let Some(subcommand) = args.first().map(|value| value.as_str()) else {
+        eprintln!("usage: rustspider workflow run --file <workflow.json>");
+        return 2;
+    };
+    if subcommand != "run" {
+        eprintln!("usage: rustspider workflow run --file <workflow.json>");
+        return 2;
+    }
+
+    let mut file_path = String::new();
+    let mut index = 1usize;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--file" if index + 1 < args.len() => {
+                file_path = args[index + 1].clone();
+                index += 2;
+            }
+            other => {
+                eprintln!("unknown workflow argument: {other}");
+                return 2;
+            }
+        }
+    }
+
+    if file_path.trim().is_empty() {
+        eprintln!("rustspider workflow run requires --file");
+        return 2;
+    }
+
+    let raw = match fs::read_to_string(&file_path) {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("failed to read workflow spec: {err}");
+            return 1;
+        }
+    };
+    let job: rustspider::workflow::FlowJob = match serde_json::from_str(&raw) {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("failed to parse workflow spec: {err}");
+            return 1;
+        }
+    };
+
+    let spec_path = PathBuf::from(&file_path);
+    let control_plane = spec_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("artifacts")
+        .join("control-plane");
+    let event_path = control_plane.join(format!("{}-workflow-events.jsonl", job.name));
+    let connector_path = control_plane.join(format!("{}-workflow-connector.jsonl", job.name));
+    let runner = rustspider::workflow::WorkflowRunner::new()
+        .with_event_bus(rustspider::event_bus::FileEventBus::new(event_path.clone()))
+        .add_connector(rustspider::connector::FileConnector::new(
+            connector_path.clone(),
+        ));
+
+    match runner.execute(&job) {
+        Ok(result) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "command": "workflow run",
+                    "runtime": "rust",
+                    "job_id": result.job_id,
+                    "run_id": result.run_id,
+                    "extract": result.extracted,
+                    "artifacts": result.artifacts,
+                    "events_path": event_path,
+                    "connector_path": connector_path,
+                }))
+                .unwrap_or_default()
+            );
+            0
+        }
+        Err(err) => {
+            eprintln!("workflow execution failed: {err}");
+            1
+        }
+    }
+}
+
+fn run_inline_job(job: RuntimeJobSpec) -> i32 {
+    let temp_path = env::temp_dir().join(format!(
+        "rustspider-run-{}-{}.json",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_millis())
+            .unwrap_or_default()
+    ));
+    let encoded = match serde_json::to_vec_pretty(&job) {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("failed to encode inline job: {err}");
+            return 1;
+        }
+    };
+    if let Err(err) = fs::write(&temp_path, encoded) {
+        eprintln!("failed to write inline job spec: {err}");
+        return 1;
+    }
+    let result = handle_job(&[
+        "--file".to_string(),
+        temp_path.to_string_lossy().to_string(),
+    ]);
+    let _ = fs::remove_file(temp_path);
+    result
 }
 
 fn handle_curl(args: &[String]) -> i32 {
@@ -2386,6 +2924,106 @@ fn playwright_helper_script() -> PathBuf {
         .join("playwright_fetch.py")
 }
 
+fn native_playwright_helper_script() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root should exist")
+        .join("tools")
+        .join("playwright_fetch.mjs")
+}
+
+fn run_native_playwright_fetch(
+    url: &str,
+    screenshot_path: &str,
+    html_path: &str,
+    cfg: &ContractConfig,
+) -> Result<(String, String), String> {
+    prepare_browser_artifact_paths(screenshot_path, html_path)?;
+    let script = native_playwright_helper_script();
+    if !script.exists() {
+        return Err(format!(
+            "missing native helper script: {}",
+            script.display()
+        ));
+    }
+
+    let mut command = Command::new("node");
+    command
+        .arg(script)
+        .arg("--url")
+        .arg(url)
+        .arg("--screenshot")
+        .arg(screenshot_path)
+        .arg("--html")
+        .arg(html_path)
+        .arg("--timeout-seconds")
+        .arg(cfg.browser.timeout_seconds.to_string());
+    if !cfg.browser.user_agent.is_empty() {
+        command.arg("--user-agent").arg(&cfg.browser.user_agent);
+    }
+    if !cfg.browser.storage_state_file.is_empty() {
+        command
+            .arg("--save-storage-state")
+            .arg(&cfg.browser.storage_state_file);
+    }
+    if !cfg.browser.cookies_file.is_empty() {
+        command
+            .arg("--save-cookies-file")
+            .arg(&cfg.browser.cookies_file);
+    }
+    if cfg.browser.headless {
+        command.arg("--headless");
+    }
+
+    let output = command
+        .output()
+        .map_err(|e| format!("failed to launch native playwright helper: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "native playwright helper failed: {}",
+            stderr.trim()
+        ));
+    }
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("invalid native helper json: {e}"))?;
+    let title = payload
+        .get("title")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let resolved_url = payload
+        .get("url")
+        .and_then(|value| value.as_str())
+        .unwrap_or(url)
+        .to_string();
+    Ok((title, resolved_url))
+}
+
+fn run_native_playwright_job_helper(job_path: &str) -> Result<serde_json::Value, String> {
+    let script = native_playwright_helper_script();
+    if !script.exists() {
+        return Err(format!(
+            "missing native helper script: {}",
+            script.display()
+        ));
+    }
+    let output = Command::new("node")
+        .arg(script)
+        .arg("--job-file")
+        .arg(job_path)
+        .output()
+        .map_err(|e| format!("failed to launch native playwright helper: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "native playwright helper failed: {}",
+            stderr.trim()
+        ));
+    }
+    serde_json::from_slice(&output.stdout).map_err(|e| format!("invalid native helper json: {e}"))
+}
+
 fn shared_tool_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -2557,7 +3195,7 @@ fn run_playwright_job_helper(job_path: &str) -> Result<serde_json::Value, String
     serde_json::from_slice(&output.stdout).map_err(|e| format!("invalid helper json: {e}"))
 }
 
-fn handle_doctor(args: &[String]) -> i32 {
+fn handle_doctor(args: &[String], command_name: &'static str) -> i32 {
     let mut json_output = false;
     let mut options = PreflightOptions::new();
     let mut config_path: Option<String> = None;
@@ -2618,7 +3256,7 @@ fn handle_doctor(args: &[String]) -> i32 {
                 i += 1;
             }
             unknown => {
-                eprintln!("unknown doctor argument: {unknown}");
+                eprintln!("unknown {command_name} argument: {unknown}");
                 return 2;
             }
         }
@@ -2653,15 +3291,15 @@ fn handle_doctor(args: &[String]) -> i32 {
         });
     }
     if json_output {
-        match report.to_doctor_json() {
+        match report.to_json_with_command(command_name) {
             Ok(json) => println!("{json}"),
             Err(err) => {
-                eprintln!("failed to render doctor JSON: {err}");
+                eprintln!("failed to render {command_name} JSON: {err}");
                 return 1;
             }
         }
     } else {
-        println!("rustspider doctor");
+        println!("rustspider {command_name}");
         println!("=================");
         for check in &report.checks {
             println!("[{:?}] {}: {}", check.status, check.name, check.details);
@@ -3138,6 +3776,84 @@ fn persist_job_payload(job: &RuntimeJobSpec, payload: &serde_json::Value) {
             serde_json::to_string_pretty(payload).unwrap_or_default(),
         );
     }
+    if let Some(store) = configured_driver_result_store() {
+        let id = job.name.trim().to_string();
+        let _ = store.put_json(&id, payload);
+    } else if let Some(store) = configured_process_result_store() {
+        let id = job.name.trim().to_string();
+        let _ = store.put_json(&id, payload);
+    }
+}
+
+fn configured_process_result_store() -> Option<rustspider::ProcessResultStore> {
+    let backend = env::var("RUSTSPIDER_STORAGE_BACKEND")
+        .ok()?
+        .trim()
+        .to_lowercase();
+    let endpoint = env::var("RUSTSPIDER_STORAGE_ENDPOINT")
+        .ok()?
+        .trim()
+        .to_string();
+    if endpoint.is_empty() {
+        return None;
+    }
+    let kind = match backend.as_str() {
+        "postgres" | "postgresql" => rustspider::StorageBackendKind::Postgres,
+        "mysql" => rustspider::StorageBackendKind::MySql,
+        "mongo" | "mongodb" => rustspider::StorageBackendKind::MongoDb,
+        _ => return None,
+    };
+    Some(rustspider::ProcessResultStore::new(
+        rustspider::StorageBackendConfig {
+            kind,
+            endpoint,
+            table: env::var("RUSTSPIDER_STORAGE_TABLE")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            collection: env::var("RUSTSPIDER_STORAGE_COLLECTION")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+        },
+    ))
+}
+
+fn configured_driver_result_store() -> Option<rustspider::DriverResultStore> {
+    let mode = env::var("RUSTSPIDER_STORAGE_MODE")
+        .ok()?
+        .trim()
+        .to_lowercase();
+    if mode != "driver" {
+        return None;
+    }
+    let backend = env::var("RUSTSPIDER_STORAGE_BACKEND")
+        .ok()?
+        .trim()
+        .to_lowercase();
+    let endpoint = env::var("RUSTSPIDER_STORAGE_ENDPOINT")
+        .ok()?
+        .trim()
+        .to_string();
+    if endpoint.is_empty() {
+        return None;
+    }
+    let kind = match backend.as_str() {
+        "postgres" | "postgresql" => rustspider::StorageBackendKind::Postgres,
+        "mysql" => rustspider::StorageBackendKind::MySql,
+        "mongo" | "mongodb" => rustspider::StorageBackendKind::MongoDb,
+        _ => return None,
+    };
+    Some(rustspider::DriverResultStore::new(
+        rustspider::StorageBackendConfig {
+            kind,
+            endpoint,
+            table: env::var("RUSTSPIDER_STORAGE_TABLE")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            collection: env::var("RUSTSPIDER_STORAGE_COLLECTION")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+        },
+    ))
 }
 
 fn preferred_browser_engine(job: &RuntimeJobSpec) -> String {
@@ -3776,7 +4492,11 @@ fn decorate_playwright_helper_payload(
         obj.insert("state".to_string(), serde_json::json!("succeeded"));
         obj.insert(
             "browser_engine".to_string(),
-            serde_json::json!("playwright-helper"),
+            serde_json::json!(if fallback {
+                "playwright-helper"
+            } else {
+                "playwright-node"
+            }),
         );
         obj.insert(
             "output".to_string(),
@@ -3803,7 +4523,7 @@ fn decorate_playwright_helper_payload(
         merged_warnings.push(serde_json::json!(if fallback {
             "browser runtime fell back to shared Playwright helper"
         } else {
-            "browser runtime executed via shared Playwright helper"
+            "browser runtime executed via native Playwright process"
         }));
         obj.insert(
             "warnings".to_string(),
@@ -3892,7 +4612,32 @@ fn handle_job(args: &[String]) -> i32 {
         let preferred_engine = preferred_browser_engine(&job).to_lowercase();
         if matches!(
             preferred_engine.as_str(),
-            "playwright" | "playwright-helper" | "helper"
+            "playwright" | "playwright-node" | "node-playwright" | "native-playwright"
+        ) {
+            match run_native_playwright_job_helper(&job_path) {
+                Ok(payload) => {
+                    let payload = decorate_playwright_helper_payload(
+                        payload, &job, &anti_bot, &recovery, &warnings, started, false,
+                    );
+                    persist_job_payload(&job, &payload);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&payload).unwrap_or_default()
+                    );
+                    return 0;
+                }
+                Err(_) => {}
+            }
+        }
+
+        if matches!(
+            preferred_engine.as_str(),
+            "playwright-helper"
+                | "helper"
+                | "playwright"
+                | "playwright-node"
+                | "node-playwright"
+                | "native-playwright"
         ) {
             match run_playwright_job_helper(&job_path) {
                 Ok(payload) => {
@@ -4115,7 +4860,7 @@ fn print_capabilities() {
         "framework": "rustspider",
         "runtime": "rust",
         "version": env!("CARGO_PKG_VERSION"),
-        "entrypoints": ["config", "crawl", "browser", "ai", "doctor", "export", "curl", "job", "jobdir", "http-cache", "console", "audit", "media", "ultimate", "sitemap-discover", "plugins", "selector-studio", "scrapy", "profile-site", "node-reverse", "anti-bot", "capabilities", "version"],
+        "entrypoints": ["config", "crawl", "browser", "ai", "doctor", "preflight", "export", "curl", "run", "job", "async-job", "workflow", "jobdir", "http-cache", "console", "audit", "web", "media", "ultimate", "sitemap-discover", "plugins", "selector-studio", "scrapy", "profile-site", "research", "node-reverse", "anti-bot", "capabilities", "version"],
         "runtimes": ["http", "browser", "media", "ai"],
         "modules": [
             "reactor.NativeReactor",
@@ -4123,13 +4868,35 @@ fn print_capabilities() {
             "contracts.AutoscaledFrontier",
             "incremental.IncrementalCrawler",
             "curlconverter.CurlToRustConverter",
+            "audit.FileAuditTrail",
+            "workflow.WorkflowRunner",
+            "connector.FileConnector",
+            "event_bus.FileEventBus",
+            "storage_backends.ProcessResultStore",
+            "storage_backends.ProcessDatasetStore",
+            "storage_backends.DriverResultStore",
+            "storage_backends.DriverDatasetStore",
+            "feature_gates",
+            "bridge.CrawleeBridgeClient",
+            "xpath_suggestions",
             "preflight",
+            "research.ResearchJob",
+            "research.ResearchRuntime",
+            "async_research.AsyncResearchRuntime",
+            "notebook_output.ExperimentTracker",
+            "ai.sentiment.SentimentAnalyzer",
+            "ai.summarizer.ContentSummarizer",
+            "ai.entity_extractor.EntityExtractor",
             "browser",
             "media",
             "proxy",
             "retry",
             "antibot",
+            "antibot.night_mode",
+            "events.EventBus",
             "node_reverse",
+            "node_discovery",
+            "ssrf_protection",
             "site_profiler"
             ,
             "sitemap_discovery",
@@ -4147,6 +4914,7 @@ fn print_capabilities() {
             "scrapy-plugins-manifest",
             "web-control-plane"
         ],
+        "feature_gates": rustspider::feature_gates::catalog(),
         "operator_products": {
             "jobdir": {
                 "pause_resume": true,
@@ -4157,12 +4925,46 @@ fn print_capabilities() {
                 "backends": ["file-json", "memory"],
                 "strategies": ["revalidate", "delta-fetch"]
             },
+            "queue_backends": rustspider::queue_backends::queue_backend_support(),
             "browser_tooling": {
                 "trace": true,
                 "har": true,
                 "route_mocking": true,
                 "codegen": true
             },
+            "antibot": {
+                "behavior_randomization": true,
+                "night_mode": {
+                    "enabled": true,
+                    "start_hour": 23,
+                    "end_hour": 6,
+                    "delay_multiplier": 1.5,
+                    "rate_limit_factor": 0.5
+                }
+            },
+            "node_discovery": {
+                "providers": ["env", "file", "consul-http", "etcd-http"],
+                "adapter_engine": "blocking-http"
+            },
+            "event_system": {
+                "topics": [
+                    "task:created",
+                    "task:queued",
+                    "task:running",
+                    "task:succeeded",
+                    "task:failed",
+                    "task:cancelled",
+                    "task:deleted",
+                    "task:result"
+                ],
+                "pubsub": "crossbeam-channel",
+                "jsonl_sink": true
+            },
+            "security": {
+                "ssrf_guard": true,
+                "validator": "ssrf_protection::SSRFProtection"
+            },
+            "storage_backends": rustspider::storage_backends::storage_backend_support(),
             "autoscaling_pools": {
                 "frontier": true,
                 "request_queue": "priority-queue",
@@ -4173,8 +4975,37 @@ fn print_capabilities() {
                 "snapshot": true,
                 "tail": true,
                 "control_plane_jsonl": true
+            },
+            "audit_console": {
+                "snapshot": true,
+                "tail": true,
+                "job_filter": true
+            },
+            "event_system": {
+                "topics": ["workflow.job.started", "workflow.step.started", "workflow.step.succeeded", "workflow.job.completed"],
+                "storage": "jsonl+memory"
+            },
+            "connectors": {
+                "native": ["memory", "jsonl"]
+            },
+            "workflow": {
+                "step_types": ["goto", "wait", "click", "type", "select", "hover", "scroll", "eval", "listen_network", "extract", "download", "screenshot"],
+                "connectors": true,
+                "events": true
+            },
+            "crawlee_bridge": {
+                "client": true,
+                "endpoint": "/api/crawl"
             }
         },
+        "ai_capabilities": {
+            "providers": ["openai", "anthropic", "claude"],
+            "few_shot": true,
+            "sentiment_analysis": true,
+            "summarization": true,
+            "entity_extraction_specialized": true
+        },
+        "browser_compatibility": rustspider::browser::browser_compatibility_matrix(),
         "control_plane": {
             "task_api": true,
             "result_envelope": true,
@@ -4196,6 +5027,8 @@ fn print_capabilities() {
         },
         "observability": [
             "doctor",
+            "preflight",
+            "audit",
             "profile-site",
             "selector-studio",
             "scrapy doctor",
@@ -4638,12 +5471,35 @@ fn handle_scrapy(args: &[String]) -> i32 {
         } else {
             current_cfg.browser.html_path.clone()
         };
-        let (title, resolved_url) = run_playwright_fetch(
-            &request.url,
-            &current_cfg.browser.screenshot_path,
-            &html_path,
-            &current_cfg,
-        )?;
+        let preferred_engine = env::var("RUSTSPIDER_BROWSER_ENGINE")
+            .unwrap_or_else(|_| "auto".to_string())
+            .to_lowercase();
+        let (title, resolved_url) = if matches!(
+            preferred_engine.as_str(),
+            "playwright" | "playwright-node" | "node-playwright" | "native-playwright"
+        ) {
+            run_native_playwright_fetch(
+                &request.url,
+                &current_cfg.browser.screenshot_path,
+                &html_path,
+                &current_cfg,
+            )
+            .or_else(|_| {
+                run_playwright_fetch(
+                    &request.url,
+                    &current_cfg.browser.screenshot_path,
+                    &html_path,
+                    &current_cfg,
+                )
+            })?
+        } else {
+            run_playwright_fetch(
+                &request.url,
+                &current_cfg.browser.screenshot_path,
+                &html_path,
+                &current_cfg,
+            )?
+        };
         let text = fs::read_to_string(&html_path).map_err(|err| err.to_string())?;
         let mut headers = std::collections::BTreeMap::new();
         headers.insert("x-browser-runner".to_string(), "playwright".to_string());
@@ -5894,6 +6750,7 @@ fn handle_scrapy(args: &[String]) -> i32 {
         let exporter = rustspider::Exporter::new(export_dir.to_string_lossy().as_ref());
         let result = match export_format.as_str() {
             "json" => exporter.export_json(&records, filename),
+            "jsonl" => exporter.export_jsonl(&records, filename),
             "csv" => exporter.export_csv(&records, filename),
             "md" => exporter.export_markdown(&records, filename),
             other => Err(format!("unsupported scrapy export format: {other}")),
@@ -7027,7 +7884,7 @@ fn handle_ai(args: &[String]) -> i32 {
 
 fn handle_node_reverse(args: &[String]) -> i32 {
     if args.is_empty() {
-        eprintln!("usage: node-reverse <health|profile|detect|fingerprint-spoof|tls-fingerprint|analyze-crypto> [options]");
+        eprintln!("usage: node-reverse <health|profile|detect|fingerprint-spoof|tls-fingerprint|canvas-fingerprint|analyze-crypto|signature-reverse|ast|webpack|function-call|browser-simulate> [options]");
         return 2;
     }
     match args[0].as_str() {
@@ -7036,7 +7893,13 @@ fn handle_node_reverse(args: &[String]) -> i32 {
         "detect" => handle_node_reverse_detect(&args[1..]),
         "fingerprint-spoof" => handle_node_reverse_fingerprint_spoof(&args[1..]),
         "tls-fingerprint" => handle_node_reverse_tls_fingerprint(&args[1..]),
+        "canvas-fingerprint" => handle_node_reverse_canvas_fingerprint(&args[1..]),
         "analyze-crypto" => handle_node_reverse_analyze_crypto(&args[1..]),
+        "signature-reverse" => handle_node_reverse_signature_reverse(&args[1..]),
+        "ast" => handle_node_reverse_ast(&args[1..]),
+        "webpack" => handle_node_reverse_webpack(&args[1..]),
+        "function-call" => handle_node_reverse_function_call(&args[1..]),
+        "browser-simulate" => handle_node_reverse_browser_simulate(&args[1..]),
         other => {
             eprintln!("unknown node-reverse subcommand: {other}");
             2
@@ -7356,6 +8219,56 @@ fn handle_node_reverse_tls_fingerprint(args: &[String]) -> i32 {
     }
 }
 
+fn handle_node_reverse_canvas_fingerprint(args: &[String]) -> i32 {
+    let mut base_url = String::from("http://localhost:3000");
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--base-url" if i + 1 < args.len() => {
+                base_url = args[i + 1].clone();
+                i += 2;
+            }
+            unknown => {
+                eprintln!("unknown node-reverse canvas-fingerprint argument: {unknown}");
+                return 2;
+            }
+        }
+    }
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            eprintln!("failed to initialize tokio runtime: {err}");
+            return 1;
+        }
+    };
+    let client = NodeReverseClient::new(base_url);
+    let response = runtime.block_on(client.canvas_fingerprint());
+    match response {
+        Ok(payload) => {
+            let success = payload
+                .get("success")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&payload).unwrap_or_default()
+            );
+            if success {
+                0
+            } else {
+                1
+            }
+        }
+        Err(err) => {
+            eprintln!("node-reverse canvas-fingerprint failed: {err}");
+            1
+        }
+    }
+}
+
 fn handle_node_reverse_analyze_crypto(args: &[String]) -> i32 {
     let mut base_url = String::from("http://localhost:3000");
     let mut code_file = String::new();
@@ -7418,6 +8331,380 @@ fn handle_node_reverse_analyze_crypto(args: &[String]) -> i32 {
     }
 }
 
+fn handle_node_reverse_signature_reverse(args: &[String]) -> i32 {
+    let mut base_url = String::from("http://localhost:3000");
+    let mut code_file = String::new();
+    let mut input_data = String::new();
+    let mut expected_output = String::new();
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--base-url" if i + 1 < args.len() => {
+                base_url = args[i + 1].clone();
+                i += 2;
+            }
+            "--code-file" if i + 1 < args.len() => {
+                code_file = args[i + 1].clone();
+                i += 2;
+            }
+            "--input-data" if i + 1 < args.len() => {
+                input_data = args[i + 1].clone();
+                i += 2;
+            }
+            "--expected-output" if i + 1 < args.len() => {
+                expected_output = args[i + 1].clone();
+                i += 2;
+            }
+            unknown => {
+                eprintln!("unknown node-reverse signature-reverse argument: {unknown}");
+                return 2;
+            }
+        }
+    }
+    if code_file.trim().is_empty()
+        || input_data.trim().is_empty()
+        || expected_output.trim().is_empty()
+    {
+        eprintln!("node-reverse signature-reverse requires --code-file, --input-data, and --expected-output");
+        return 2;
+    }
+    let code = match fs::read_to_string(&code_file) {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("failed to read code file: {err}");
+            return 1;
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            eprintln!("failed to initialize tokio runtime: {err}");
+            return 1;
+        }
+    };
+    let client = NodeReverseClient::new(base_url);
+    let response = runtime.block_on(client.reverse_signature(&code, &input_data, &expected_output));
+    match response {
+        Ok(payload) => {
+            let success = payload
+                .get("success")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&payload).unwrap_or_default()
+            );
+            if success {
+                0
+            } else {
+                1
+            }
+        }
+        Err(err) => {
+            eprintln!("node-reverse signature-reverse failed: {err}");
+            1
+        }
+    }
+}
+
+fn handle_node_reverse_ast(args: &[String]) -> i32 {
+    let mut base_url = String::from("http://localhost:3000");
+    let mut code_file = String::new();
+    let mut analysis = String::from("crypto,obfuscation,anti-debug");
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--base-url" if i + 1 < args.len() => {
+                base_url = args[i + 1].clone();
+                i += 2;
+            }
+            "--code-file" if i + 1 < args.len() => {
+                code_file = args[i + 1].clone();
+                i += 2;
+            }
+            "--analysis" if i + 1 < args.len() => {
+                analysis = args[i + 1].clone();
+                i += 2;
+            }
+            unknown => {
+                eprintln!("unknown node-reverse ast argument: {unknown}");
+                return 2;
+            }
+        }
+    }
+    if code_file.trim().is_empty() {
+        eprintln!("node-reverse ast requires --code-file");
+        return 2;
+    }
+    let code = match fs::read_to_string(&code_file) {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("failed to read code file: {err}");
+            return 1;
+        }
+    };
+    let analysis_types = analysis
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            eprintln!("failed to initialize tokio runtime: {err}");
+            return 1;
+        }
+    };
+    let client = NodeReverseClient::new(base_url);
+    let response = runtime.block_on(client.analyze_ast(&code, Some(analysis_types)));
+    match response {
+        Ok(payload) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&payload).unwrap_or_default()
+            );
+            if payload.success {
+                0
+            } else {
+                1
+            }
+        }
+        Err(err) => {
+            eprintln!("node-reverse ast failed: {err}");
+            1
+        }
+    }
+}
+
+fn handle_node_reverse_webpack(args: &[String]) -> i32 {
+    let mut base_url = String::from("http://localhost:3000");
+    let mut code_file = String::new();
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--base-url" if i + 1 < args.len() => {
+                base_url = args[i + 1].clone();
+                i += 2;
+            }
+            "--code-file" if i + 1 < args.len() => {
+                code_file = args[i + 1].clone();
+                i += 2;
+            }
+            unknown => {
+                eprintln!("unknown node-reverse webpack argument: {unknown}");
+                return 2;
+            }
+        }
+    }
+    if code_file.trim().is_empty() {
+        eprintln!("node-reverse webpack requires --code-file");
+        return 2;
+    }
+    let code = match fs::read_to_string(&code_file) {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("failed to read code file: {err}");
+            return 1;
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            eprintln!("failed to initialize tokio runtime: {err}");
+            return 1;
+        }
+    };
+    let client = NodeReverseClient::new(base_url);
+    let response = runtime.block_on(client.analyze_webpack(&code));
+    match response {
+        Ok(payload) => {
+            let success = payload
+                .get("success")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&payload).unwrap_or_default()
+            );
+            if success {
+                0
+            } else {
+                1
+            }
+        }
+        Err(err) => {
+            eprintln!("node-reverse webpack failed: {err}");
+            1
+        }
+    }
+}
+
+fn handle_node_reverse_function_call(args: &[String]) -> i32 {
+    let mut base_url = String::from("http://localhost:3000");
+    let mut code_file = String::new();
+    let mut function_name = String::new();
+    let mut fn_args = Vec::new();
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--base-url" if i + 1 < args.len() => {
+                base_url = args[i + 1].clone();
+                i += 2;
+            }
+            "--code-file" if i + 1 < args.len() => {
+                code_file = args[i + 1].clone();
+                i += 2;
+            }
+            "--function-name" if i + 1 < args.len() => {
+                function_name = args[i + 1].clone();
+                i += 2;
+            }
+            "--arg" if i + 1 < args.len() => {
+                fn_args.push(serde_json::json!(args[i + 1].clone()));
+                i += 2;
+            }
+            unknown => {
+                eprintln!("unknown node-reverse function-call argument: {unknown}");
+                return 2;
+            }
+        }
+    }
+    if code_file.trim().is_empty() || function_name.trim().is_empty() {
+        eprintln!("node-reverse function-call requires --code-file and --function-name");
+        return 2;
+    }
+    let code = match fs::read_to_string(&code_file) {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("failed to read code file: {err}");
+            return 1;
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            eprintln!("failed to initialize tokio runtime: {err}");
+            return 1;
+        }
+    };
+    let client = NodeReverseClient::new(base_url);
+    let response = runtime.block_on(client.call_function(&function_name, fn_args, &code));
+    match response {
+        Ok(payload) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&payload).unwrap_or_default()
+            );
+            if payload.success {
+                0
+            } else {
+                1
+            }
+        }
+        Err(err) => {
+            eprintln!("node-reverse function-call failed: {err}");
+            1
+        }
+    }
+}
+
+fn handle_node_reverse_browser_simulate(args: &[String]) -> i32 {
+    let mut base_url = String::from("http://localhost:3000");
+    let mut code_file = String::new();
+    let mut user_agent =
+        String::from("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+    let mut language = String::from("zh-CN");
+    let mut platform = String::from("Win32");
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--base-url" if i + 1 < args.len() => {
+                base_url = args[i + 1].clone();
+                i += 2;
+            }
+            "--code-file" if i + 1 < args.len() => {
+                code_file = args[i + 1].clone();
+                i += 2;
+            }
+            "--user-agent" if i + 1 < args.len() => {
+                user_agent = args[i + 1].clone();
+                i += 2;
+            }
+            "--language" if i + 1 < args.len() => {
+                language = args[i + 1].clone();
+                i += 2;
+            }
+            "--platform" if i + 1 < args.len() => {
+                platform = args[i + 1].clone();
+                i += 2;
+            }
+            unknown => {
+                eprintln!("unknown node-reverse browser-simulate argument: {unknown}");
+                return 2;
+            }
+        }
+    }
+    if code_file.trim().is_empty() {
+        eprintln!("node-reverse browser-simulate requires --code-file");
+        return 2;
+    }
+    let code = match fs::read_to_string(&code_file) {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("failed to read code file: {err}");
+            return 1;
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            eprintln!("failed to initialize tokio runtime: {err}");
+            return 1;
+        }
+    };
+    let client = NodeReverseClient::new(base_url);
+    let response = runtime.block_on(client.simulate_browser(
+        &code,
+        Some(serde_json::json!({
+            "userAgent": user_agent,
+            "language": language,
+            "platform": platform,
+        })),
+    ));
+    match response {
+        Ok(payload) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&payload).unwrap_or_default()
+            );
+            if payload.success {
+                0
+            } else {
+                1
+            }
+        }
+        Err(err) => {
+            eprintln!("node-reverse browser-simulate failed: {err}");
+            1
+        }
+    }
+}
+
 fn handle_antibot(args: &[String]) -> i32 {
     if args.is_empty() {
         eprintln!("usage: anti-bot <headers|profile> [options]");
@@ -7469,39 +8756,31 @@ fn handle_profile_site(args: &[String]) -> i32 {
     let mut json_payload = serde_json::json!(payload);
     json_payload["framework"] = serde_json::json!("rustspider");
     json_payload["version"] = serde_json::json!(env!("CARGO_PKG_VERSION"));
-    if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        let client = NodeReverseClient::new(base_url);
-        let request = AntiBotProfileRequest {
-            html,
-            js: String::new(),
-            headers: std::collections::HashMap::new(),
-            cookies: String::new(),
-            status_code: None,
-            url: resolved_url.clone(),
-        };
-        let detect = runtime.block_on(client.detect_anti_bot(&request)).ok();
-        let profile = runtime.block_on(client.profile_anti_bot(&request)).ok();
-        let spoof = runtime
-            .block_on(client.spoof_fingerprint("chrome", "windows"))
-            .ok();
-        let tls = runtime
-            .block_on(client.tls_fingerprint("chrome", "120"))
-            .ok();
-        json_payload["reverse"] = serde_json::json!({
-            "detect": detect,
-            "profile": profile,
-            "fingerprint_spoof": spoof,
-            "tls_fingerprint": tls,
-        });
-        if let Some(profile) = profile {
-            if profile.success {
-                json_payload["anti_bot_level"] = serde_json::json!(profile.level);
-                json_payload["anti_bot_signals"] = serde_json::json!(profile.signals);
-                json_payload["node_reverse_recommended"] =
-                    serde_json::json!(!profile.signals.is_empty());
+    let reverse =
+        rustspider::scrapy::project::collect_reverse_summary(&base_url, &resolved_url, &html_file);
+    if !reverse.is_null() {
+        json_payload["reverse"] = reverse.clone();
+        let focus = build_reverse_focus(&reverse);
+        if !focus.is_null() {
+            json_payload["reverse_focus"] = focus;
+        }
+        if let Some(profile) = reverse.get("profile") {
+            let signals = profile
+                .get("signals")
+                .and_then(|value| value.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let success = profile
+                .get("success")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            if success {
+                json_payload["anti_bot_level"] = serde_json::json!(profile
+                    .get("level")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or(""));
+                json_payload["anti_bot_signals"] = serde_json::Value::Array(signals.clone());
+                json_payload["node_reverse_recommended"] = serde_json::json!(!signals.is_empty());
             }
         }
     }
@@ -7510,6 +8789,105 @@ fn handle_profile_site(args: &[String]) -> i32 {
         serde_json::to_string_pretty(&json_payload).unwrap_or_default()
     );
     0
+}
+
+fn build_reverse_focus(reverse: &serde_json::Value) -> serde_json::Value {
+    let Some(chains) = reverse
+        .get("crypto_analysis")
+        .and_then(|value| value.get("analysis"))
+        .and_then(|value| value.get("keyFlowChains"))
+        .and_then(|value| value.as_array())
+    else {
+        return serde_json::Value::Null;
+    };
+    let top = chains
+        .iter()
+        .filter(|item| item.is_object())
+        .max_by(|left, right| {
+            let left_confidence = left
+                .get("confidence")
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0);
+            let right_confidence = right
+                .get("confidence")
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0);
+            left_confidence
+                .partial_cmp(&right_confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    left.get("sinks")
+                        .and_then(|value| value.as_array())
+                        .map(|value| value.len())
+                        .unwrap_or(0)
+                        .cmp(
+                            &right
+                                .get("sinks")
+                                .and_then(|value| value.as_array())
+                                .map(|value| value.len())
+                                .unwrap_or(0),
+                        )
+                })
+                .then_with(|| {
+                    left.get("derivations")
+                        .and_then(|value| value.as_array())
+                        .map(|value| value.len())
+                        .unwrap_or(0)
+                        .cmp(
+                            &right
+                                .get("derivations")
+                                .and_then(|value| value.as_array())
+                                .map(|value| value.len())
+                                .unwrap_or(0),
+                        )
+                })
+        });
+    let Some(top) = top else {
+        return serde_json::Value::Null;
+    };
+    let source_kind = top
+        .get("source")
+        .and_then(|value| value.get("kind"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown");
+    let primary_sink = top
+        .get("sinks")
+        .and_then(|value| value.as_array())
+        .and_then(|values| values.first())
+        .and_then(|value| value.as_str())
+        .unwrap_or("unknown-sink");
+    let mut next_steps = Vec::new();
+    if source_kind.starts_with("storage.") {
+        next_steps.push(serde_json::json!("instrument browser storage reads first"));
+    }
+    if source_kind.starts_with("network.") {
+        next_steps.push(serde_json::json!(
+            "capture response body before key derivation"
+        ));
+    }
+    if primary_sink.contains("crypto.subtle.") {
+        next_steps.push(serde_json::json!("hook WebCrypto at the sink boundary"));
+    }
+    if primary_sink.starts_with("jwt.") || reverse.to_string().contains("HMAC") {
+        next_steps.push(serde_json::json!(
+            "rebuild canonical signing input before reproducing the sink"
+        ));
+    }
+    if next_steps.is_empty() {
+        next_steps.push(serde_json::json!(
+            "trace the chain from source through derivations into the first sink"
+        ));
+    }
+    serde_json::json!({
+        "priority_chain": top,
+        "summary": format!(
+            "trace `{}` from `{}` into `{}`",
+            top.get("variable").and_then(|value| value.as_str()).unwrap_or(""),
+            source_kind,
+            primary_sink
+        ),
+        "next_steps": next_steps,
+    })
 }
 
 fn handle_sitemap_discover(args: &[String]) -> i32 {
@@ -7728,7 +9106,8 @@ fn handle_selector_studio(args: &[String]) -> i32 {
             "expr": expr,
             "attr": attr,
             "count": values.len(),
-            "values": values
+            "values": values,
+            "suggested_xpaths": rustspider::suggest_smart_xpath(&mode, &expr, &attr)
         }))
         .unwrap_or_default()
     );
@@ -7975,7 +9354,7 @@ fn ai_request_config() -> Option<AIRequestConfig> {
         .or_else(|_| env::var("AI_MODEL"))
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "gpt-3.5-turbo".to_string());
+        .unwrap_or_else(|| "gpt-5.2".to_string());
     Some(AIRequestConfig {
         api_key,
         endpoint: format!("{}/chat/completions", base_url.trim_end_matches('/')),
@@ -8732,6 +10111,7 @@ fn handle_export(args: &[String]) -> i32 {
     let exporter = rustspider::Exporter::new(export_dir.to_string_lossy().as_ref());
     let result = match format.as_str() {
         "json" => exporter.export_json(&records, filename),
+        "jsonl" => exporter.export_jsonl(&records, filename),
         "csv" => exporter.export_csv(&records, filename),
         "md" => exporter.export_markdown(&records, filename),
         other => Err(format!("unsupported export format: {other}")),
@@ -8885,6 +10265,11 @@ mod contract_tests {
     #[test]
     fn playwright_helper_script_exists() {
         assert!(playwright_helper_script().exists());
+    }
+
+    #[test]
+    fn native_playwright_helper_script_exists() {
+        assert!(native_playwright_helper_script().exists());
     }
 
     #[test]

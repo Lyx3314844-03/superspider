@@ -27,7 +27,7 @@ impl AIExtractor {
         Self::new(
             api_key,
             "https://api.openai.com/v1/chat/completions",
-            "gpt-3.5-turbo",
+            "gpt-5.2",
         )
     }
 
@@ -36,7 +36,7 @@ impl AIExtractor {
         Self::new(
             api_key,
             "https://api.anthropic.com/v1/messages",
-            "claude-3-haiku-20240307",
+            "claude-sonnet-4-20250514",
         )
     }
 

@@ -9,7 +9,41 @@
 //! - 多标签页支持
 //! - 自动化检测绕过
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+pub fn browser_compatibility_matrix() -> serde_json::Value {
+    serde_json::json!({
+        "base_engine": "fantoccini-webdriver",
+        "bridge_style": "webdriver-and-helper",
+        "surfaces": {
+            "playwright": {
+                "supported": true,
+                "mode": "native-process",
+                "adapter_engine": "node-playwright"
+            },
+            "selenium": {
+                "supported": true,
+                "mode": "native",
+                "adapter_engine": "fantoccini-webdriver"
+            },
+            "webdriver": {
+                "supported": true,
+                "mode": "native",
+                "adapter_engine": "fantoccini-webdriver"
+            }
+        },
+        "artifacts": {
+            "html": true,
+            "screenshot": true,
+            "har": true,
+            "trace": true,
+            "pdf": false
+        },
+        "constraints": [
+            "playwright support is provided through a native node/playwright helper process; webdriver remains the embedded Rust browser engine"
+        ]
+    })
+}
 
 /// 浏览器配置
 #[derive(Debug, Clone)]
@@ -51,6 +85,15 @@ impl Default for BrowserConfig {
 pub struct BrowserManager {
     webdriver: fantoccini::Client,
     config: BrowserConfig,
+    behavior_profile: crate::behavior::BehaviorProfile,
+}
+
+#[cfg(feature = "browser")]
+pub type SeleniumConfig = BrowserConfig;
+
+#[cfg(feature = "browser")]
+pub struct SeleniumBrowser {
+    inner: BrowserManager,
 }
 
 #[cfg(feature = "browser")]
@@ -138,7 +181,11 @@ impl BrowserManager {
         "#;
         webdriver.execute(bypass_script, vec![]).await.ok();
 
-        Ok(BrowserManager { webdriver, config })
+        Ok(BrowserManager {
+            webdriver,
+            config,
+            behavior_profile: crate::behavior::BehaviorProfile::default(),
+        })
     }
 
     /// 创建默认浏览器（无头模式）
@@ -191,6 +238,7 @@ impl BrowserManager {
     /// 点击元素
     pub async fn click(&self, selector: &str) -> Result<(), BrowserError> {
         use fantoccini::Locator;
+        self.behavior_pause("click").await;
 
         let element = self
             .webdriver
@@ -208,6 +256,7 @@ impl BrowserManager {
     /// 输入文本
     pub async fn fill(&self, selector: &str, text: &str) -> Result<(), BrowserError> {
         use fantoccini::Locator;
+        self.behavior_pause("type").await;
 
         let element = self
             .webdriver
@@ -296,6 +345,7 @@ impl BrowserManager {
 
     /// 悬停元素
     pub async fn hover(&self, selector: &str) -> Result<(), BrowserError> {
+        self.behavior_pause("hover").await;
         // fantoccini 0.21 不支持 hover，使用 JavaScript 替代
         let script = format!(
             r#"
@@ -379,6 +429,7 @@ impl BrowserManager {
 
     /// 滚动到页面底部
     pub async fn scroll_to_bottom(&self) -> Result<(), BrowserError> {
+        self.behavior_pause("scroll").await;
         self.webdriver
             .execute("window.scrollTo(0, document.body.scrollHeight);", vec![])
             .await
@@ -397,6 +448,7 @@ impl BrowserManager {
 
     /// 滚动到元素
     pub async fn scroll_to_element(&self, selector: &str) -> Result<(), BrowserError> {
+        self.behavior_pause("scroll").await;
         let script = format!(
             "var el = document.querySelector('{}'); if(el) el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});",
             selector
@@ -853,6 +905,44 @@ impl BrowserManager {
         }
 
         Ok(())
+    }
+
+    async fn behavior_pause(&self, action: &str) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_secs())
+            .unwrap_or_default();
+        let hour = ((now / 3600) % 24) as u8;
+        let delay =
+            crate::behavior::randomized_action_delay_ms(action, hour, &self.behavior_profile);
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+        }
+    }
+}
+
+#[cfg(feature = "browser")]
+impl SeleniumBrowser {
+    pub async fn new(config: SeleniumConfig) -> Result<Self, BrowserError> {
+        Ok(Self {
+            inner: BrowserManager::new(config).await?,
+        })
+    }
+
+    pub async fn navigate(&self, url: &str) -> Result<(), BrowserError> {
+        self.inner.navigate(url).await
+    }
+
+    pub async fn get_html(&self) -> Result<String, BrowserError> {
+        self.inner.get_html().await
+    }
+
+    pub async fn screenshot(&self) -> Result<Vec<u8>, BrowserError> {
+        self.inner.screenshot().await
+    }
+
+    pub async fn close(self) -> Result<(), BrowserError> {
+        self.inner.close().await
     }
 }
 

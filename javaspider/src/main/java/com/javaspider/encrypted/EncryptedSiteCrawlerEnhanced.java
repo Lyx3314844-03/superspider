@@ -50,7 +50,7 @@ public class EncryptedSiteCrawlerEnhanced {
         payload.put("sampleInputs", sampleInputs);
         payload.put("sampleOutput", sampleOutput);
 
-        JsonNode result = reverseClient.doPost("/api/signature/auto-reverse", payload);
+        JsonNode result = reverseClient.reverseSignature(code, sampleInputs, sampleOutput);
 
         SignatureReverseResult signatureResult = new SignatureReverseResult();
         signatureResult.success = result.get("success").asBoolean();
@@ -242,7 +242,7 @@ public class EncryptedSiteCrawlerEnhanced {
      * @return Canvas 指纹信息
      */
     public CanvasFingerprint generateCanvasFingerprint() throws IOException {
-        JsonNode result = reverseClient.doPost("/api/canvas/fingerprint", new HashMap<>());
+        JsonNode result = reverseClient.canvasFingerprint();
 
         CanvasFingerprint fingerprint = new CanvasFingerprint();
         fingerprint.success = result.get("success").asBoolean();

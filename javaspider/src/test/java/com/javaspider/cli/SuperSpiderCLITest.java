@@ -4,10 +4,12 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import com.sun.net.httpserver.HttpServer;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -30,6 +32,25 @@ class SuperSpiderCLITest {
         assertTrue(output.contains("\"jobdir\""));
         assertTrue(output.contains("\"http-cache\""));
         assertTrue(output.contains("\"console\""));
+        assertTrue(output.contains("\"audit\""));
+        assertTrue(output.contains("\"preflight\""));
+        assertTrue(output.contains("\"run\""));
+        assertTrue(output.contains("\"async-job\""));
+        assertTrue(output.contains("\"api\""));
+        assertTrue(output.contains("\"web\""));
+        assertTrue(output.contains("\"research\""));
+        assertTrue(output.contains("research.ResearchRuntime"));
+        assertTrue(output.contains("\"queue_backends\""));
+        assertTrue(output.contains("\"native_driver\""));
+        assertTrue(output.contains("\"browser_compatibility\""));
+        assertTrue(output.contains("\"feature_gates\""));
+        assertTrue(output.contains("\"night_mode\""));
+        assertTrue(output.contains("\"node_discovery\""));
+        assertTrue(output.contains("\"security\""));
+        assertTrue(output.contains("\"event_system\""));
+        assertTrue(output.contains("bridge.CrawleeBridgeClient"));
+        assertTrue(output.contains("\"crawlee_bridge\""));
+        assertTrue(output.contains("\"connectors\""));
     }
 
     @Test
@@ -191,6 +212,35 @@ class SuperSpiderCLITest {
     }
 
     @Test
+    void nodeReverseCommandDelegatesToEnhancedSpider() throws Exception {
+        HttpServer reverseServer = HttpServer.create(new InetSocketAddress(0), 0);
+        reverseServer.createContext("/health", exchange -> {
+            byte[] body = "{\"status\":\"ok\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        reverseServer.start();
+
+        try {
+            String stdout = captureStdout(() ->
+                SuperSpiderCLI.main(new String[]{
+                    "node-reverse",
+                    "health",
+                    "--base-url",
+                    "http://127.0.0.1:" + reverseServer.getAddress().getPort()
+                })
+            );
+
+            assertTrue(stdout.contains("\"command\" : \"node-reverse health\""));
+            assertTrue(stdout.contains("\"healthy\" : true"));
+        } finally {
+            reverseServer.stop(0);
+        }
+    }
+
+    @Test
     void curlConvertCommandUsesUnifiedFrameworkSurface() {
         String output = captureStdout(() ->
             SuperSpiderCLI.main(new String[]{
@@ -217,6 +267,57 @@ class SuperSpiderCLITest {
         );
 
         assertTrue(output.contains("JavaSpider Framework CLI v"));
+    }
+
+    @Test
+    void researchCommandRunsAsyncAndSoak() {
+        String runOutput = captureStdout(() ->
+            SuperSpiderCLI.main(new String[]{
+                "research",
+                "run",
+                "--url",
+                "https://example.com",
+                "--schema-json",
+                "{\"properties\":{\"title\":{\"type\":\"string\"}}}",
+                "--content",
+                "<title>Research Demo</title>"
+            })
+        );
+        assertTrue(runOutput.contains("Research Demo"));
+
+        String asyncOutput = captureStdout(() ->
+            SuperSpiderCLI.main(new String[]{
+                "research",
+                "async",
+                "--url",
+                "https://example.com/1",
+                "--url",
+                "https://example.com/2",
+                "--schema-json",
+                "{\"properties\":{\"title\":{\"type\":\"string\"}}}",
+                "--content",
+                "<title>Async Research</title>"
+            })
+        );
+        assertTrue(asyncOutput.contains("\"command\" : \"research async\""));
+
+        String soakOutput = captureStdout(() ->
+            SuperSpiderCLI.main(new String[]{
+                "research",
+                "soak",
+                "--url",
+                "https://example.com/1",
+                "--url",
+                "https://example.com/2",
+                "--schema-json",
+                "{\"properties\":{\"title\":{\"type\":\"string\"}}}",
+                "--content",
+                "<title>Soak Research</title>",
+                "--rounds",
+                "2"
+            })
+        );
+        assertTrue(soakOutput.contains("\"results\" : 4"));
     }
 
     @Test

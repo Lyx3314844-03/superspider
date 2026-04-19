@@ -71,6 +71,23 @@ impl Exporter {
         Ok(filepath)
     }
 
+    pub fn export_jsonl(&self, data: &[ExportData], filename: &str) -> Result<String, String> {
+        let mut filename = filename.to_string();
+        if !filename.ends_with(".jsonl") {
+            filename.push_str(".jsonl");
+        }
+        let filepath = format!("{}/{}", self.output_dir, filename);
+
+        let mut file = File::create(&filepath).map_err(|e| e.to_string())?;
+        for item in data {
+            let line = serde_json::to_string(item).map_err(|e| e.to_string())?;
+            writeln!(file, "{line}").map_err(|e| e.to_string())?;
+        }
+
+        println!("✅ 已导出 JSONL: {}", filepath);
+        Ok(filepath)
+    }
+
     pub fn export_markdown(&self, data: &[ExportData], filename: &str) -> Result<String, String> {
         let mut filename = filename.to_string();
         if !filename.ends_with(".md") {

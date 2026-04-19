@@ -5,6 +5,7 @@ import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.firefox.FirefoxOptions;
+import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
 import java.util.logging.LogManager;
 
@@ -200,6 +202,22 @@ public class BrowserManager {
         logger.debug("Clicked: {}", selector);
     }
 
+    public void clickHumanized(String selector, By byType) {
+        WebElement element = waitForElementClickable(selector, byType);
+        try {
+            int x = ThreadLocalRandom.current().nextInt(-3, 4);
+            int y = ThreadLocalRandom.current().nextInt(-3, 4);
+            new Actions(driver)
+                .moveToElement(element, x, y)
+                .pause(Duration.ofMillis(ThreadLocalRandom.current().nextLong(20, 60)))
+                .click()
+                .perform();
+        } catch (Exception ignored) {
+            element.click();
+        }
+        logger.debug("Humanized click: {}", selector);
+    }
+
     /**
      * 输入文本
      */
@@ -208,6 +226,16 @@ public class BrowserManager {
         element.clear();
         element.sendKeys(text);
         logger.debug("Typed into: {}", selector);
+    }
+
+    public void typeHumanized(String selector, By byType, String text) {
+        WebElement element = waitForElement(selector, byType);
+        element.clear();
+        for (char ch : text.toCharArray()) {
+            element.sendKeys(String.valueOf(ch));
+            sleepJitter(15, 40);
+        }
+        logger.debug("Humanized type into: {}", selector);
     }
 
     /**
@@ -302,6 +330,15 @@ public class BrowserManager {
         executeScript("window.scrollTo(0, document.body.scrollHeight)");
     }
 
+    public void scrollToBottomHumanized(int maxScrolls) {
+        int scrolls = Math.max(1, maxScrolls);
+        for (int i = 0; i < scrolls; i++) {
+            long delta = ThreadLocalRandom.current().nextLong(300, 900);
+            executeScript("window.scrollBy(0, arguments[0]);", delta);
+            sleepJitter(40, 90);
+        }
+    }
+
     /**
      * 滚动到页面顶部
      */
@@ -315,6 +352,31 @@ public class BrowserManager {
     public void scrollToElement(String selector, By byType) {
         WebElement element = waitForElement(selector, byType);
         ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView(true);", element);
+    }
+
+    public void hoverHumanized(String selector, By byType) {
+        WebElement element = waitForElement(selector, byType);
+        try {
+            int x = ThreadLocalRandom.current().nextInt(-5, 6);
+            int y = ThreadLocalRandom.current().nextInt(-5, 6);
+            new Actions(driver)
+                .moveToElement(element, x, y)
+                .pause(Duration.ofMillis(ThreadLocalRandom.current().nextLong(30, 80)))
+                .perform();
+        } catch (Exception ignored) {
+            executeScript(
+                "var el = arguments[0]; if (el) { el.dispatchEvent(new MouseEvent('mouseover', {bubbles: true})); }",
+                element
+            );
+        }
+    }
+
+    private void sleepJitter(long minMs, long maxMs) {
+        try {
+            Thread.sleep(ThreadLocalRandom.current().nextLong(minMs, maxMs + 1));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**

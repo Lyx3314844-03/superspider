@@ -273,6 +273,60 @@ func TestAPIAcceptsBearerTokenForProtectedRoutes(t *testing.T) {
 	}
 }
 
+func TestAPIResearchRunAsyncAndSoakEndpoints(t *testing.T) {
+	server := NewServerWithJobService(&Config{Host: "127.0.0.1", Port: 8080}, core.NewJobService())
+
+	runBody, _ := json.Marshal(map[string]any{
+		"url":         "https://example.com",
+		"content":     "<title>Research API</title>",
+		"schema_json": `{"properties":{"title":{"type":"string"}}}`,
+	})
+	runReq := httptest.NewRequest(http.MethodPost, "/api/v1/research/run", bytes.NewReader(runBody))
+	runRec := httptest.NewRecorder()
+	server.router.ServeHTTP(runRec, runReq)
+	if runRec.Code != http.StatusOK {
+		t.Fatalf("expected research run status 200, got %d", runRec.Code)
+	}
+	if !bytes.Contains(runRec.Body.Bytes(), []byte(`"Research API"`)) {
+		t.Fatalf("unexpected research run body: %s", runRec.Body.String())
+	}
+
+	asyncBody, _ := json.Marshal(map[string]any{
+		"urls":        []string{"https://example.com/1", "https://example.com/2"},
+		"content":     "<title>Async API</title>",
+		"schema_json": `{"properties":{"title":{"type":"string"}}}`,
+		"concurrency": 2,
+	})
+	asyncReq := httptest.NewRequest(http.MethodPost, "/api/v1/research/async", bytes.NewReader(asyncBody))
+	asyncRec := httptest.NewRecorder()
+	server.router.ServeHTTP(asyncRec, asyncReq)
+	if asyncRec.Code != http.StatusOK {
+		t.Fatalf("expected research async status 200, got %d", asyncRec.Code)
+	}
+	if !bytes.Contains(asyncRec.Body.Bytes(), []byte(`"command":"research async"`)) &&
+		!bytes.Contains(asyncRec.Body.Bytes(), []byte(`"command": "research async"`)) {
+		t.Fatalf("unexpected research async body: %s", asyncRec.Body.String())
+	}
+
+	soakBody, _ := json.Marshal(map[string]any{
+		"urls":        []string{"https://example.com/1", "https://example.com/2"},
+		"content":     "<title>Soak API</title>",
+		"schema_json": `{"properties":{"title":{"type":"string"}}}`,
+		"concurrency": 2,
+		"rounds":      2,
+	})
+	soakReq := httptest.NewRequest(http.MethodPost, "/api/v1/research/soak", bytes.NewReader(soakBody))
+	soakRec := httptest.NewRecorder()
+	server.router.ServeHTTP(soakRec, soakReq)
+	if soakRec.Code != http.StatusOK {
+		t.Fatalf("expected research soak status 200, got %d", soakRec.Code)
+	}
+	if !bytes.Contains(soakRec.Body.Bytes(), []byte(`"results":4`)) &&
+		!bytes.Contains(soakRec.Body.Bytes(), []byte(`"results": 4`)) {
+		t.Fatalf("unexpected research soak body: %s", soakRec.Body.String())
+	}
+}
+
 func TestAPIExtractsGraphFromHTMLPayload(t *testing.T) {
 	server := NewServerWithJobService(&Config{Host: "127.0.0.1", Port: 8080}, core.NewJobService())
 

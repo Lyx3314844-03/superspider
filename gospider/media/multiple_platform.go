@@ -54,6 +54,15 @@ func (d *MultiPlatformDownloader) DetectPlatform(url string) string {
 	if strings.Contains(lower, "youtube.com") || strings.Contains(lower, "youtu.be") {
 		return "youtube"
 	}
+	if strings.Contains(lower, "youku.com") || strings.Contains(lower, "youku.tv") {
+		return "youku"
+	}
+	if strings.Contains(lower, "iqiyi.com") {
+		return "iqiyi"
+	}
+	if strings.Contains(lower, "qq.com") || strings.Contains(lower, "v.qq.com") {
+		return "tencent"
+	}
 	if strings.Contains(lower, "tiktok.com") {
 		return "tiktok"
 	}
@@ -66,6 +75,9 @@ func (d *MultiPlatformDownloader) DetectPlatform(url string) string {
 	if strings.Contains(lower, "bilibili.com") || strings.Contains(lower, "b23.tv") {
 		return "bilibili"
 	}
+	if strings.Contains(lower, "douyin.com") {
+		return "douyin"
+	}
 	return "generic"
 }
 
@@ -76,7 +88,7 @@ func (d *MultiPlatformDownloader) Download(url, quality string) (string, error) 
 	switch platform {
 	case "youtube":
 		return d.downloadYouTube(url, quality)
-	case "tiktok":
+	case "tiktok", "douyin":
 		return d.downloadTikTok(url, quality)
 	case "bilibili":
 		return d.downloadBilibili(url, quality)
@@ -250,8 +262,8 @@ func discoverVideoInfoFromHTML(pageURL, htmlBody string) *UniversalVideoInfo {
 		`(?is)<meta[^>]+(?:property|name)=["'](?:og:video(?::url)?|twitter:player:stream)["'][^>]+content=["']([^"']+)["']`,
 		`(?is)<video[^>]+src=["']([^"']+)["']`,
 		`(?is)<source[^>]+src=["']([^"']+)["']`,
-		`(?is)\b(?:contentUrl|embedUrl|videoUrl|video_url|playAddr|play_url|m3u8Url|m3u8_url|dashUrl|dash_url|mp4Url|mp4_url)\b["']?\s*[:=]\s*["']([^"']+)["']`,
-		`(https?://[^"'\\s<>]+(?:\\.m3u8|\\.mpd|\\.mp4|\\.webm|\\.m4v|\\.mov)[^"'\\s<>]*)`,
+		`(?is)\b(?:contentUrl|embedUrl|videoUrl|video_url|playAddr|play_url|m3u8Url|m3u8_url|dashUrl|dash_url|mp4Url|mp4_url|baseUrl|base_url|cover|pic|poster|dynamic_cover|originCover)\b["']?\s*[:=]\s*["']([^"']+)["']`,
+		`(https?://[^"'\\s<>]+(?:\\.m3u8|\\.mpd|\\.mp4|\\.webm|\\.m4v|\\.mov|\\.m4s)[^"'\\s<>]*)`,
 	}
 	for _, pattern := range urlPatterns {
 		re := regexp.MustCompile(pattern)
@@ -302,8 +314,8 @@ func DiscoverVideoInfoFromArtifacts(
 			continue
 		}
 		for _, pattern := range []string{
-			`(?is)\b(?:contentUrl|embedUrl|videoUrl|video_url|playAddr|play_url|m3u8Url|m3u8_url|dashUrl|dash_url|mp4Url|mp4_url)\b["']?\s*[:=]\s*["']([^"']+)["']`,
-			`(https?://[^"'\\s<>]+(?:\\.m3u8|\\.mpd|\\.mp4|\\.webm|\\.m4v|\\.mov)[^"'\\s<>]*)`,
+			`(?is)\b(?:contentUrl|embedUrl|videoUrl|video_url|playAddr|play_url|m3u8Url|m3u8_url|dashUrl|dash_url|mp4Url|mp4_url|baseUrl|base_url|cover|pic|poster|dynamic_cover|originCover|desc|description)\b["']?\s*[:=]\s*["']([^"']+)["']`,
+			`(https?://[^"'\\s<>]+(?:\\.m3u8|\\.mpd|\\.mp4|\\.webm|\\.m4v|\\.mov|\\.m4s)[^"'\\s<>]*)`,
 		} {
 			re := regexp.MustCompile(pattern)
 			for _, match := range re.FindAllStringSubmatch(artifactText, -1) {
@@ -341,16 +353,24 @@ func collectVideoDataFromJSON(value any, pageURL string, info *UniversalVideoInf
             info.Title = cleanMediaText(title)
         }
 		if info.Description == "" {
-			if desc, ok := typed["description"].(string); ok {
-				info.Description = cleanMediaText(desc)
+			for _, key := range []string{"description", "desc"} {
+				if desc, ok := typed[key].(string); ok && strings.TrimSpace(desc) != "" {
+					info.Description = cleanMediaText(desc)
+					break
+				}
 			}
 		}
 		if info.CoverURL == "" {
-			if thumb, ok := typed["thumbnailUrl"].(string); ok {
-				info.CoverURL = normalizeMediaURL(pageURL, thumb)
+			for _, key := range []string{"thumbnailUrl", "cover", "pic", "poster", "dynamic_cover", "originCover"} {
+				if thumb, ok := typed[key].(string); ok && strings.TrimSpace(thumb) != "" {
+					info.CoverURL = normalizeMediaURL(pageURL, thumb)
+					if info.CoverURL != "" {
+						break
+					}
+				}
 			}
 		}
-		for _, key := range []string{"contentUrl", "embedUrl", "url", "videoUrl", "video_url", "playAddr", "play_url", "m3u8Url", "m3u8_url", "dashUrl", "dash_url", "mp4Url", "mp4_url"} {
+		for _, key := range []string{"contentUrl", "embedUrl", "url", "videoUrl", "video_url", "playAddr", "play_url", "m3u8Url", "m3u8_url", "dashUrl", "dash_url", "mp4Url", "mp4_url", "baseUrl", "base_url"} {
 			if raw, ok := typed[key].(string); ok {
 				appendCandidate(info, normalizeMediaURL(pageURL, raw))
 			}

@@ -48,10 +48,15 @@ class EncryptedSiteCrawler:
 
         # 加密检测模式
         self.encryption_patterns = [
-            r"CryptoJS\.(AES|DES|RSA|MD5|SHA|HMAC|RC4|Base64)",
+            r"CryptoJS\.(AES|DES|TripleDES|MD5|SHA(?:1|256|512|3)?|HmacSHA(?:1|256|512)|RC4|Rabbit|PBKDF2|Base64)",
             r"encrypt\(|decrypt\(",
             r"createCipheriv|createDecipheriv",
+            r"createHmac|createHash|pbkdf2|scrypt|bcrypt|hkdf",
             r"publicEncrypt|privateDecrypt",
+            r"JSEncrypt|NodeRSA|jsrsasign|elliptic|secp256k1|ed25519|x25519",
+            r"sm2|sm3|sm4|sm-crypto",
+            r"ChaCha20|XChaCha20|Salsa20|Blowfish|Twofish|XXTEA|XTEA|TEA",
+            r"crypto\.subtle|subtle\.(encrypt|decrypt|digest|sign|verify)",
             r"btoa\(|atob\(",
             r"eval\(function\(p,a,c,k,e,d\)",
             r"\\x[0-9a-fA-F]{2}",
@@ -238,7 +243,25 @@ class EncryptedSiteCrawler:
 
         return any(
             keyword in code
-            for keyword in ["CryptoJS.", "encrypt(", "decrypt(", "atob(", "btoa("]
+            for keyword in [
+                "CryptoJS.",
+                "encrypt(",
+                "decrypt(",
+                "atob(",
+                "btoa(",
+                "createHmac(",
+                "createHash(",
+                "crypto.subtle",
+                "sm4",
+                "sm2",
+                "sm3",
+                "JSEncrypt",
+                "NodeRSA",
+                "ChaCha20",
+                "scrypt",
+                "bcrypt",
+                "PBKDF2",
+            ]
         )
 
     def _simulate_browser(self, html: str):

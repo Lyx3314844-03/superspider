@@ -159,7 +159,7 @@ public class Site {
     /**
      * LLM 模型
      */
-    private String llmModel = "gpt-4";
+    private String llmModel = "gpt-5.2";
     
     /**
      * LLM API URL

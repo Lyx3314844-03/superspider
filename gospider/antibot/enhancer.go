@@ -21,6 +21,9 @@ type EnhancedAntiBot struct {
 	// Delay ranges
 	minDelay time.Duration
 	maxDelay time.Duration
+
+	// Quiet-hour throttling
+	nightMode NightModePolicy
 	
 	// Browser fingerprints
 	fingerprints []BrowserFingerprint
@@ -54,6 +57,7 @@ func NewEnhancedAntiBot() *EnhancedAntiBot {
 		},
 		minDelay: 1 * time.Second,
 		maxDelay: 3 * time.Second,
+		nightMode: DefaultNightModePolicy(),
 		fingerprints: generateFingerprints(),
 	}
 }
@@ -75,7 +79,8 @@ func (e *EnhancedAntiBot) RandomUserAgent() string {
 // RandomDelay returns a random delay between min and max
 func (e *EnhancedAntiBot) RandomDelay() time.Duration {
 	n, _ := rand.Int(rand.Reader, big.NewInt(int64(e.maxDelay-e.minDelay)))
-	return e.minDelay + time.Duration(n.Int64())
+	base := e.minDelay + time.Duration(n.Int64())
+	return e.nightMode.ApplyDelay(base, time.Now())
 }
 
 // GetFingerprint returns a random browser fingerprint

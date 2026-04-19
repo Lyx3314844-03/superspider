@@ -110,7 +110,7 @@ public class UltimateSpiderProcessor extends BasePageProcessor {
             System.out.println("\n[3/10] 自动反爬绕过...");
             if (antiDetection.hasCaptcha()) {
                 System.out.println("  🔓 检测到验证码，开始破解...");
-                String solvedCaptcha = captchaSolver.solve(page.getHtml().getDocumentHtml());
+                String solvedCaptcha = captchaSolver.solve(pageHtml(page));
                 if (solvedCaptcha != null && !solvedCaptcha.isBlank()) {
                     System.out.println("  ✅ 验证码识别完成: " + solvedCaptcha);
                 } else {
@@ -145,9 +145,12 @@ public class UltimateSpiderProcessor extends BasePageProcessor {
             System.out.println("\n[6/10] AI 智能提取...");
             AIExtractionResult aiResult = aiExtract(page);
             if (aiResult.getData() instanceof Map<?, ?> dataMap) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> mutable = (Map<String, Object>) dataMap;
+                Map<String, Object> mutable = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : dataMap.entrySet()) {
+                    mutable.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
                 mutable.put("_runtime", Map.of("reverse", reverseRuntime));
+                aiResult.setData(mutable);
             }
             System.out.println("✅ AI 提取完成");
             aiResult.print();
@@ -215,7 +218,7 @@ public class UltimateSpiderProcessor extends BasePageProcessor {
      */
     private AntiDetectionResult detectAntiDetection(Page page) {
         AntiDetectionResult result = new AntiDetectionResult();
-        String html = page.getHtml().getDocumentHtml();
+        String html = pageHtml(page);
         boolean usedProfile = false;
 
         try {
@@ -330,15 +333,14 @@ public class UltimateSpiderProcessor extends BasePageProcessor {
                 new HashMap<>());
             
             // 3. 模拟浏览器行为
-            JsonNode browserResult = reverseClient.doPost("/api/browser/simulate",
+            JsonNode browserResult = reverseClient.simulateBrowser(
+                "return JSON.stringify({tls: 'generated', canvas: 'generated'});",
                 Map.of(
-                    "code", "return JSON.stringify({tls: 'generated', canvas: 'generated'});",
-                    "browserConfig", Map.of(
-                        "userAgent", config.getUserAgent(),
-                        "language", "zh-CN",
-                        "platform", "Win32"
-                    )
-                ));
+                    "userAgent", config.getUserAgent(),
+                    "language", "zh-CN",
+                    "platform", "Win32"
+                )
+            );
             
             System.out.println("  ✅ TLS 指纹生成成功");
             System.out.println("  ✅ Canvas 指纹生成成功");
@@ -353,7 +355,7 @@ public class UltimateSpiderProcessor extends BasePageProcessor {
      */
     private void analyzeAndDecrypt(Page page) {
         try {
-            String html = page.getHtml().getDocumentHtml();
+            String html = pageHtml(page);
             
             // 分析加密
             JsonNode cryptoResult = reverseClient.doPost("/api/crypto/analyze",
@@ -380,7 +382,7 @@ public class UltimateSpiderProcessor extends BasePageProcessor {
 
     private Map<String, Object> collectReverseRuntime(Page page) {
         try {
-            String html = page.getHtml().getDocumentHtml();
+            String html = pageHtml(page);
             Map<String, Object> headers = new LinkedHashMap<>();
             if (page.getHeaders() != null) {
                 headers.putAll(page.getHeaders());
@@ -403,17 +405,22 @@ public class UltimateSpiderProcessor extends BasePageProcessor {
             );
             JsonNode spoof = reverseClient.spoofFingerprint("chrome", "windows");
             JsonNode tls = reverseClient.generateTlsFingerprint("chrome", "120");
+            JsonNode canvas = reverseClient.canvasFingerprint();
+            JsonNode crypto = reverseClient.analyzeCrypto(extractScriptSample(html));
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("success",
                 detect.path("success").asBoolean(false)
                     && profile.path("success").asBoolean(false)
                     && spoof.path("success").asBoolean(false)
                     && tls.path("success").asBoolean(false)
+                    && canvas.path("success").asBoolean(false)
             );
             payload.put("detect", detect);
             payload.put("profile", profile);
             payload.put("fingerprint_spoof", spoof);
             payload.put("tls_fingerprint", tls);
+            payload.put("canvas_fingerprint", canvas);
+            payload.put("crypto_analysis", crypto);
             return payload;
         } catch (Exception e) {
             return Map.of(
@@ -423,6 +430,37 @@ public class UltimateSpiderProcessor extends BasePageProcessor {
         }
     }
 
+    private String extractScriptSample(String html) {
+        String lowered = html == null ? "" : html.toLowerCase();
+        int start = 0;
+        List<String> parts = new ArrayList<>();
+        while (true) {
+            int openRel = lowered.indexOf("<script", start);
+            if (openRel < 0) {
+                break;
+            }
+            int tagEnd = lowered.indexOf(">", openRel);
+            if (tagEnd < 0) {
+                break;
+            }
+            int close = lowered.indexOf("</script>", tagEnd);
+            if (close < 0) {
+                break;
+            }
+            String snippet = html.substring(tagEnd + 1, close).trim();
+            if (!snippet.isBlank()) {
+                parts.add(snippet);
+            }
+            start = close + "</script>".length();
+        }
+        String joined = String.join("\n", parts);
+        if (!joined.isBlank()) {
+            return joined.length() > 32000 ? joined.substring(0, 32000) : joined;
+        }
+        String fallback = html == null ? "" : html;
+        return fallback.length() > 32000 ? fallback.substring(0, 32000) : fallback;
+    }
+
     /**
      * AI 智能提取
      */
@@ -430,7 +468,7 @@ public class UltimateSpiderProcessor extends BasePageProcessor {
         AIExtractionResult result = new AIExtractionResult();
         
         try {
-            String html = page.getHtml().getDocumentHtml();
+            String html = pageHtml(page);
             
             // 使用 AI 提取结构化数据
             Map<String, Object> aiPayload = Map.of(
@@ -745,6 +783,16 @@ public class UltimateSpiderProcessor extends BasePageProcessor {
             Files.writeString(checkpointPath, serialized, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             return checkpointPath;
         }
+    }
+
+    private String pageHtml(Page page) {
+        if (page == null) {
+            return "";
+        }
+        if (page.getHtml() != null) {
+            return page.getHtml().getDocumentHtml();
+        }
+        return page.getRawText() == null ? "" : page.getRawText();
     }
 
     /**

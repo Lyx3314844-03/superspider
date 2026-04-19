@@ -18,10 +18,10 @@ type TencentExtractor struct {
 
 // VideoInfo 视频信息
 type VideoInfo struct {
-	Title       string       `json:"title"`
-	Duration    int          `json:"duration"`
-	CoverURL    string       `json:"cover_url"`
-	Description string       `json:"description"`
+	Title       string        `json:"title"`
+	Duration    int           `json:"duration"`
+	CoverURL    string        `json:"cover_url"`
+	Description string        `json:"description"`
 	Formats     []VideoFormat `json:"formats"`
 }
 
@@ -64,18 +64,20 @@ func (t *TencentExtractor) Extract(url string) (*VideoInfo, error) {
 
 // extractVideoID 从 URL 提取视频 ID
 func (t *TencentExtractor) extractVideoID(url string) string {
-	// 匹配模式：/x/cover/{cover_id}/{video_id}.html
-	re := regexp.MustCompile(`/x/cover/[^/]+/([a-zA-Z0-9]+)\.html`)
-	matches := re.FindStringSubmatch(url)
-	if len(matches) > 1 {
-		return matches[1]
+	patterns := []string{
+		`/x/cover/[^/]+/([A-Za-z0-9]+)\.html`,
+		`/x/page/([A-Za-z0-9]+)\.html`,
+		`/x/([A-Za-z0-9]+)\.html`,
+		`/cover/([A-Za-z0-9]+)`,
+		`[?&]vid=([A-Za-z0-9]+)`,
 	}
 
-	// 匹配模式：/x/page/{video_id}.html
-	re2 := regexp.MustCompile(`/x/page/([a-zA-Z0-9]+)\.html`)
-	matches2 := re2.FindStringSubmatch(url)
-	if len(matches2) > 1 {
-		return matches2[1]
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindStringSubmatch(url)
+		if len(matches) > 1 {
+			return matches[1]
+		}
 	}
 
 	return ""
@@ -107,7 +109,7 @@ func (t *TencentExtractor) getVideoInfo(videoID string) (*VideoInfo, error) {
 
 	// 解析 JSONP 响应
 	jsonStr := string(body)
-	
+
 	// 移除 JSONP 包装
 	if idx := strings.Index(jsonStr, "("); idx != -1 {
 		jsonStr = jsonStr[idx+1:]
@@ -136,12 +138,12 @@ func (t *TencentExtractor) getVideoInfo(videoID string) (*VideoInfo, error) {
 	// 提取视频 URL
 	if vl, ok := result["vl"]; ok {
 		vlMap := vl.(map[string]interface{})
-		
+
 		if vi, ok := vlMap["vi"]; ok {
 			viList := vi.([]interface{})
 			if len(viList) > 0 {
 				viMap := viList[0].(map[string]interface{})
-				
+
 				// 获取 ul (URL 列表)
 				if ul, ok := result["ul"]; ok {
 					ulMap := ul.(map[string]interface{})
@@ -151,13 +153,13 @@ func (t *TencentExtractor) getVideoInfo(videoID string) (*VideoInfo, error) {
 							uiMap := uiList[0].(map[string]interface{})
 							if url, ok := uiMap["url"]; ok {
 								baseURL := url.(string)
-								
+
 								// 获取 fvkey
 								fvkey := ""
 								if fv, ok := result["fvkey"]; ok {
 									fvkey = fv.(string)
 								}
-								
+
 								// 构造完整 URL
 								if fn, ok := viMap["fn"]; ok {
 									filename := fn.(string)

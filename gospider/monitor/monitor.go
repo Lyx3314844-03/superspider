@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,21 +22,31 @@ type Monitor struct {
 	interval  time.Duration
 	running   bool
 	startTime time.Time
+	metrics   []TaskMetric
 }
 
 // SystemStats 系统统计
 type SystemStats struct {
-	Timestamp      time.Time              `json:"timestamp"`
-	Uptime         string                 `json:"uptime"`
-	Queues         map[string]int64       `json:"queues"`
-	Workers        []WorkerStats          `json:"workers"`
-	WorkersTotal   int                    `json:"workers_total"`
-	WorkersActive  int                    `json:"workers_active"`
-	TasksTotal     int64                  `json:"tasks_total"`
-	TasksCompleted int64                  `json:"tasks_completed"`
-	TasksFailed    int64                  `json:"tasks_failed"`
-	Throughput     float64                `json:"throughput"` // 任务/秒
-	Custom         map[string]interface{} `json:"custom,omitempty"`
+	Timestamp            time.Time              `json:"timestamp"`
+	Uptime               string                 `json:"uptime"`
+	Queues               map[string]int64       `json:"queues"`
+	Workers              []WorkerStats          `json:"workers"`
+	WorkersTotal         int                    `json:"workers_total"`
+	WorkersActive        int                    `json:"workers_active"`
+	TasksTotal           int64                  `json:"tasks_total"`
+	TasksCompleted       int64                  `json:"tasks_completed"`
+	TasksFailed          int64                  `json:"tasks_failed"`
+	DeadLetters          int64                  `json:"dead_letters"`
+	QueueBacklog         int64                  `json:"queue_backlog"`
+	Throughput           float64                `json:"throughput"` // 任务/秒
+	QPS                  float64                `json:"qps"`
+	SuccessRate          float64                `json:"success_rate"`
+	FailureRate          float64                `json:"failure_rate"`
+	LatencyP95MS         float64                `json:"latency_p95_ms"`
+	LatencyP99MS         float64                `json:"latency_p99_ms"`
+	WorkerUtilizationPct float64                `json:"worker_utilization_pct"`
+	QueuePressure        float64                `json:"queue_pressure"`
+	Custom               map[string]interface{} `json:"custom,omitempty"`
 }
 
 // WorkerStats 工作节点统计
@@ -67,6 +78,7 @@ func NewMonitor(redisClient *distributed.RedisClient) *Monitor {
 		interval:  5 * time.Second,
 		startTime: time.Now(),
 		callbacks: make([]func(*SystemStats), 0),
+		metrics:   make([]TaskMetric, 0),
 	}
 }
 
@@ -135,9 +147,11 @@ func (m *Monitor) CollectStats() (*SystemStats, error) {
 	stats.Queues = queueStats
 
 	// 计算总任务数
-	stats.TasksTotal = queueStats[string(core.StateQueued)] + queueStats["running"] + queueStats[string(core.StateSucceeded)] + queueStats[string(core.StateFailed)] + queueStats[string(core.StateCancelled)]
+	stats.TasksTotal = queueStats[string(core.StateQueued)] + queueStats["running"] + queueStats[string(core.StateSucceeded)] + queueStats[string(core.StateFailed)] + queueStats[string(core.StateCancelled)] + queueStats["dead_letter"]
 	stats.TasksCompleted = queueStats[string(core.StateSucceeded)]
 	stats.TasksFailed = queueStats[string(core.StateFailed)]
+	stats.DeadLetters = queueStats["dead_letter"]
+	stats.QueueBacklog = queueStats[string(core.StateQueued)] + queueStats["running"]
 
 	// 工作节点统计
 	workers, err := m.redis.ListWorkers()
@@ -178,8 +192,25 @@ func (m *Monitor) CollectStats() (*SystemStats, error) {
 		uptime := time.Since(m.startTime)
 		if uptime > 0 {
 			stats.Throughput = float64(stats.TasksCompleted) / uptime.Seconds()
+			stats.QPS = stats.Throughput
 		}
 	}
+	processed := stats.TasksCompleted + stats.TasksFailed
+	if processed > 0 {
+		stats.SuccessRate = float64(stats.TasksCompleted) / float64(processed) * 100
+		stats.FailureRate = float64(stats.TasksFailed) / float64(processed) * 100
+	}
+	if stats.WorkersTotal > 0 {
+		stats.WorkerUtilizationPct = float64(stats.WorkersActive) / float64(stats.WorkersTotal) * 100
+	}
+	if stats.WorkersActive > 0 {
+		stats.QueuePressure = float64(stats.QueueBacklog) / float64(stats.WorkersActive)
+	} else {
+		stats.QueuePressure = float64(stats.QueueBacklog)
+	}
+	p95, p99 := m.latencyPercentiles()
+	stats.LatencyP95MS = p95
+	stats.LatencyP99MS = p99
 
 	return stats, nil
 }
@@ -209,6 +240,54 @@ func (m *Monitor) GetStats() *SystemStats {
 	copy(stats.Workers, m.stats.Workers)
 
 	return &stats
+}
+
+func (m *Monitor) RecordTaskMetric(metric TaskMetric) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.metrics = append(m.metrics, metric)
+	if len(m.metrics) > 512 {
+		m.metrics = m.metrics[len(m.metrics)-512:]
+	}
+}
+
+func (m *Monitor) latencyPercentiles() (float64, float64) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.metrics) == 0 {
+		return 0, 0
+	}
+	values := make([]float64, 0, len(m.metrics))
+	for _, metric := range m.metrics {
+		if metric.Duration > 0 {
+			values = append(values, metric.Duration*1000)
+		}
+	}
+	if len(values) == 0 {
+		return 0, 0
+	}
+	sort.Float64s(values)
+	return percentile(values, 0.95), percentile(values, 0.99)
+}
+
+func percentile(values []float64, p float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	if p <= 0 {
+		return values[0]
+	}
+	if p >= 1 {
+		return values[len(values)-1]
+	}
+	index := int(float64(len(values)-1) * p)
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(values) {
+		index = len(values) - 1
+	}
+	return values[index]
 }
 
 // GetStatsJSON 获取统计 JSON
@@ -269,6 +348,16 @@ func (m *Monitor) GetHealthStatus() HealthStatus {
 		status.Status = "warning"
 		status.Message = "没有活跃的工作节点"
 	}
+	status.Checks["dead_letters"] = stats.DeadLetters == 0
+	if !status.Checks["dead_letters"] && status.Status == "healthy" {
+		status.Status = "warning"
+		status.Message = "存在死信任务"
+	}
+	status.Checks["queue_pressure"] = stats.QueuePressure < 100
+	if !status.Checks["queue_pressure"] && status.Status == "healthy" {
+		status.Status = "warning"
+		status.Message = "队列压力过高"
+	}
 
 	// 检查失败队列
 	if stats.TasksFailed > 100 {
@@ -291,6 +380,84 @@ type HealthStatus struct {
 	Message   string          `json:"message,omitempty"`
 	Timestamp time.Time       `json:"timestamp"`
 	Checks    map[string]bool `json:"checks"`
+}
+
+// PrometheusText renders the current monitor snapshot as Prometheus text.
+func (m *Monitor) PrometheusText(prefix string) string {
+	if prefix == "" {
+		prefix = "gospider"
+	}
+	stats := m.GetStats()
+	lines := []string{
+		fmt.Sprintf("# HELP %s_tasks_total Total tasks observed by the distributed monitor", prefix),
+		fmt.Sprintf("# TYPE %s_tasks_total gauge", prefix),
+		fmt.Sprintf("%s_tasks_total %d", prefix, stats.TasksTotal),
+		fmt.Sprintf("%s_tasks_completed %d", prefix, stats.TasksCompleted),
+		fmt.Sprintf("%s_tasks_failed %d", prefix, stats.TasksFailed),
+		fmt.Sprintf("%s_dead_letters %d", prefix, stats.DeadLetters),
+		fmt.Sprintf("%s_queue_backlog %d", prefix, stats.QueueBacklog),
+		fmt.Sprintf("%s_workers_total %d", prefix, stats.WorkersTotal),
+		fmt.Sprintf("%s_workers_active %d", prefix, stats.WorkersActive),
+		fmt.Sprintf("%s_throughput %v", prefix, stats.Throughput),
+		fmt.Sprintf("%s_qps %v", prefix, stats.QPS),
+		fmt.Sprintf("%s_latency_p95_ms %v", prefix, stats.LatencyP95MS),
+		fmt.Sprintf("%s_latency_p99_ms %v", prefix, stats.LatencyP99MS),
+		fmt.Sprintf("%s_success_rate %v", prefix, stats.SuccessRate),
+		fmt.Sprintf("%s_failure_rate %v", prefix, stats.FailureRate),
+		fmt.Sprintf("%s_worker_utilization_pct %v", prefix, stats.WorkerUtilizationPct),
+		fmt.Sprintf("%s_queue_pressure %v", prefix, stats.QueuePressure),
+	}
+
+	queueNames := make([]string, 0, len(stats.Queues))
+	for key := range stats.Queues {
+		queueNames = append(queueNames, key)
+	}
+	sort.Strings(queueNames)
+	for _, key := range queueNames {
+		lines = append(lines, fmt.Sprintf("%s_queue_depth{state=%q} %d", prefix, key, stats.Queues[key]))
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// OTELPayload returns a JSON-friendly OpenTelemetry-style envelope.
+func (m *Monitor) OTELPayload(serviceName string) map[string]interface{} {
+	if serviceName == "" {
+		serviceName = "gospider-monitor"
+	}
+	stats := m.GetStats()
+	points := []map[string]interface{}{
+		{"name": "tasks_total", "value": stats.TasksTotal, "unit": "1"},
+		{"name": "tasks_completed", "value": stats.TasksCompleted, "unit": "1"},
+		{"name": "tasks_failed", "value": stats.TasksFailed, "unit": "1"},
+		{"name": "dead_letters", "value": stats.DeadLetters, "unit": "1"},
+		{"name": "queue_backlog", "value": stats.QueueBacklog, "unit": "1"},
+		{"name": "throughput", "value": stats.Throughput, "unit": "task/s"},
+		{"name": "qps", "value": stats.QPS, "unit": "req/s"},
+		{"name": "latency_p95_ms", "value": stats.LatencyP95MS, "unit": "ms"},
+		{"name": "latency_p99_ms", "value": stats.LatencyP99MS, "unit": "ms"},
+		{"name": "success_rate", "value": stats.SuccessRate, "unit": "%"},
+		{"name": "failure_rate", "value": stats.FailureRate, "unit": "%"},
+		{"name": "worker_utilization_pct", "value": stats.WorkerUtilizationPct, "unit": "%"},
+		{"name": "queue_pressure", "value": stats.QueuePressure, "unit": "task/worker"},
+	}
+	queueNames := make([]string, 0, len(stats.Queues))
+	for key := range stats.Queues {
+		queueNames = append(queueNames, key)
+	}
+	sort.Strings(queueNames)
+	for _, key := range queueNames {
+		points = append(points, map[string]interface{}{
+			"name":  "queue_depth." + key,
+			"value": stats.Queues[key],
+			"unit":  "1",
+		})
+	}
+	return map[string]interface{}{
+		"resource":  map[string]interface{}{"service.name": serviceName},
+		"scope":     "gospider/monitor",
+		"metrics":   points,
+		"timestamp": stats.Timestamp,
+	}
 }
 
 // HTTPHandler 创建 HTTP 处理器
@@ -329,6 +496,17 @@ func (m *Monitor) HTTPHandler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		stats := m.GetQueueStats()
 		data, _ := json.MarshalIndent(stats, "", "  ")
+		w.Write(data)
+	})
+
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write([]byte(m.PrometheusText("gospider")))
+	})
+
+	mux.HandleFunc("/otel", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		data, _ := json.MarshalIndent(m.OTELPayload("gospider-monitor"), "", "  ")
 		w.Write(data)
 	})
 

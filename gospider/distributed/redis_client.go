@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/rand"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -466,6 +466,9 @@ func (r *RedisClient) GetQueueStats() (map[string]int64, error) {
 	cancelled, _ := r.client.LLen(r.ctx, cancelledKey).Result()
 	stats["cancelled"] = cancelled
 	stats[string(core.StateCancelled)] = cancelled
+
+	deadLetters, _ := r.client.LLen(r.ctx, r.deadLetterQueueKey()).Result()
+	stats["dead_letter"] = deadLetters
 
 	return stats, nil
 }

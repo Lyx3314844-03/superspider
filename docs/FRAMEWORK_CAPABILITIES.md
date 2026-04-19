@@ -1,112 +1,183 @@
 # Framework Capabilities
 
-这份文档聚焦 SuperSpider 当前发布的四个爬虫框架：
+This document is meant to help GitHub visitors understand what each of the four released runtimes can do, how far each one goes, what it installs, and where it fits best.
 
-- `pyspider`
-- `gospider`
-- `rustspider`
-- `javaspider`
+## Capability Axes
 
-目标不是列所有内部模块名，而是给使用者一个“这四个框架分别擅长什么”的清晰判断。
+Each runtime is described along four dimensions:
 
-## Shared Positioning
+- core functions
+- capability range
+- install package and install output
+- best-fit usage profile
 
-四个框架共同面向网页抓取、浏览器自动化、反爬处理、媒体下载和项目化运行，但它们不是同一种交付方式的重复实现。
+## Shared Media Coverage
 
-共同特征：
+All four runtimes now expose the same concrete media surface for the core downloader stack:
 
-- 都是爬虫运行时，而不是单一脚本
-- 都有清晰的安装入口
-- 都能支撑从抓取到解析再到结果输出的完整流程
-- 都强调生产交付，而不只是 demo
+- HLS (`m3u8`) parsing and download
+- DASH (`mpd`) parsing and download
+- FFmpeg-based conversion / merge support
+- DRM detection for manifests and media
+- platform parsing for YouTube, Bilibili, IQIYI, Tencent Video, and Youku
 
-差异主要在：
-
-- 交付模型
-- 并发与运行时边界
-- 对浏览器和反爬流程的强调程度
-- 对企业环境、二进制部署或快速试验的适配程度
+The runtime-specific sections below describe engineering posture, but the media platform matrix is now intentionally aligned across Python, Go, Rust, and Java.
 
 ## PySpider
 
-PySpider 是这四个框架里最强调“项目化抓取开发体验”的运行时。
+### Core Functions
 
-突出能力：
+- Python-native CLI
+- scrapy-style project execution
+- AI extraction and research workflows
+- browser + HTTP hybrid crawling
+- anti-bot, captcha, node-reverse, media, and dataset output
 
-- Python 原生 CLI 与包管理，适合直接进虚拟环境开发
-- 最完整的 scrapy 风格项目运行模型
-- AI 提取、研究流程和插件注入能力强
-- 浏览器与 HTTP 混合抓取路径成熟
-- 适合复杂数据流、媒体处理和结果输出
+### Concrete Media Support
 
-适合的场景：
+- HLS / DASH download entrypoints
+- FFmpeg utilities
+- DRM inspection
+- YouTube / Bilibili / IQIYI / Tencent / Youku parsing
 
-- 需要快速从想法走到可运行项目
-- 需要 AI 结构化提取和实验型抓取
-- 需要和 Python 数据处理、分析、模型推理栈衔接
+### Capability Range
+
+- from rapid crawler experiments to full project scaffolding
+- from structured extraction to AI-assisted extraction
+- from browser-driven workflows to result output pipelines
+
+### Install Package / Output
+
+- install scripts:
+  - `scripts/windows/install-pyspider.bat`
+  - `scripts/linux/install-pyspider.sh`
+  - `scripts/macos/install-pyspider.sh`
+- output:
+  - `.venv-pyspider`
+  - runnable `python -m pyspider`
+
+### Best Fit
+
+- AI-driven crawling
+- project-oriented development
+- teams that want Python flexibility and rapid iteration
 
 ## GoSpider
 
-GoSpider 是最强调“并发执行 + 二进制交付”的运行时。
+### Core Functions
 
-突出能力：
+- compiled Go CLI
+- concurrent crawling and scheduling
+- distributed workers, queues, and storage
+- browser artifact capture and replay
+- media download and operational runtime dispatch
 
-- Go 二进制 CLI，部署简洁
-- 并发抓取和任务调度能力强
-- 分布式 worker、队列和存储路径清晰
-- 浏览器产物采集、回放和运行时调度适合服务化
-- 适合控制面驱动的抓取任务发布
+### Concrete Media Support
 
-适合的场景：
+- HLS / DASH download entrypoints
+- FFmpeg utilities
+- DRM inspection
+- YouTube / Bilibili / IQIYI / Tencent / Youku parsing
 
-- 想部署一个独立可执行文件
-- 想把抓取变成批处理或服务端作业
-- 更重视并发和交付效率
+### Capability Range
+
+- from single-node concurrent crawling to multi-worker execution
+- from binary deployment to service-oriented crawler operation
+- from browser-based crawling to result storage and replay
+
+### Install Package / Output
+
+- install scripts:
+  - `scripts/windows/install-gospider.bat`
+  - `scripts/linux/install-gospider.sh`
+  - `scripts/macos/install-gospider.sh`
+- output:
+  - `gospider` executable
+
+### Best Fit
+
+- concurrency-heavy crawling
+- binary deployment
+- worker / queue / storage-driven execution
 
 ## RustSpider
 
-RustSpider 是最强调“类型安全 + 高性能 + 模块裁剪”的运行时。
+### Core Functions
 
-突出能力：
+- Rust release binary
+- feature-gated browser, distributed, API, and web modules
+- typed scrapy-style interface
+- preflight, monitoring, anti-bot, media, and contract-heavy runtime
 
-- Rust 发布二进制
-- feature-gated 浏览器、分布式、API、Web 模块
-- 强类型接口和更严格的运行边界
-- 预检、监控、契约测试和生产边界意识更强
-- 适合高性能和可控功能面的部署
+### Concrete Media Support
 
-适合的场景：
+- HLS / DASH download entrypoints
+- FFmpeg utilities
+- DRM inspection
+- YouTube / Bilibili / IQIYI / Tencent / Youku parsing
 
-- 需要更稳定的发布二进制
-- 需要精确控制哪些能力进入发布包
-- 需要高性能和更强的运行边界
+### Capability Range
+
+- from compact release binaries to high-performance production deployment
+- from strict feature-gated shipping to strongly typed runtime boundaries
+- from preflight validation to monitored runtime execution
+
+### Install Package / Output
+
+- install scripts:
+  - `scripts/windows/install-rustspider.bat`
+  - `scripts/linux/install-rustspider.sh`
+  - `scripts/macos/install-rustspider.sh`
+- output:
+  - `rustspider/target/release/rustspider`
+
+### Best Fit
+
+- strongly typed deployments
+- performance-sensitive runtimes
+- teams that want feature-controlled release binaries
 
 ## JavaSpider
 
-JavaSpider 是最强调“浏览器工作流 + Maven 生态 + 企业集成”的运行时。
+### Core Functions
 
-突出能力：
+- Maven / JAR packaging
+- browser workflows with Selenium / Playwright helper paths
+- scrapy-style compatibility
+- audit, connector, session, anti-bot, workflow replay, and media parsing
 
-- Maven/JAR 打包，适合 Java 构建链
-- 浏览器工作流和 Selenium / Playwright 辅助路径突出
-- 审计、连接器、会话、反爬路径完整
-- 适合流程化执行和企业内部系统接入
-- 适合把抓取纳入现有 Java 工程体系
+### Concrete Media Support
 
-适合的场景：
+- HLS / DASH download entrypoints
+- FFmpeg utilities
+- DRM inspection
+- YouTube / Bilibili / IQIYI / Tencent / Youku parsing
 
-- 已有成熟 Java / Maven 工程体系
-- 浏览器驱动抓取和流程编排占比高
-- 需要审计、连接器或企业级交付方式
+### Capability Range
 
-## Quick Choice
+- from Maven packaging to enterprise Java release pipelines
+- from browser automation to workflow-driven execution
+- from audit trails to internal system integration
 
-- 想快速开发和做 AI 编排：选 `PySpider`
-- 想高并发、二进制交付、服务化部署：选 `GoSpider`
-- 想高性能、强类型、严格边界：选 `RustSpider`
-- 想 Maven 打包、浏览器工作流、企业 Java 集成：选 `JavaSpider`
+### Install Package / Output
+
+- install scripts:
+  - `scripts/windows/install-javaspider.bat`
+  - `scripts/linux/install-javaspider.sh`
+  - `scripts/macos/install-javaspider.sh`
+- output:
+  - `javaspider/target`
+  - Maven build artifacts
+
+### Best Fit
+
+- enterprise Java environments
+- browser-heavy automation
+- Maven / JAR delivery chains
 
 ## Related Docs
 
-- 能力矩阵: `docs/FRAMEWORK_CAPABILITY_MATRIX.md`
-- 安装矩阵: `docs/SUPERSPIDER_INSTALLS.md`
+- `docs/DOCS_INDEX.md`
+- `MEDIA_PARITY_REPORT.md`
+- `LATEST_FRAMEWORK_COMPLETION_REPORT.md`
+- `docs/archive/HISTORICAL_REPORTS.md`

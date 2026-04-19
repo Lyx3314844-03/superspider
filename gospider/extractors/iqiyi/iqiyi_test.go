@@ -30,11 +30,11 @@ func TestExtractVideoDataFindsStreamsAndMetadata(t *testing.T) {
       var payload = {
         "duration": 321,
         "quality": ["1080p", "720p"],
-        "m3u8": "https://media.example.com/master.m3u8",
-        "dash": "https://media.example.com/dash/manifest.mpd",
+        "m3u8Url": "https://media.example.com/master.m3u8",
+        "dashUrl": "https://media.example.com/manifest.mpd",
         "streams": [
-          {"quality": "1080p", "m3u8": "https://media.example.com/master.m3u8"},
-          {"quality": "720p", "dash": "https://media.example.com/dash/manifest.mpd"}
+          {"quality": "1080p", "m3u8Url": "https://media.example.com/master.m3u8"},
+          {"quality": "720p", "dashUrl": "https://media.example.com/manifest.mpd"}
         ]
       };
     </script>
@@ -46,7 +46,7 @@ func TestExtractVideoDataFindsStreamsAndMetadata(t *testing.T) {
 	if info.M3U8URL != "https://media.example.com/master.m3u8" {
 		t.Fatalf("unexpected m3u8 url: %s", info.M3U8URL)
 	}
-	if info.DASHURL != "https://media.example.com/dash/manifest.mpd" {
+	if info.DASHURL != "https://media.example.com/manifest.mpd" {
 		t.Fatalf("unexpected dash url: %s", info.DASHURL)
 	}
 	if info.CoverURL != "https://static.example.com/cover.jpg" {
@@ -63,5 +63,8 @@ func TestExtractVideoDataFindsStreamsAndMetadata(t *testing.T) {
 	}
 	if info.Streams[0].Quality != "1080p" || info.Streams[0].M3U8URL != "https://media.example.com/master.m3u8" {
 		t.Fatalf("unexpected first stream: %#v", info.Streams[0])
+	}
+	if info.Streams[1].Quality != "720p" || info.Streams[1].DASHURL != "https://media.example.com/manifest.mpd" {
+		t.Fatalf("unexpected second stream: %#v", info.Streams[1])
 	}
 }

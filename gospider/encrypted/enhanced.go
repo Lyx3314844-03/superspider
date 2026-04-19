@@ -70,12 +70,25 @@ func NewEnhancedCrawler(reverseServiceURL string) *EnhancedCrawler {
 func (ec *EnhancedCrawler) AutoReverseSignature(code, sampleInputs, sampleOutput string) (*SignatureReverseResult, error) {
 	fmt.Println("\n🔐 开始自动签名逆向分析...")
 
+	if sampleInputs != "" && sampleOutput != "" {
+		serviceResult, err := ec.reverseClient.ReverseSignature(code, sampleInputs, sampleOutput)
+		if err == nil && serviceResult.Success {
+			return &SignatureReverseResult{
+				Success:        true,
+				FunctionName:   serviceResult.FunctionName,
+				Input:          sampleInputs,
+				Output:         sampleOutput,
+				TotalFunctions: serviceResult.TotalFunctions,
+				SuccessCount:   serviceResult.SuccessCount,
+			}, nil
+		}
+	}
+
 	// 分析代码中的签名函数
 	result, err := ec.reverseClient.AnalyzeAST(code, []string{"crypto"})
 	if err != nil {
 		return nil, fmt.Errorf("AST 分析失败: %v", err)
 	}
-
 	signatureResult := &SignatureReverseResult{
 		Success: false,
 	}
@@ -235,6 +248,19 @@ func (ec *EnhancedCrawler) DecryptWebSocketMessage(encryptedMessage, key, algori
 func (ec *EnhancedCrawler) GenerateCanvasFingerprint() (*CanvasFingerprint, error) {
 	fmt.Println("\n🎨 生成 Canvas 指纹...")
 
+	canvas, err := ec.reverseClient.CanvasFingerprint()
+	if err == nil && canvas != nil && canvas.Success {
+		fingerprint := &CanvasFingerprint{
+			Success: true,
+			Hash:    canvas.Hash,
+		}
+		if canvas.Fingerprint != nil {
+			fingerprint.Fingerprint = fmt.Sprintf("%v", canvas.Fingerprint)
+		}
+		fmt.Println("  ✅ Canvas 指纹生成成功")
+		return fingerprint, nil
+	}
+
 	// 模拟 Canvas 指纹
 	fingerprint := &CanvasFingerprint{
 		Success:     true,
@@ -250,20 +276,20 @@ func (ec *EnhancedCrawler) GenerateCanvasFingerprint() (*CanvasFingerprint, erro
 // GetEnhancedHeaders 获取增强的请求头（包含 TLS 指纹信息）
 func (ec *EnhancedCrawler) GetEnhancedHeaders() map[string]string {
 	return map[string]string{
-		"User-Agent":                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Accept":                        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-		"Accept-Language":               "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-		"Accept-Encoding":               "gzip, deflate, br",
-		"Connection":                    "keep-alive",
-		"Upgrade-Insecure-Requests":     "1",
-		"Sec-Fetch-Dest":                "document",
-		"Sec-Fetch-Mode":                "navigate",
-		"Sec-Fetch-Site":                "none",
-		"Sec-Fetch-User":                "?1",
-		"Sec-Ch-Ua":                     `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`,
-		"Sec-Ch-Ua-Mobile":              "?0",
-		"Sec-Ch-Ua-Platform":            `"Windows"`,
-		"Sec-Ch-Ua-Full-Version":        `"120.0.0.0"`,
-		"Sec-Ch-Ua-Full-Version-List":   `"Not_A Brand";v="8.0.0.0", "Chromium";v="120.0.0.0", "Google Chrome";v="120.0.0.0"`,
+		"User-Agent":                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"Accept":                      "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+		"Accept-Language":             "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+		"Accept-Encoding":             "gzip, deflate, br",
+		"Connection":                  "keep-alive",
+		"Upgrade-Insecure-Requests":   "1",
+		"Sec-Fetch-Dest":              "document",
+		"Sec-Fetch-Mode":              "navigate",
+		"Sec-Fetch-Site":              "none",
+		"Sec-Fetch-User":              "?1",
+		"Sec-Ch-Ua":                   `"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`,
+		"Sec-Ch-Ua-Mobile":            "?0",
+		"Sec-Ch-Ua-Platform":          `"Windows"`,
+		"Sec-Ch-Ua-Full-Version":      `"120.0.0.0"`,
+		"Sec-Ch-Ua-Full-Version-List": `"Not_A Brand";v="8.0.0.0", "Chromium";v="120.0.0.0", "Google Chrome";v="120.0.0.0"`,
 	}
 }

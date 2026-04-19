@@ -1,46 +1,44 @@
-# PySpider 完整依赖 (安全更新 v3.0.1)
+# PySpider dependencies
 
-# 核心依赖
-requests>=2.32.4  # 修复 CVE-2024-35195
-
-# 异步支持
-aiohttp>=3.13.3  # 修复 CVE-2024-43107, CVE-2024-35195 等 16 个漏洞
+# Core
+requests>=2.32.4
+aiohttp>=3.13.3
 aiofiles>=24.1.0
 
-# 浏览器自动化
+# Browser automation
 playwright>=1.49.0
 selenium>=4.27.0
 webdriver-manager>=4.0.2
 
-# 数据处理
+# Data processing
 pydantic>=2.10.0
 pyyaml>=6.0.2
 jsonpath-ng>=1.7.0
 
-# 媒体处理
+# Media
 ffmpeg-python>=0.2.0
 
-# 分布式
+# Distributed
 redis>=5.2.0
 
-# API 和监控
-flask>=3.1.0  # 修复安全漏洞
-flask-cors>=6.0.0  # 修复 CORS 配置漏洞
+# API and monitoring
+flask>=3.1.0
+flask-cors>=6.0.0
 psutil>=6.1.0
 
-# AI 集成（可选）
+# AI integration (optional)
 openai>=1.58.0
 anthropic>=0.42.0
 
-# 开发依赖
+# Development
 pytest>=8.3.4
 pytest-cov>=6.0.0
 pytest-asyncio>=0.24.0
-black>=26.3.1  # 修复 CVE-2024-21503
+black>=26.3.1
 mypy>=1.14.0
 flake8>=7.1.0
 
-# 文档
+# Docs
 mkdocs>=1.6.0
 mkdocs-material>=9.5.0
 yt-dlp>=2023.12.30

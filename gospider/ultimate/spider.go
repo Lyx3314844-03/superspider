@@ -229,10 +229,10 @@ func (us *UltimateSpider) processTasks() {
 func (us *UltimateSpider) CrawlPage(task *CrawlTask) *CrawlResult {
 	startTime := time.Now()
 	result := &CrawlResult{
-		TaskID:     task.ID,
-		URL:        task.URL,
-		Success:    false,
-		AntiDetect: make(map[string]bool),
+		TaskID:         task.ID,
+		URL:            task.URL,
+		Success:        false,
+		AntiDetect:     make(map[string]bool),
 		ReverseRuntime: map[string]interface{}{},
 	}
 
@@ -302,13 +302,13 @@ func (us *UltimateSpider) CrawlPage(task *CrawlTask) *CrawlResult {
 	// 步骤 7: AI 提取
 	fmt.Println("  [7/8] AI 智能提取...")
 	data := us.aiExtract(task.URL)
-		if payload, ok := data.(map[string]interface{}); ok {
-			payload["_runtime"] = map[string]interface{}{
-				"browser":    browserResult,
-				"encryption": encryptionResult,
-				"reverse":    reverseRuntime,
-			}
+	if payload, ok := data.(map[string]interface{}); ok {
+		payload["_runtime"] = map[string]interface{}{
+			"browser":    browserResult,
+			"encryption": encryptionResult,
+			"reverse":    reverseRuntime,
 		}
+	}
 	result.Data = data
 	fmt.Println("  ✅ AI 提取完成")
 
@@ -493,16 +493,20 @@ func (us *UltimateSpider) collectReverseRuntime(url string) map[string]interface
 		Browser: "chrome",
 		Version: "120",
 	})
+	canvasFP, canvasErr := us.reverseClient.CanvasFingerprint()
+	crypto, cryptoErr := us.reverseClient.AnalyzeCrypto(string(body))
 
 	runtime := map[string]interface{}{
-		"success":         detectErr == nil && profileErr == nil && spoofErr == nil && tlsErr == nil,
-		"detect":          detect,
-		"profile":         profile,
-		"fingerprint_spoof": spoof,
-		"tls_fingerprint": tlsFP,
+		"success":            detectErr == nil && profileErr == nil && spoofErr == nil && tlsErr == nil && canvasErr == nil,
+		"detect":             detect,
+		"profile":            profile,
+		"fingerprint_spoof":  spoof,
+		"tls_fingerprint":    tlsFP,
+		"canvas_fingerprint": canvasFP,
+		"crypto_analysis":    crypto,
 	}
-	if detectErr != nil || profileErr != nil || spoofErr != nil || tlsErr != nil {
-		runtime["error"] = strings.TrimSpace(fmt.Sprintf("%v %v %v %v", detectErr, profileErr, spoofErr, tlsErr))
+	if detectErr != nil || profileErr != nil || spoofErr != nil || tlsErr != nil || canvasErr != nil || cryptoErr != nil {
+		runtime["error"] = strings.TrimSpace(fmt.Sprintf("%v %v %v %v %v %v", detectErr, profileErr, spoofErr, tlsErr, canvasErr, cryptoErr))
 	}
 	return runtime
 }

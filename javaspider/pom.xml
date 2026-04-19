@@ -35,6 +35,11 @@
         <sqlite.jdbc.version>3.45.3.0</sqlite.jdbc.version>
         <lombok.version>1.18.30</lombok.version>
         <webdrivermanager.version>5.7.0</webdrivermanager.version>
+        <feature.ai>true</feature.ai>
+        <feature.browser>true</feature.browser>
+        <feature.distributed>true</feature.distributed>
+        <feature.media>true</feature.media>
+        <feature.antiBot>true</feature.antiBot>
     </properties>
 
     <dependencies>
@@ -137,6 +142,18 @@
             <version>5.1.0</version>
         </dependency>
 
+        <!-- Native broker clients -->
+        <dependency>
+            <groupId>com.rabbitmq</groupId>
+            <artifactId>amqp-client</artifactId>
+            <version>5.21.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>3.8.0</version>
+        </dependency>
+
         <!-- OkHttp for HTTP Client -->
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
@@ -219,6 +236,12 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -281,6 +304,49 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>lite</id>
+            <properties>
+                <feature.ai>false</feature.ai>
+                <feature.browser>false</feature.browser>
+                <feature.distributed>false</feature.distributed>
+                <feature.media>true</feature.media>
+                <feature.antiBot>true</feature.antiBot>
+            </properties>
+        </profile>
+        <profile>
+            <id>ai</id>
+            <properties>
+                <feature.ai>true</feature.ai>
+            </properties>
+        </profile>
+        <profile>
+            <id>browser</id>
+            <properties>
+                <feature.browser>true</feature.browser>
+                <feature.media>true</feature.media>
+                <feature.antiBot>true</feature.antiBot>
+            </properties>
+        </profile>
+        <profile>
+            <id>distributed</id>
+            <properties>
+                <feature.distributed>true</feature.distributed>
+            </properties>
+        </profile>
+        <profile>
+            <id>full</id>
+            <properties>
+                <feature.ai>true</feature.ai>
+                <feature.browser>true</feature.browser>
+                <feature.distributed>true</feature.distributed>
+                <feature.media>true</feature.media>
+                <feature.antiBot>true</feature.antiBot>
+            </properties>
+        </profile>
+    </profiles>
 
     <licenses>
         <license>

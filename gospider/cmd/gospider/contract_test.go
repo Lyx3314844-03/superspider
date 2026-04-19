@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,12 +41,19 @@ func captureStdout(t *testing.T, fn func()) string {
 		os.Stdout = original
 	}()
 
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, reader)
+		done <- buf.String()
+	}()
+
 	fn()
 
 	_ = writer.Close()
-	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(reader)
-	return buf.String()
+	output := <-done
+	_ = reader.Close()
+	return output
 }
 
 func TestConfigCommandWritesSharedContract(t *testing.T) {

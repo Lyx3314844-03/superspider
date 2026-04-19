@@ -1,46 +1,41 @@
 # JavaSpider
 
-JavaSpider 是 SuperSpider 中最强调浏览器工作流、Maven 打包和企业 Java 生态集成的爬虫框架。
+JavaSpider is the SuperSpider runtime that emphasizes browser workflows, Maven/JAR packaging, and enterprise Java integration.
 
-## Why JavaSpider
+## Core Functions
 
-如果你更关心：
+- Maven / JAR packaging
+- browser workflows with Selenium / Playwright helper paths
+- scrapy-style compatibility
+- audit, connector, session, anti-bot, workflow replay, and media parsing
+- enterprise-friendly execution and delivery flow
 
-- Maven / JAR 打包
-- 浏览器工作流、Selenium / Playwright 辅助路径
-- 审计链、连接器和企业系统接入
+## Concrete Media Coverage
 
-那 JavaSpider 会是这四个框架里最贴近企业 Java 环境的一支。
+- HLS / DASH parsing and download
+- FFmpeg-assisted media processing
+- DRM inspection
+- platform parsing for YouTube, Bilibili, IQIYI, Tencent Video, and Youku
 
-## Standout Capabilities
+## Capability Range
 
-- Maven / JAR 打包模型
-- 浏览器工作流与 Selenium / Playwright 辅助路径
-- scrapy 风格兼容接口
-- 审计、连接器、会话与反爬能力
-- 工作流回放、媒体解析和流程化执行
+- from Maven builds to enterprise Java release pipelines
+- from browser automation to workflow-driven execution
+- from audit trails to internal system integration
 
-## Install Versions
+## Install Packages
 
-Windows:
+- Windows: `..\scripts\windows\install-javaspider.bat`
+- Linux: `../scripts/linux/install-javaspider.sh`
+- macOS: `../scripts/macos/install-javaspider.sh`
 
-- `..\scripts\windows\install-javaspider.bat`
+## Install Output
 
-Linux:
+- `javaspider/target`
+- Maven build artifacts and JAR-oriented delivery output
 
-- `../scripts/linux/install-javaspider.sh`
+## Best Fit
 
-macOS:
-
-- `../scripts/macos/install-javaspider.sh`
-
-## Typical Output
-
-- 生成 `javaspider/target`
-- 适合进入现有 Maven 构建链和 JAR 交付流程
-
-## Quick Start
-
-```bash
-mvn -q -DskipTests package
-```
+- Java / Maven engineering environments
+- browser-heavy automation workflows
+- enterprise integration and audit-conscious execution

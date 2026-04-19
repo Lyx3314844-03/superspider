@@ -4,6 +4,7 @@ import java.net.InetAddress;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 /**
  * URL 安全验证工具
@@ -13,18 +14,18 @@ import java.util.List;
  */
 public class UrlValidator {
     
-    // 允许的域名白名单
-    private static final List<String> ALLOWED_DOMAINS = Arrays.asList(
-        "2captcha.com",
-        "api.anti-captcha.com",
-        "anti-captcha.com",
-        "localhost",
-        "127.0.0.1"
-    );
-    
     // 禁止的协议
     private static final List<String> BLOCKED_PROTOCOLS = Arrays.asList(
         "file", "ftp", "gopher", "dict", "ldap", "netdoc"
+    );
+
+    private static final Set<String> BLOCKED_HOSTS = Set.of(
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+        "metadata.google.internal",
+        "169.254.169.254",
+        "168.63.129.16"
     );
     
     /**
@@ -33,6 +34,10 @@ public class UrlValidator {
      * @return 是否安全
      */
     public static boolean isValidUrl(String urlString) {
+        return isValidUrl(urlString, false);
+    }
+
+    public static boolean isValidUrl(String urlString, boolean allowPrivateHosts) {
         if (urlString == null || urlString.isEmpty()) {
             return false;
         }
@@ -46,14 +51,16 @@ public class UrlValidator {
             if (!isAllowedProtocol(protocol)) {
                 return false;
             }
-            
-            // 检查域名白名单
-            if (!isAllowedDomain(host)) {
+
+            if (host == null || host.isBlank()) {
                 return false;
             }
-            
+            if (!allowPrivateHosts && isBlockedHost(host)) {
+                return false;
+            }
+
             // 检查是否为内网地址
-            if (isInternalHost(host)) {
+            if (!allowPrivateHosts && isInternalHost(host)) {
                 return false;
             }
             
@@ -82,23 +89,8 @@ public class UrlValidator {
         return !BLOCKED_PROTOCOLS.contains(lowerProtocol);
     }
     
-    /**
-     * 检查域名是否在白名单中
-     */
-    private static boolean isAllowedDomain(String host) {
-        if (host == null || host.isEmpty()) {
-            return false;
-        }
-        
-        String lowerHost = host.toLowerCase();
-        
-        for (String allowed : ALLOWED_DOMAINS) {
-            if (lowerHost.equals(allowed) || lowerHost.endsWith("." + allowed)) {
-                return true;
-            }
-        }
-        
-        return false;
+    private static boolean isBlockedHost(String host) {
+        return BLOCKED_HOSTS.contains(host.toLowerCase());
     }
     
     /**
@@ -190,7 +182,11 @@ public class UrlValidator {
      * @throws SecurityException 如果 URL 不安全
      */
     public static String validateAndNormalize(String urlString) throws SecurityException {
-        if (!isValidUrl(urlString)) {
+        return validateAndNormalize(urlString, false);
+    }
+
+    public static String validateAndNormalize(String urlString, boolean allowPrivateHosts) throws SecurityException {
+        if (!isValidUrl(urlString, allowPrivateHosts)) {
             throw new SecurityException("Invalid or unsafe URL: " + urlString);
         }
         

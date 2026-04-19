@@ -726,14 +726,48 @@ impl UltimateSpider {
             .await
             .ok();
         let tls = reverse_client.tls_fingerprint("chrome", "120").await.ok();
+        let canvas = reverse_client.canvas_fingerprint().await.ok();
+        let crypto = reverse_client
+            .analyze_crypto(&Self::extract_script_sample(&request.html))
+            .await
+            .ok();
 
         serde_json::json!({
-            "success": detect.is_some() && profile.is_some() && spoof.is_some() && tls.is_some(),
+            "success": detect.is_some() && profile.is_some() && spoof.is_some() && tls.is_some() && canvas.is_some(),
             "detect": detect,
             "profile": profile,
             "fingerprint_spoof": spoof,
             "tls_fingerprint": tls,
+            "canvas_fingerprint": canvas,
+            "crypto_analysis": crypto,
         })
+    }
+
+    fn extract_script_sample(html: &str) -> String {
+        let lowered = html.to_lowercase();
+        let mut start = 0_usize;
+        let mut parts = Vec::new();
+        while let Some(open_rel) = lowered[start..].find("<script") {
+            let open = start + open_rel;
+            let Some(tag_end_rel) = lowered[open..].find('>') else {
+                break;
+            };
+            let tag_end = open + tag_end_rel;
+            let Some(close_rel) = lowered[tag_end..].find("</script>") else {
+                break;
+            };
+            let close = tag_end + close_rel;
+            let snippet = html[tag_end + 1..close].trim();
+            if !snippet.is_empty() {
+                parts.push(snippet.to_string());
+            }
+            start = close + "</script>".len();
+        }
+        let joined = parts.join("\n");
+        if !joined.is_empty() {
+            return joined.chars().take(32_000).collect();
+        }
+        html.chars().take(32_000).collect()
     }
 
     async fn attempt_captcha_recovery(

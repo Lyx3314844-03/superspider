@@ -105,6 +105,9 @@ fn rust_cli_ultimate_command_runs_against_mock_services() {
             ("POST", "/api/tls/fingerprint") => {
                 r#"{"success":true,"browser":"chrome","version":"120","fingerprint":{"ja3":"mock-ja3"}}"#.to_string()
             }
+            ("POST", "/api/canvas/fingerprint") => {
+                r#"{"success":true,"hash":"mock-canvas"}"#.to_string()
+            }
             ("POST", "/api/browser/simulate") => {
                 r#"{"success":true,"result":{"ok":true},"cookies":"session=1","error":null}"#.to_string()
             }
@@ -187,6 +190,10 @@ fn rust_cli_ultimate_command_runs_against_mock_services() {
     assert!(stdout.contains("\"result_count\": 1"));
     assert!(stdout.contains("\"reverse\""));
     assert!(stdout.contains("mock-ja3"));
+    assert!(stdout.contains("mock-canvas"));
+    assert!(stdout.contains("\"canvas_fingerprint\""));
+    assert!(stdout.contains("\"crypto_analysis\""));
+    assert!(stdout.contains("AES"));
     let checkpoint_file = checkpoint_dir.join("task_0.json");
     assert!(
         checkpoint_file.exists(),

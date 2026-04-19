@@ -59,6 +59,22 @@ def test_collect_reverse_runtime_aggregates_reverse_capabilities(monkeypatch):
             "fingerprint": {"ja3": "mock-ja3"},
         },
     )
+    monkeypatch.setattr(
+        spider.reverse_client,
+        "canvas_fingerprint",
+        lambda: {
+            "success": True,
+            "hash": "mock-canvas",
+        },
+    )
+    monkeypatch.setattr(
+        spider.reverse_client,
+        "analyze_crypto",
+        lambda code: {
+            "success": True,
+            "cryptoTypes": [{"name": "AES"}],
+        },
+    )
 
     payload = spider.collect_reverse_runtime("https://example.com")
 
@@ -67,3 +83,5 @@ def test_collect_reverse_runtime_aggregates_reverse_capabilities(monkeypatch):
     assert payload["profile"]["level"] == "high"
     assert payload["fingerprint_spoof"]["platform"] == "windows"
     assert payload["tls_fingerprint"]["fingerprint"]["ja3"] == "mock-ja3"
+    assert payload["canvas_fingerprint"]["hash"] == "mock-canvas"
+    assert payload["crypto_analysis"]["cryptoTypes"][0]["name"] == "AES"

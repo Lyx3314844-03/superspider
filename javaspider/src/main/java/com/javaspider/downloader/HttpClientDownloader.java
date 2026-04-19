@@ -1,5 +1,6 @@
 package com.javaspider.downloader;
 
+import com.javaspider.antibot.UrlValidator;
 import com.javaspider.core.Request;
 import com.javaspider.core.Site;
 import com.javaspider.core.Page;
@@ -155,8 +156,12 @@ public class HttpClientDownloader implements Downloader {
     }
 
     private HttpRequest buildRequest(Request request, Site site, String method, String userAgent) {
+        String safeUrl = UrlValidator.validateAndNormalize(
+            request.getUrl(),
+            Boolean.TRUE.equals(request.getMeta().get("allow_private_network"))
+        );
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                .uri(URI.create(request.getUrl()))
+                .uri(URI.create(safeUrl))
                 .timeout(Duration.ofMillis(site != null ? site.getTimeout() : 30_000));
 
         Map<String, String> headers = new HashMap<>();

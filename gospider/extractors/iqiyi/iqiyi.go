@@ -24,13 +24,13 @@ type StreamInfo struct {
 
 // VideoInfo 爱奇艺视频信息
 type VideoInfo struct {
-	VideoID        string   `json:"video_id"`
-	Title          string   `json:"title"`
-	M3U8URL        string   `json:"m3u8_url"`
-	DASHURL        string   `json:"dash_url"`
-	CoverURL       string   `json:"cover_url"`
-	Duration       int      `json:"duration"`
-	QualityOptions []string `json:"quality_options"`
+	VideoID        string       `json:"video_id"`
+	Title          string       `json:"title"`
+	M3U8URL        string       `json:"m3u8_url"`
+	DASHURL        string       `json:"dash_url"`
+	CoverURL       string       `json:"cover_url"`
+	Duration       int          `json:"duration"`
+	QualityOptions []string     `json:"quality_options"`
 	Streams        []StreamInfo `json:"streams"`
 }
 
@@ -111,8 +111,15 @@ func (e *IqiyiExtractor) extractVideoData(html string, info *VideoInfo) {
 		info.M3U8URL = matches[1]
 	}
 
-	if matches := regexp.MustCompile(`(https?://[^"\s]+/dash[^"\s]*)`).FindStringSubmatch(html); len(matches) >= 2 {
-		info.DASHURL = matches[1]
+	dashPatterns := []string{
+		`"(?:dash|dash_url|dashUrl|mpd|mpd_url|mpdUrl)"\s*:\s*"(https?://[^"]+)"`,
+		`(https?://[^"\s]+(?:\.mpd|/dash[^"\s]*)[^"\s]*)`,
+	}
+	for _, pattern := range dashPatterns {
+		if matches := regexp.MustCompile(pattern).FindStringSubmatch(html); len(matches) >= 2 {
+			info.DASHURL = strings.TrimSpace(matches[1])
+			break
+		}
 	}
 
 	if matches := regexp.MustCompile(`(?:property|name)=["']og:image["'][^>]+content=["']([^"']+)["']`).FindStringSubmatch(html); len(matches) >= 2 {
@@ -171,8 +178,8 @@ func (e *IqiyiExtractor) extractVideoData(html string, info *VideoInfo) {
 
 func (e *IqiyiExtractor) extractStreamCandidates(html string) []StreamInfo {
 	qualities := regexp.MustCompile(`"quality"\s*:\s*"([^"]+)"`).FindAllStringSubmatch(html, -1)
-	m3u8s := regexp.MustCompile(`"(?:m3u8|hls(?:_url)?)"\s*:\s*"(https?://[^"]+)"`).FindAllStringSubmatch(html, -1)
-	dashes := regexp.MustCompile(`"(?:dash|dash_url|mpd(?:_url)?)"\s*:\s*"(https?://[^"]+)"`).FindAllStringSubmatch(html, -1)
+	m3u8s := regexp.MustCompile(`"(?:m3u8|m3u8Url|hls(?:_url|Url)?)"\s*:\s*"(https?://[^"]+)"`).FindAllStringSubmatch(html, -1)
+	dashes := regexp.MustCompile(`"(?:dash|dash_url|dashUrl|mpd(?:_url|Url)?)"\s*:\s*"(https?://[^"]+)"`).FindAllStringSubmatch(html, -1)
 
 	maxLen := len(qualities)
 	if len(m3u8s) > maxLen {

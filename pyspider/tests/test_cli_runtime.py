@@ -27,6 +27,33 @@ class PySpiderCLITest(unittest.TestCase):
         )
         self.assertEqual(payload["extract"]["title"], "Legacy Demo")
 
+    def test_run_command_supports_media_runtime_dispatch(self):
+        payload = self._run(
+            "run",
+            "https://www.iqiyi.com/v_19rrdemo.html",
+            "--runtime",
+            "media",
+            "--content",
+            """
+            <html><head><title>示例爱奇艺 - 爱奇艺</title></head><body>
+              <meta property="og:image" content="https://img.example.com/iqiyi-cover.jpg" />
+              <script>
+                {
+                  "duration": 88,
+                  "m3u8Url": "https://media.example.com/master.m3u8",
+                  "dashUrl": "https://media.example.com/manifest.mpd"
+                }
+              </script>
+            </body></html>
+            """,
+        )
+
+        self.assertEqual(payload["extract"]["platform"], "iqiyi")
+        self.assertEqual(payload["extract"]["video_id"], "19rrdemo")
+        self.assertEqual(
+            payload["extract"]["m3u8_url"], "https://media.example.com/master.m3u8"
+        )
+
     def test_job_command_runs_normalized_spec(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             job_path = Path(tmpdir) / "job.json"
@@ -112,23 +139,70 @@ class PySpiderCLITest(unittest.TestCase):
             payload = self._run("async-job", "--file", str(job_path))
             self.assertEqual(payload["extract"]["title"], "Async Demo")
 
+    def test_async_job_command_dispatches_media_runtime(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            job_path = Path(tmpdir) / "job.json"
+            job_path.write_text(
+                json.dumps(
+                    {
+                        "name": "py-media-async-job",
+                        "runtime": "media",
+                        "target": {"url": "https://v.qq.com/x/page/demo123.html"},
+                        "extract": [{"field": "title", "type": "ai"}],
+                        "output": {"format": "json"},
+                        "metadata": {
+                            "content": """
+                            <html><head><title>示例腾讯视频 - 腾讯视频</title></head><body>
+                              <script>
+                                {
+                                  "duration": 45,
+                                  "pic": "https://img.example.com/tencent-cover.jpg",
+                                  "url": "https://media.example.com/tencent.mp4"
+                                }
+                              </script>
+                            </body></html>
+                            """
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            payload = self._run("async-job", "--file", str(job_path))
+
+        self.assertEqual(payload["runtime"], "media")
+        self.assertEqual(payload["extract"]["platform"], "tencent")
+        self.assertEqual(payload["extract"]["video_id"], "demo123")
+        self.assertEqual(
+            payload["extract"]["mp4_url"], "https://media.example.com/tencent.mp4"
+        )
+
     def test_capabilities_command_lists_integrated_modules(self):
         payload = self._run("capabilities")
         self.assertIn("runtime.async_runtime", payload["modules"])
         self.assertIn("web.app", payload["modules"])
         self.assertIn("api.server", payload["modules"])
         self.assertIn("core.curlconverter", payload["modules"])
+        self.assertIn("workflow.WorkflowRunner", payload["modules"])
+        self.assertIn("events.FileEventBus", payload["modules"])
+        self.assertIn("connectors.FileConnector", payload["modules"])
         self.assertIn("ai", payload["runtimes"])
         self.assertIn("ultimate", payload["entrypoints"])
         self.assertIn("scrapy", payload["entrypoints"])
         self.assertIn("curl", payload["entrypoints"])
         self.assertIn("web", payload["entrypoints"])
+        self.assertIn("workflow", payload["entrypoints"])
         self.assertIn("jobdir", payload["entrypoints"])
         self.assertIn("http-cache", payload["entrypoints"])
         self.assertIn("console", payload["entrypoints"])
         self.assertIn("operator_products", payload)
+        self.assertIn("feature_gates", payload)
+        self.assertIn("browser_compatibility", payload)
         self.assertIn("node-reverse", payload["entrypoints"])
         self.assertIn("anti-bot", payload["entrypoints"])
+        self.assertIn("queue_backends", payload["operator_products"])
+        self.assertIn("crawlee_bridge", payload["operator_products"])
+        self.assertIn("connectors", payload["operator_products"])
 
     def test_node_reverse_health_command_uses_framework_cli_surface(self):
         with patch(
@@ -210,6 +284,131 @@ class PySpiderCLITest(unittest.TestCase):
         self.assertEqual(payload["version"], "120")
         self.assertEqual(payload["fingerprint"]["ja3"], "mock-ja3")
 
+    def test_node_reverse_canvas_fingerprint_command_uses_framework_cli_surface(self):
+        with patch(
+            "pyspider.node_reverse.client.NodeReverseClient.canvas_fingerprint",
+            return_value={"success": True, "hash": "mock-canvas"},
+        ):
+            payload = self._run("node-reverse", "canvas-fingerprint")
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["hash"], "mock-canvas")
+
+    def test_node_reverse_signature_reverse_command_uses_framework_cli_surface(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            code_path = Path(tmpdir) / "sign.js"
+            code_path.write_text("function sign(s){return s}", encoding="utf-8")
+            with patch(
+                "pyspider.node_reverse.client.NodeReverseClient.reverse_signature",
+                return_value={"success": True, "functionName": "sign"},
+            ):
+                payload = self._run(
+                    "node-reverse",
+                    "signature-reverse",
+                    "--code-file",
+                    str(code_path),
+                    "--input-data",
+                    "left",
+                    "--expected-output",
+                    "left",
+                )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["functionName"], "sign")
+
+    def test_node_reverse_ast_command_uses_framework_cli_surface(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            code_path = Path(tmpdir) / "bundle.js"
+            code_path.write_text("eval(function(p,a,c,k,e,d){return p;})", encoding="utf-8")
+            with patch(
+                "pyspider.node_reverse.client.NodeReverseClient.analyze_ast",
+                return_value={
+                    "success": True,
+                    "results": {"obfuscation": [{"type": "eval-packer"}]},
+                },
+            ):
+                payload = self._run(
+                    "node-reverse",
+                    "ast",
+                    "--code-file",
+                    str(code_path),
+                    "--analysis",
+                    "obfuscation,anti-debug",
+                )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["results"]["obfuscation"][0]["type"], "eval-packer")
+
+    def test_node_reverse_webpack_command_uses_framework_cli_surface(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            code_path = Path(tmpdir) / "webpack.js"
+            code_path.write_text("__webpack_require__(1)", encoding="utf-8")
+            with patch(
+                "pyspider.node_reverse.client.NodeReverseClient.analyze_webpack",
+                return_value={
+                    "success": True,
+                    "entrypoints": ["main"],
+                },
+            ):
+                payload = self._run(
+                    "node-reverse",
+                    "webpack",
+                    "--code-file",
+                    str(code_path),
+                )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["entrypoints"], ["main"])
+
+    def test_node_reverse_function_call_command_uses_framework_cli_surface(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            code_path = Path(tmpdir) / "call.js"
+            code_path.write_text("function sign(a,b){return a+'|'+b;}", encoding="utf-8")
+            with patch(
+                "pyspider.node_reverse.client.NodeReverseClient.call_function",
+                return_value={
+                    "success": True,
+                    "result": "left|right",
+                },
+            ):
+                payload = self._run(
+                    "node-reverse",
+                    "function-call",
+                    "--code-file",
+                    str(code_path),
+                    "--function-name",
+                    "sign",
+                    "--arg",
+                    "left",
+                    "--arg",
+                    "right",
+                )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["result"], "left|right")
+
+    def test_node_reverse_browser_simulate_command_uses_framework_cli_surface(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            code_path = Path(tmpdir) / "browser.js"
+            code_path.write_text("navigator.userAgent", encoding="utf-8")
+            with patch(
+                "pyspider.node_reverse.client.NodeReverseClient.simulate_browser",
+                return_value={
+                    "success": True,
+                    "result": {"ok": True},
+                    "cookies": "session=1",
+                },
+            ):
+                payload = self._run(
+                    "node-reverse",
+                    "browser-simulate",
+                    "--code-file",
+                    str(code_path),
+                )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["cookies"], "session=1")
+
     def test_anti_bot_headers_command_uses_framework_cli_surface(self):
         payload = self._run("anti-bot", "headers", "--profile", "cloudflare")
 
@@ -241,6 +440,26 @@ class PySpiderCLITest(unittest.TestCase):
             ), patch(
                 "pyspider.node_reverse.client.NodeReverseClient.generate_tls_fingerprint",
                 return_value={"success": True, "fingerprint": {"ja3": "mock-ja3"}},
+            ), patch(
+                "pyspider.node_reverse.client.NodeReverseClient.canvas_fingerprint",
+                return_value={"success": True, "hash": "mock-canvas"},
+            ), patch(
+                "pyspider.node_reverse.client.NodeReverseClient.analyze_crypto",
+                return_value={
+                    "success": True,
+                    "cryptoTypes": [{"name": "AES"}],
+                    "analysis": {
+                        "keyFlowChains": [
+                            {
+                                "variable": "sessionKey",
+                                "source": {"kind": "storage.localStorage", "expression": "localStorage.getItem('session-key')"},
+                                "derivations": [{"variable": "derivedKey", "kind": "hash", "expression": "sha256(sessionKey)"}],
+                                "sinks": ["crypto.subtle.encrypt"],
+                                "confidence": 0.87,
+                            }
+                        ]
+                    },
+                },
             ):
                 payload = self._run("profile-site", "--html-file", str(html_path))
 
@@ -249,6 +468,10 @@ class PySpiderCLITest(unittest.TestCase):
         self.assertEqual(payload["page_type"], "detail")
         self.assertIn("title", payload["candidate_fields"])
         self.assertEqual(payload["reverse"]["profile"]["level"], "medium")
+        self.assertEqual(payload["reverse"]["canvas_fingerprint"]["hash"], "mock-canvas")
+        self.assertEqual(payload["reverse"]["crypto_analysis"]["cryptoTypes"][0]["name"], "AES")
+        self.assertEqual(payload["reverse_focus"]["priority_chain"]["variable"], "sessionKey")
+        self.assertIn("crypto.subtle.encrypt", payload["reverse_focus"]["summary"])
 
     def test_sitemap_discover_command_reads_local_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -513,6 +736,7 @@ class PySpiderCLITest(unittest.TestCase):
             control_plane = output_path.parent / "control-plane"
             self.assertTrue((control_plane / "results.jsonl").exists())
             self.assertTrue((control_plane / "py-json-extract-audit.jsonl").exists())
+            self.assertTrue((control_plane / "py-json-extract-connector.jsonl").exists())
 
 
 if __name__ == "__main__":

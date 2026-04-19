@@ -1,87 +1,70 @@
-#!/bin/bash
-# RustSpider 构建脚本
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
 
 echo "========================================"
-echo "RustSpider 构建工具"
+echo "RustSpider Build Tool"
 echo "========================================"
 
-# 检查 Rust
-if ! command -v rustc &> /dev/null; then
-    echo "[错误] 未找到 Rust，请安装 Rust"
-    echo "访问 https://rustup.rs/ 安装"
-    exit 1
-fi
+command -v rustc >/dev/null || { echo "[ERROR] Rust not found. Install from https://rustup.rs/"; exit 1; }
+command -v cargo >/dev/null || { echo "[ERROR] Cargo not found."; exit 1; }
 
-# 检查 Cargo
-if ! command -v cargo &> /dev/null; then
-    echo "[错误] 未找到 Cargo"
-    exit 1
-fi
-
-# 解析参数
 COMMAND=${1:-build}
 
 case $COMMAND in
     build)
-        echo "[信息] 开始构建..."
+        echo "[INFO] Building release binary..."
         cargo build --release
-        if [ $? -ne 0 ]; then
-            echo "[错误] 构建失败"
-            exit 1
-        fi
-        echo "[成功] 构建完成"
+        echo "[OK] Build complete"
         ;;
     test)
-        echo "[信息] 运行测试..."
+        echo "[INFO] Running tests..."
         cargo test
-        if [ $? -ne 0 ]; then
-            echo "[错误] 测试失败"
-            exit 1
-        fi
-        echo "[成功] 测试通过"
+        echo "[OK] Tests passed"
         ;;
     run)
-        echo "[信息] 运行程序..."
-        cargo run -- "$@"
+        echo "[INFO] Running..."
+        cargo run -- "${@:2}"
         ;;
     clean)
-        echo "[信息] 清理..."
+        echo "[INFO] Cleaning..."
         cargo clean
-        echo "[成功] 清理完成"
+        echo "[OK] Clean complete"
         ;;
     check)
-        echo "[信息] 代码检查..."
+        echo "[INFO] Checking code..."
         cargo check
         cargo clippy -- -D warnings
         cargo fmt --check
         ;;
     format)
-        echo "[信息] 格式化代码..."
+        echo "[INFO] Formatting code..."
         cargo fmt
         ;;
     install)
-        echo "[信息] 安装..."
+        echo "[INFO] Installing..."
         cargo install --path .
         ;;
     docker)
-        echo "[信息] 构建 Docker 镜像..."
+        echo "[INFO] Building Docker image..."
         docker build -t rustspider:latest -f docker/Dockerfile .
-        echo "[成功] Docker 镜像构建完成"
+        echo "[OK] Docker image built"
         ;;
     help|*)
         echo ""
-        echo "用法：./build.sh [命令]"
+        echo "Usage: ./build.sh [command]"
         echo ""
-        echo "命令:"
-        echo "  build    - 构建项目 (默认)"
-        echo "  test     - 运行测试"
-        echo "  run      - 运行程序"
-        echo "  clean    - 清理"
-        echo "  check    - 代码检查"
-        echo "  format   - 格式化代码"
-        echo "  install  - 安装"
-        echo "  docker   - 构建 Docker 镜像"
-        echo "  help     - 显示帮助"
+        echo "Commands:"
+        echo "  build    - Build release binary (default)"
+        echo "  test     - Run tests"
+        echo "  run      - Run the program"
+        echo "  clean    - Clean build artifacts"
+        echo "  check    - Run code checks (clippy + fmt)"
+        echo "  format   - Format code"
+        echo "  install  - Install binary"
+        echo "  docker   - Build Docker image"
+        echo "  help     - Show this help"
         echo ""
         ;;
 esac

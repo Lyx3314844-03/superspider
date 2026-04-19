@@ -15,7 +15,7 @@ class AIExtractor:
         self,
         api_key: str,
         api_url: str = "https://api.openai.com/v1/chat/completions",
-        model: str = "gpt-3.5-turbo",
+        model: str = "gpt-5.2",
         timeout: int = 30,
     ):
         self.api_key = api_key

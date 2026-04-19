@@ -31,7 +31,10 @@ class AIExtractor:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.provider = self.config.get("provider", "openai")
-        self.model = self.config.get("model", "gpt-4")
+        self.model = self.config.get(
+            "model",
+            "claude-sonnet-4-20250514" if self.provider == "anthropic" else "gpt-5.2",
+        )
         self.api_key = self.config.get("api_key", os.getenv("OPENAI_API_KEY"))
         self.base_url = self.config.get("base_url", "https://api.openai.com/v1")
         self.max_tokens = self.config.get("max_tokens", 4000)

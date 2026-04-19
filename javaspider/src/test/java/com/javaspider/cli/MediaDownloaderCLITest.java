@@ -1,9 +1,13 @@
 package com.javaspider.cli;
 
+import com.javaspider.media.parser.VideoInfo;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
+import java.io.OutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -102,6 +106,64 @@ class MediaDownloaderCLITest {
         assertTrue(output.contains("\"details\":\"missing or unusable at missing-ffmpeg-for-tests"));
         assertTrue(output.contains("\"summary\":\"failed\""));
         assertEquals('}', output.charAt(output.length() - 1));
+    }
+
+    @Test
+    void downloadCommandAudioOnlyReportsMissingFfmpegWhenTranscodeIsRequired() {
+        String output = captureStdoutWithProperty(
+            MediaDownloaderCLI.FFMPEG_PATH_PROPERTY,
+            "missing-ffmpeg-for-tests",
+            () -> MediaDownloaderCLI.main(new String[]{"download", "https://example.com/demo.mp4", "--audio-only"})
+        );
+
+        assertTrue(output.contains("Audio only: true"));
+        assertTrue(output.contains("FFmpeg dependency check failed for audio-only."));
+        assertTrue(output.contains("missing or unusable at missing-ffmpeg-for-tests"));
+    }
+
+    @Test
+    void drmCommandDetectsProtectedM3u8FromInlineContent() {
+        String output = captureStdout(() ->
+            MediaDownloaderCLI.main(new String[]{
+                "drm",
+                "--content",
+                "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"https://license.example.com/widevine\"\n#EXTINF:4.0,\nsegment.ts"
+            })
+        );
+
+        assertTrue(output.contains("\"command\":\"drm\""));
+        assertTrue(output.contains("\"protected\":true"));
+        assertTrue(output.contains("\"drm_type\":\"WIDEVINE\""));
+        assertTrue(output.contains("license.example.com/widevine"));
+    }
+
+    @Test
+    void parseVideoInfoFallsBackToGenericParserForYoukuStyleUrl() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/youku/v_show/id_Xdemo=.html", exchange -> {
+            byte[] body = """
+                <html><head><title>Fixture Youku - 优酷</title></head><body>
+                  <script>{"m3u8Url":"https://media.example.com/youku/master.m3u8"}</script>
+                </body></html>
+                """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html; charset=utf-8");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/youku/v_show/id_Xdemo=.html";
+            VideoInfo info = MediaDownloaderCLI.parseVideoInfo(url, true);
+
+            assertEquals("Youku", info.getPlatform());
+            assertEquals("Fixture Youku - 优酷", info.getTitle());
+            assertTrue(info.getVideoUrls().contains("https://media.example.com/youku/master.m3u8"));
+        } finally {
+            server.stop(0);
+        }
     }
 
     private String captureStdout(Runnable runnable) {

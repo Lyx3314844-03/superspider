@@ -78,6 +78,15 @@ _EXPORTS = {
     "RuntimeSessionPool": ("pyspider.core.contracts", "SessionPool"),
     "ProxyPolicy": ("pyspider.core.contracts", "ProxyPolicy"),
     "IncrementalCrawler": ("pyspider.core.incremental", "IncrementalCrawler"),
+    "AuditEvent": ("pyspider.runtime.audit", "AuditEvent"),
+    "MemoryAuditTrail": ("pyspider.runtime.audit", "MemoryAuditTrail"),
+    "FileAuditTrail": ("pyspider.runtime.audit", "FileAuditTrail"),
+    "CompositeAuditTrail": ("pyspider.runtime.audit", "CompositeAuditTrail"),
+    "Event": ("pyspider.events", "Event"),
+    "EventBus": ("pyspider.events", "EventBus"),
+    "TaskLifecyclePayload": ("pyspider.events", "TaskLifecyclePayload"),
+    "TaskResultPayload": ("pyspider.events", "TaskResultPayload"),
+    "TaskDeletedPayload": ("pyspider.events", "TaskDeletedPayload"),
 }
 
 __all__ = [
@@ -107,6 +116,15 @@ __all__ = [
     "RuntimeSessionPool",
     "ProxyPolicy",
     "IncrementalCrawler",
+    "AuditEvent",
+    "MemoryAuditTrail",
+    "FileAuditTrail",
+    "CompositeAuditTrail",
+    "Event",
+    "EventBus",
+    "TaskLifecyclePayload",
+    "TaskResultPayload",
+    "TaskDeletedPayload",
 ]
 
 

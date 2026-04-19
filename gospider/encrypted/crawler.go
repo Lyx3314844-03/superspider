@@ -203,6 +203,19 @@ func (c *EncryptedSiteCrawler) analyzeEncryption(html string) EncryptionInfo {
 	if strings.Contains(html, "webpack") {
 		info.Patterns = append(info.Patterns, "webpack")
 	}
+	lowered := strings.ToLower(html)
+	for _, marker := range []string{
+		"cryptojs.aes", "cryptojs.des", "cryptojs.tripledes", "cryptojs.sha256", "cryptojs.sha512",
+		"cryptojs.hmacsha256", "cryptojs.pbkdf2", "createcipheriv", "createdecipheriv", "createhmac",
+		"createhash", "crypto.subtle", "subtle.encrypt", "subtle.decrypt", "sm2", "sm3", "sm4",
+		"jsencrypt", "node-rsa", "elliptic.ec", "secp256k1", "ed25519", "x25519", "chacha20",
+		"xchacha20", "salsa20", "blowfish", "twofish", "xxtea", "xtea", "bcrypt", "scrypt", "hkdf",
+	} {
+		if strings.Contains(lowered, marker) {
+			info.Patterns = append(info.Patterns, marker)
+		}
+	}
+	info.Patterns = uniquePatternStrings(info.Patterns)
 
 	// 检测混淆
 	if strings.Contains(html, "_0x") || strings.Contains(html, "\\x") {
@@ -217,10 +230,21 @@ func (c *EncryptedSiteCrawler) analyzeEncryption(html string) EncryptionInfo {
 		if len(script) > 1 {
 			content := script[1]
 			// 检查是否包含加密特征
+			loweredContent := strings.ToLower(content)
 			if strings.Contains(content, "_0x") ||
 				strings.Contains(content, "eval(") ||
 				strings.Contains(content, "atob(") ||
-				strings.Contains(content, "btoa(") {
+				strings.Contains(content, "btoa(") ||
+				strings.Contains(loweredContent, "cryptojs.") ||
+				strings.Contains(loweredContent, "createcipheriv") ||
+				strings.Contains(loweredContent, "createhmac") ||
+				strings.Contains(loweredContent, "crypto.subtle") ||
+				strings.Contains(loweredContent, "sm4") ||
+				strings.Contains(loweredContent, "sm2") ||
+				strings.Contains(loweredContent, "jsencrypt") ||
+				strings.Contains(loweredContent, "chacha20") ||
+				strings.Contains(loweredContent, "pbkdf2") ||
+				strings.Contains(loweredContent, "bcrypt") {
 				key := fmt.Sprintf("script_%d", i)
 				info.EncryptedScripts[key] = content[:min(200, len(content))]
 			}
@@ -332,4 +356,21 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func uniquePatternStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }

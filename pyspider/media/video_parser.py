@@ -603,10 +603,15 @@ class IqiyiParser:
             data["m3u8_url"] = match.group(1)
 
         # 查找 DASH URL
-        dash_pattern = r'(https?://[^"\s]+/dash[^"\s]*)'
-        match = re.search(dash_pattern, html)
-        if match:
-            data["dash_url"] = match.group(1)
+        dash_patterns = [
+            r'"(?:dashUrl|dash_url|mpdUrl|mpd_url)"\s*:\s*"([^"]+)"',
+            r'(https?://[^"\s]+(?:\.mpd|/dash[^"\s]*)[^"\s]*)',
+        ]
+        for dash_pattern in dash_patterns:
+            match = re.search(dash_pattern, html)
+            if match:
+                data["dash_url"] = match.group(1)
+                break
 
         # 查找质量选项
         quality_pattern = r'"quality"\s*:\s*\[([^\]]+)\]'
@@ -665,9 +670,11 @@ class TencentParser:
     def _extract_video_id(self, url: str) -> Optional[str]:
         """提取视频 ID"""
         patterns = [
-            r"/x/(\w+)\.html",
-            r"/cover/(\w+)",
-            r"vid=(\w+)",
+            r"/x/cover/[^/]+/([A-Za-z0-9]+)\.html",
+            r"/x/page/([A-Za-z0-9]+)\.html",
+            r"/x/([A-Za-z0-9]+)\.html",
+            r"/cover/([A-Za-z0-9]+)",
+            r"vid=([A-Za-z0-9]+)",
         ]
 
         for pattern in patterns:
@@ -705,6 +712,11 @@ class TencentParser:
         match = re.search(cover_pattern, html)
         if match:
             data["cover_url"] = match.group(1)
+
+        duration_pattern = r'"duration"\s*:\s*(\d+)'
+        match = re.search(duration_pattern, html)
+        if match:
+            data["duration"] = int(match.group(1))
 
         return data if any(data.values()) else None
 

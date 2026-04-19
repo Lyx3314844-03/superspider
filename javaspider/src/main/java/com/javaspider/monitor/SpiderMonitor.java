@@ -21,6 +21,7 @@ public class SpiderMonitor {
     private final AtomicInteger totalRequests = new AtomicInteger(0);
     private final AtomicInteger currentThreads = new AtomicInteger(0);
     private final Map<String, Long> domainStats = new ConcurrentHashMap<>();
+    private final List<Long> latencySamples = java.util.Collections.synchronizedList(new ArrayList<>());
     private volatile boolean running = false;
     private volatile boolean paused = false;
     
@@ -36,6 +37,16 @@ public class SpiderMonitor {
         successCount.incrementAndGet();
         totalRequests.incrementAndGet();
         updateDomainStats(url, true);
+    }
+
+    public void recordResponseTime(long latencyMs) {
+        if (latencyMs <= 0) {
+            return;
+        }
+        latencySamples.add(latencyMs);
+        if (latencySamples.size() > 512) {
+            latencySamples.remove(0);
+        }
     }
     
     /**
@@ -130,6 +141,9 @@ public class SpiderMonitor {
         // 计算速度
         long elapsedSeconds = stats.getRunningTime() / 1000;
         stats.setSpeed(elapsedSeconds > 0 ? (double) totalRequests.get() / elapsedSeconds : 0);
+        stats.setQps(stats.getSpeed());
+        stats.setLatencyP95(percentile(0.95));
+        stats.setLatencyP99(percentile(0.99));
         
         // 域名统计
         stats.setDomainStats(new HashMap<>(domainStats));
@@ -157,8 +171,22 @@ public class SpiderMonitor {
         System.out.println("Performance:");
         System.out.println("  Success Rate: " + String.format("%.2f", stats.getSuccessRate()) + "%");
         System.out.println("  Speed: " + String.format("%.2f", stats.getSpeed()) + " req/s");
+        System.out.println("  P95: " + String.format("%.2f", stats.getLatencyP95()) + "ms");
+        System.out.println("  P99: " + String.format("%.2f", stats.getLatencyP99()) + "ms");
         System.out.println("  Threads: " + stats.getCurrentThreads());
         System.out.println("=====================================\n");
+    }
+
+    private double percentile(double p) {
+        if (latencySamples.isEmpty()) {
+            return 0.0;
+        }
+        List<Long> copy = new ArrayList<>(latencySamples);
+        copy.sort(Long::compareTo);
+        int index = (int) Math.floor((copy.size() - 1) * p);
+        if (index < 0) index = 0;
+        if (index >= copy.size()) index = copy.size() - 1;
+        return copy.get(index);
     }
     
     /**
@@ -188,6 +216,9 @@ public class SpiderMonitor {
         private boolean paused;
         private double successRate;
         private double speed;
+        private double qps;
+        private double latencyP95;
+        private double latencyP99;
         private Map<String, Long> domainStats;
         
         // Getters and Setters
@@ -226,7 +257,16 @@ public class SpiderMonitor {
         
         public double getSpeed() { return speed; }
         public void setSpeed(double speed) { this.speed = speed; }
-        
+
+        public double getQps() { return qps; }
+        public void setQps(double qps) { this.qps = qps; }
+
+        public double getLatencyP95() { return latencyP95; }
+        public void setLatencyP95(double latencyP95) { this.latencyP95 = latencyP95; }
+
+        public double getLatencyP99() { return latencyP99; }
+        public void setLatencyP99(double latencyP99) { this.latencyP99 = latencyP99; }
+
         public Map<String, Long> getDomainStats() { return domainStats; }
         public void setDomainStats(Map<String, Long> domainStats) { this.domainStats = domainStats; }
     }

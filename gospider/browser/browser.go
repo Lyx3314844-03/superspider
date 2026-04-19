@@ -71,6 +71,7 @@ type Browser struct {
 	networkEntries []NetworkEntry
 	networkIndex map[string]int
 	isStarted bool
+	behaviorProfile BehaviorProfile
 }
 
 // DefaultConfig 返回默认配置
@@ -103,6 +104,7 @@ func NewBrowser(config *BrowserConfig) *Browser {
 		consoleEntries: make([]ConsoleEntry, 0),
 		networkEntries: make([]NetworkEntry, 0),
 		networkIndex: make(map[string]int),
+		behaviorProfile: DefaultBehaviorProfile(),
 	}
 }
 
@@ -257,6 +259,7 @@ func (b *Browser) Click(selector string) error {
 	if !b.isStarted {
 		return fmt.Errorf("浏览器未启动")
 	}
+	time.Sleep(RandomizedActionDelay("click", b.behaviorProfile, time.Now()))
 
 	ctx, cancel := context.WithTimeout(b.ctx, b.config.Timeout)
 	defer cancel()
@@ -271,6 +274,7 @@ func (b *Browser) Fill(selector, value string) error {
 	if !b.isStarted {
 		return fmt.Errorf("浏览器未启动")
 	}
+	time.Sleep(RandomizedActionDelay("type", b.behaviorProfile, time.Now()))
 
 	ctx, cancel := context.WithTimeout(b.ctx, b.config.Timeout)
 	defer cancel()
@@ -285,6 +289,7 @@ func (b *Browser) Hover(selector string) error {
 	if !b.isStarted {
 		return fmt.Errorf("浏览器未启动")
 	}
+	time.Sleep(RandomizedActionDelay("hover", b.behaviorProfile, time.Now()))
 
 	selectorJSON, err := json.Marshal(selector)
 	if err != nil {
@@ -468,6 +473,7 @@ func (b *Browser) ScrollToBottom() error {
 	if !b.isStarted {
 		return fmt.Errorf("浏览器未启动")
 	}
+	time.Sleep(RandomizedActionDelay("scroll", b.behaviorProfile, time.Now()))
 
 	ctx, cancel := context.WithTimeout(b.ctx, b.config.Timeout)
 	defer cancel()

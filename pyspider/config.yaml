@@ -142,7 +142,7 @@ ai:
   # AI 提取器
   extractor:
     provider: "openai"  # openai, anthropic, local
-    model: "gpt-4"
+    model: "gpt-5.2"
     api_key: "YOUR_API_KEY"
     base_url: "https://api.openai.com/v1"
 

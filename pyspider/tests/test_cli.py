@@ -98,6 +98,7 @@ def test_cli_main_capabilities_command_surfaces_runtime_modules():
     assert "runtime.async_runtime" in payload["modules"]
     assert "kernel_contracts" in payload
     assert "ai" in payload["runtimes"]
+    assert "browser_compatibility" in payload
 
 
 def test_cli_main_ai_command_falls_back_to_heuristics(tmp_path, monkeypatch):
@@ -755,6 +756,50 @@ def test_cli_main_console_command_uses_snapshot_and_tail_shapes():
     )
 
 
+def test_cli_main_audit_command_and_preflight_alias_delegate_correctly():
+    module = importlib.import_module("pyspider.cli.main")
+
+    with patch.object(module, "run_shared_python_tool", return_value=0) as runner:
+        assert (
+            module.main(
+                [
+                    "audit",
+                    "tail",
+                    "--control-plane",
+                    "artifacts/control-plane",
+                    "--job-name",
+                    "demo",
+                    "--stream",
+                    "audit",
+                    "--lines",
+                    "7",
+                ]
+            )
+            == 0
+        )
+    assert runner.call_args.args == (
+        "audit_console.py",
+        [
+            "tail",
+            "--control-plane",
+            "artifacts/control-plane",
+            "--job-name",
+            "demo",
+            "--lines",
+            "7",
+            "--stream",
+            "audit",
+        ],
+    )
+
+    buffer = StringIO()
+    with redirect_stdout(buffer):
+        exit_code = module.main(["preflight", "--json"])
+    assert exit_code in {0, 1}
+    payload = json.loads(buffer.getvalue())
+    assert payload["command"] == "preflight"
+
+
 def test_cli_main_browser_tooling_and_scrapy_contracts_delegate_to_shared_tools():
     module = importlib.import_module("pyspider.cli.main")
 
@@ -925,6 +970,40 @@ def test_cli_main_curl_convert_returns_python_code():
     assert payload["target"] == "aiohttp"
     assert "aiohttp.ClientSession" in payload["code"]
     assert "https://example.com/api" in payload["code"]
+
+
+def test_cli_main_workflow_run_persists_control_plane_artifacts(tmp_path):
+    module = importlib.import_module("pyspider.cli.main")
+    workflow_path = tmp_path / "workflow.json"
+    workflow_path.write_text(
+        json.dumps(
+            {
+                "id": "py-workflow",
+                "name": "py-workflow",
+                "steps": [
+                    {"id": "goto", "type": "goto", "selector": "https://example.com"},
+                    {
+                        "id": "title",
+                        "type": "extract",
+                        "selector": "title",
+                        "metadata": {"value": "Workflow Title"},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    buffer = StringIO()
+    with redirect_stdout(buffer):
+        exit_code = module.main(["workflow", "run", "--file", str(workflow_path)])
+
+    payload = json.loads(buffer.getvalue())
+    assert exit_code == 0
+    assert payload["command"] == "workflow run"
+    assert payload["extract"]["title"] == "Workflow Title"
+    assert Path(payload["events_path"]).exists()
+    assert Path(payload["connector_path"]).exists()
 
 
 def test_cli_main_scrapy_demo_command_exports_results(tmp_path):

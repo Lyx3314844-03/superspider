@@ -8,114 +8,170 @@
   <img src="docs/assets/superspider-icon.svg" alt="SuperSpider icon" width="180" />
 </p>
 
-SuperSpider 是一个四运行时爬虫框架发布仓库。它不是“一个语言绑定到多个壳”，而是四套面向不同生产环境的抓取运行时：
+SuperSpider is a four-runtime crawler framework release repository. It is not a single crawler wrapped in four languages. Instead, it publishes four distinct crawler runtimes designed for different engineering environments and delivery models:
 
 - `pyspider`
 - `gospider`
 - `rustspider`
 - `javaspider`
 
-这四个框架面向同一类抓取问题，但分别强调不同的交付方式、运行边界、并发模型和工程生态：
+All four frameworks cover the same broad problem space, including web crawling, browser automation, anti-bot handling, extraction, and output pipelines, but each one emphasizes a different deployment and engineering posture:
 
-- `PySpider` 强调项目脚手架、AI 编排、插件注入和快速迭代。
-- `GoSpider` 强调二进制交付、并发执行、分布式 worker 和控制面友好。
-- `RustSpider` 强调强类型、高性能、feature-gated 模块和稳定的发布二进制。
-- `JavaSpider` 强调 Maven/JAR 打包、浏览器工作流、审计链和企业 Java 集成。
+- `PySpider`: project authoring, AI orchestration, plugin injection, rapid iteration
+- `GoSpider`: binary delivery, concurrency, distributed workers, service-side deployment
+- `RustSpider`: strong typing, performance, feature-gated modules, stable release binaries
+- `JavaSpider`: Maven/JAR packaging, browser workflows, audit trails, enterprise Java integration
 
-这个仓库当前只保留三类内容：
+## Platform Overview
 
-- 四个爬虫框架源码
-- Windows / Linux / macOS 三种操作系统安装版本
-- 整体介绍、能力说明和安装文档
+SuperSpider is designed to present four crawler runtimes as one coherent product surface:
 
-## Overall Framework
+- one public brand: `SuperSpider`
+- one naming system: `pyspider / gospider / rustspider / javaspider`
+- one installation shape: every framework has Windows, Linux, and macOS installers
+- one selection model: choose the runtime by engineering fit, then choose the operating system installer
 
-SuperSpider 的整体设计目标是把“多语言抓取框架发布”收敛成统一的产品面：
+## Four Frameworks At A Glance
 
-- 同一套发布品牌：`SuperSpider`
-- 同一套四运行时命名：`pyspider / gospider / rustspider / javaspider`
-- 同一套安装入口：每个框架都提供三种操作系统安装路径
-- 同一套能力说明方式：总览、矩阵、框架级 README
+| Framework | Core delivery | Strongest advantage | Best fit |
+| --- | --- | --- | --- |
+| `PySpider` | Python package / virtual environment | AI extraction, plugins, project workflows | rapid development, experimentation, orchestration-heavy crawling |
+| `GoSpider` | compiled Go binary | concurrency, workers, service deployment | batch jobs, distributed execution, operational crawling |
+| `RustSpider` | release Rust binary | strong typing, performance, feature gates | performance-sensitive deployments, strict runtime boundaries |
+| `JavaSpider` | Maven package / JAR | browser workflows, auditability, enterprise integration | Java build pipelines, browser-heavy automation, enterprise environments |
 
-这意味着用户可以先按运行环境选语言，再按场景选框架，而不是从一堆不相关的 demo、扩展仓库和辅助工具里自己拼装。
+## Concrete Function Coverage
 
-## Four Frameworks
+Each runtime covers a full crawler lifecycle, but with a different emphasis:
+
+- crawl entry:
+  - CLI execution
+  - project-style runtime
+  - task or workflow invocation
+- page acquisition:
+  - HTTP fetching
+  - browser-based crawling
+  - dynamic-site handling
+- parsing and extraction:
+  - HTML and selector-based extraction
+  - AI-assisted extraction
+  - media and video-related parsing
+- shared media surface across all four runtimes:
+  - HLS / DASH parsing and download flow
+  - FFmpeg-assisted conversion / merge utilities
+  - DRM detection
+  - platform parsing for YouTube, Bilibili, IQIYI, Tencent Video, and Youku
+- runtime support:
+  - anti-bot and captcha handling
+  - session, proxy, and connection management
+  - distributed queues, workers, and storage
+- delivery form:
+  - Python package
+  - Go binary
+  - Rust release binary
+  - Java Maven/JAR package
+
+## Per-Framework Detail
 
 ### PySpider
 
-PySpider 是最适合快速试验和复杂抓取编排的一支。
+PySpider is the most complete project-oriented Python crawler in the set.
 
-- Python 原生模块与 CLI
-- 最完整的 scrapy 风格项目运行模型
-- AI 提取、研究流程、插件注入、数据集输出
-- 浏览器与 HTTP 混合抓取
-- 反爬、验证码、节点逆向和媒体处理
+Core functions:
 
-适合：
+- Python-native CLI and modular runtime
+- scrapy-style project execution
+- AI extraction, research flows, and plugin injection
+- hybrid browser + HTTP crawling
+- anti-bot, captcha, node-reverse, media, and dataset output
 
-- 想快速搭一个真实项目
-- 想做 AI 提取或复杂抓取流程编排
-- 想保留 Python 生态下的数据处理灵活性
+Capability range:
 
-入口见 [pyspider/README.md](pyspider/README.md)。
+- from single-page crawling to full project scaffolding
+- from structured extraction to AI-assisted extraction
+- from interactive experiments to production crawler execution
+
+Install packages and outputs:
+
+- Windows: `scripts/windows/install-pyspider.bat`
+- Linux: `scripts/linux/install-pyspider.sh`
+- macOS: `scripts/macos/install-pyspider.sh`
+- output: `.venv-pyspider`
 
 ### GoSpider
 
-GoSpider 是最适合二进制发布和并发抓取服务化的一支。
+GoSpider is the strongest fit for concurrent, binary-first, service-oriented crawling.
 
-- Go 二进制 CLI
-- 高并发抓取与任务调度
-- 分布式 worker、队列、存储
-- 浏览器产物采集与回放
-- 反爬、媒体下载与运行时调度
+Core functions:
 
-适合：
+- compiled Go CLI
+- concurrent crawling and scheduling
+- distributed workers, queues, storage, and task execution
+- browser artifact capture and replay
+- anti-bot, media download, and runtime dispatch
 
-- 想发布单文件二进制
-- 想把抓取任务做成服务或批处理
-- 想要并发和部署复杂度之间的平衡
+Capability range:
 
-入口见 [gospider/README.md](gospider/README.md)。
+- from single-node binaries to distributed crawler nodes
+- from concurrent task execution to service-friendly deployment
+- from browser-driven crawling to result storage and replay
+
+Install packages and outputs:
+
+- Windows: `scripts/windows/install-gospider.bat`
+- Linux: `scripts/linux/install-gospider.sh`
+- macOS: `scripts/macos/install-gospider.sh`
+- output: `gospider` executable
 
 ### RustSpider
 
-RustSpider 是最适合高性能和强边界生产部署的一支。
+RustSpider is the strongest runtime for high performance and strict runtime boundaries.
 
-- Rust 发布二进制
-- feature-gated 浏览器、分布式、API 和 Web 模块
-- typed scrapy 风格接口
-- 监控、预检、反爬、媒体和契约测试
-- 适合强类型和高稳定性部署
+Core functions:
 
-适合：
+- Rust release binary
+- feature-gated browser, distributed, API, and web modules
+- typed scrapy-style interface
+- preflight, monitoring, anti-bot, media, and contract-heavy runtime
 
-- 想要强类型和更严格的运行边界
-- 想构建稳定的发布二进制
-- 想把功能面通过 feature flag 精确裁剪
+Capability range:
 
-入口见 [rustspider/README.md](rustspider/README.md)。
+- from compact release binaries to high-performance production deployment
+- from feature-controlled module shipping to strong typed runtime boundaries
+- from preflight validation to release execution
+
+Install packages and outputs:
+
+- Windows: `scripts/windows/install-rustspider.bat`
+- Linux: `scripts/linux/install-rustspider.sh`
+- macOS: `scripts/macos/install-rustspider.sh`
+- output: `rustspider/target/release/rustspider`
 
 ### JavaSpider
 
-JavaSpider 是最适合浏览器工作流和企业 Java 环境集成的一支。
+JavaSpider is the strongest fit for browser workflows and enterprise Java integration.
 
-- Maven / JAR 打包
-- 浏览器工作流与 Selenium / Playwright 辅助路径
-- scrapy 风格兼容接口
-- 审计、连接器、会话与反爬能力
-- 工作流回放与媒体解析
+Core functions:
 
-适合：
+- Maven / JAR packaging
+- browser workflows with Selenium / Playwright helper paths
+- scrapy-style compatibility
+- audit, connector, session, anti-bot, workflow replay, and media parsing
 
-- 已经在 Java / Maven 生态中工作
-- 想把抓取纳入现有企业构建链
-- 更重视浏览器工作流和可审计执行链
+Capability range:
 
-入口见 [javaspider/README.md](javaspider/README.md)。
+- from Maven packaging to enterprise Java release pipelines
+- from browser automation to workflow-driven execution
+- from audit trails to internal system integration
 
-## Three OS Install Versions
+Install packages and outputs:
 
-每个框架都提供三种操作系统安装版本。
+- Windows: `scripts/windows/install-javaspider.bat`
+- Linux: `scripts/linux/install-javaspider.sh`
+- macOS: `scripts/macos/install-javaspider.sh`
+- output: `javaspider/target`
+
+## Three Operating-System Install Versions
 
 | Framework | Windows | Linux | macOS |
 | --- | --- | --- | --- |
@@ -124,32 +180,9 @@ JavaSpider 是最适合浏览器工作流和企业 Java 环境集成的一支。
 | RustSpider | `scripts/windows/install-rustspider.bat` | `scripts/linux/install-rustspider.sh` | `scripts/macos/install-rustspider.sh` |
 | JavaSpider | `scripts/windows/install-javaspider.bat` | `scripts/linux/install-javaspider.sh` | `scripts/macos/install-javaspider.sh` |
 
-安装产物：
+## Release Docs
 
-- `PySpider`：创建 `.venv-pyspider` 并完成可编辑安装
-- `GoSpider`：生成 `gospider` 可执行文件
-- `RustSpider`：生成 `rustspider/target/release/rustspider`
-- `JavaSpider`：生成 `javaspider/target` Maven 构建输出
-
-详细安装说明见 [docs/SUPERSPIDER_INSTALLS.md](docs/SUPERSPIDER_INSTALLS.md)。
-
-## Documentation
-
-- 框架能力总览: [docs/FRAMEWORK_CAPABILITIES.md](docs/FRAMEWORK_CAPABILITIES.md)
-- 四框架能力矩阵: [docs/FRAMEWORK_CAPABILITY_MATRIX.md](docs/FRAMEWORK_CAPABILITY_MATRIX.md)
-- 三系统安装矩阵: [docs/SUPERSPIDER_INSTALLS.md](docs/SUPERSPIDER_INSTALLS.md)
-- GitHub Release Notes: [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)
-- 发布展示页: [docs/release-canvas.html](docs/release-canvas.html)
-
-## Repository Scope
-
-这个发布仓库只保留：
-
-- `gospider`
-- `javaspider`
-- `pyspider`
-- `rustspider`
-- `docs`
-- `scripts`
-
-其目标是让 GitHub 首页直接呈现一个“可发布、可安装、可理解”的四框架产品面，而不是保留其他爬虫框架或无关演示文件。
+- Docs index: [docs/DOCS_INDEX.md](docs/DOCS_INDEX.md)
+- Media parity report: [MEDIA_PARITY_REPORT.md](MEDIA_PARITY_REPORT.md)
+- Latest completion report: [LATEST_FRAMEWORK_COMPLETION_REPORT.md](LATEST_FRAMEWORK_COMPLETION_REPORT.md)
+- Historical report archive: [docs/archive/HISTORICAL_REPORTS.md](docs/archive/HISTORICAL_REPORTS.md)

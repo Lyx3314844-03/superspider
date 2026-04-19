@@ -27,7 +27,7 @@ class BaseLLMClient(ABC):
 class OpenAIClient(BaseLLMClient):
     """OpenAI GPT 客户端"""
 
-    def __init__(self, api_key: str, model: str = "gpt-4"):
+    def __init__(self, api_key: str, model: str = "gpt-5.2"):
         self.api_key = api_key
         self.model = model
         self.api_url = "https://api.openai.com/v1/chat/completions"
@@ -54,7 +54,7 @@ class LLMExtractor:
     使用大语言模型从网页内容中提取结构化数据
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-5.2"):
         """
         初始化 LLM 提取器
 
@@ -169,7 +169,7 @@ Return the result as JSON."""
 
 
 # 便捷函数
-def extract_with_llm(html: str, prompt: str, api_key: str, model: str = "gpt-4") -> str:
+def extract_with_llm(html: str, prompt: str, api_key: str, model: str = "gpt-5.2") -> str:
     """
     使用 LLM 提取内容的便捷函数
 
@@ -187,7 +187,7 @@ def extract_with_llm(html: str, prompt: str, api_key: str, model: str = "gpt-4")
 
 
 def extract_json_with_llm(
-    html: str, schema: Dict, api_key: str, model: str = "gpt-4"
+    html: str, schema: Dict, api_key: str, model: str = "gpt-5.2"
 ) -> Dict:
     """
     使用 LLM 提取 JSON 数据的便捷函数

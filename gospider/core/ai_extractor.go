@@ -31,7 +31,7 @@ type AIConfig struct {
 func DefaultAIConfig() AIConfig {
 	return AIConfig{
 		Provider: ProviderOpenAI,
-		Model:    "gpt-4o-mini",
+		Model:    "gpt-5.2",
 		Timeout:  30 * time.Second,
 	}
 }

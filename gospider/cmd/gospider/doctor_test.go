@@ -130,6 +130,27 @@ func TestRenderDoctorReportJSON(t *testing.T) {
 	}
 }
 
+func TestRenderDoctorReportJSONForPreflightAlias(t *testing.T) {
+	report := doctorReport{
+		Checks: []doctorCheck{
+			passedCheck("runtime", "ok"),
+		},
+	}
+
+	output, err := renderDoctorReportJSONForCommand(report, "preflight")
+	if err != nil {
+		t.Fatalf("renderDoctorReportJSONForCommand returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("expected json output: %v", err)
+	}
+	if payload["command"] != "preflight" {
+		t.Fatalf("expected preflight command, got %#v", payload["command"])
+	}
+}
+
 func createDoctorTestConfig(t *testing.T, root string) string {
 	t.Helper()
 

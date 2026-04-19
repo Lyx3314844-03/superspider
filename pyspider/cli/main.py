@@ -1315,6 +1315,12 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--json", action="store_true", help="以 JSON 输出检查结果")
     doctor.set_defaults(func=cmd_doctor)
 
+    preflight = subparsers.add_parser("preflight", help="运行前自检，等价于 doctor")
+    preflight.add_argument("--config", help="共享配置文件路径")
+    preflight.add_argument("--redis-url", help="验证 Redis 连接")
+    preflight.add_argument("--json", action="store_true", help="以 JSON 输出检查结果")
+    preflight.set_defaults(func=cmd_doctor)
+
     media = subparsers.add_parser("media", help="委托给媒体下载 CLI")
     media.add_argument("media_args", nargs=argparse.REMAINDER, help="媒体命令参数")
     media.set_defaults(func=cmd_media)
@@ -1397,6 +1403,12 @@ def build_parser() -> argparse.ArgumentParser:
     async_job.add_argument("--file", required=True, help="JobSpec JSON 路径")
     async_job.add_argument("--content", default=None, help="离线注入内容")
     async_job.set_defaults(func=cmd_async_job)
+
+    workflow = subparsers.add_parser("workflow", help="运行轻量工作流编排")
+    workflow_sub = workflow.add_subparsers(dest="workflow_command")
+    workflow_run = workflow_sub.add_parser("run", help="执行工作流 JSON")
+    workflow_run.add_argument("--file", required=True, help="工作流 JSON 路径")
+    workflow_run.set_defaults(func=cmd_workflow)
 
     capabilities = subparsers.add_parser("capabilities", help="输出聚合能力清单")
     capabilities.set_defaults(func=cmd_capabilities)
@@ -1659,6 +1671,95 @@ def build_parser() -> argparse.ArgumentParser:
     )
     node_reverse_analyze.set_defaults(func=cmd_node_reverse)
 
+    node_reverse_canvas = node_reverse_sub.add_parser(
+        "canvas-fingerprint", help="生成 Canvas 指纹"
+    )
+    node_reverse_canvas.add_argument(
+        "--base-url", default="http://localhost:3000", help="NodeReverse 服务地址"
+    )
+    node_reverse_canvas.set_defaults(func=cmd_node_reverse)
+
+    node_reverse_signature = node_reverse_sub.add_parser(
+        "signature-reverse", help="逆向本地 JS 文件中的签名逻辑"
+    )
+    node_reverse_signature.add_argument(
+        "--base-url", default="http://localhost:3000", help="NodeReverse 服务地址"
+    )
+    node_reverse_signature.add_argument(
+        "--code-file", required=True, help="本地代码文件路径"
+    )
+    node_reverse_signature.add_argument(
+        "--input-data", required=True, help="样本输入"
+    )
+    node_reverse_signature.add_argument(
+        "--expected-output", required=True, help="期望输出"
+    )
+    node_reverse_signature.set_defaults(func=cmd_node_reverse)
+
+    node_reverse_ast = node_reverse_sub.add_parser("ast", help="分析本地 JS/HTML 的 AST 特征")
+    node_reverse_ast.add_argument(
+        "--base-url", default="http://localhost:3000", help="NodeReverse 服务地址"
+    )
+    node_reverse_ast.add_argument(
+        "--code-file", required=True, help="本地代码文件路径"
+    )
+    node_reverse_ast.add_argument(
+        "--analysis",
+        default="crypto,obfuscation,anti-debug",
+        help="逗号分隔的分析项",
+    )
+    node_reverse_ast.set_defaults(func=cmd_node_reverse)
+
+    node_reverse_webpack = node_reverse_sub.add_parser(
+        "webpack", help="分析本地 Webpack bundle"
+    )
+    node_reverse_webpack.add_argument(
+        "--base-url", default="http://localhost:3000", help="NodeReverse 服务地址"
+    )
+    node_reverse_webpack.add_argument(
+        "--code-file", required=True, help="本地代码文件路径"
+    )
+    node_reverse_webpack.set_defaults(func=cmd_node_reverse)
+
+    node_reverse_function = node_reverse_sub.add_parser(
+        "function-call", help="调用本地 JS 文件中的函数"
+    )
+    node_reverse_function.add_argument(
+        "--base-url", default="http://localhost:3000", help="NodeReverse 服务地址"
+    )
+    node_reverse_function.add_argument(
+        "--code-file", required=True, help="本地代码文件路径"
+    )
+    node_reverse_function.add_argument(
+        "--function-name", required=True, help="目标函数名"
+    )
+    node_reverse_function.add_argument(
+        "--arg", action="append", default=[], help="函数参数，可重复传入"
+    )
+    node_reverse_function.set_defaults(func=cmd_node_reverse)
+
+    node_reverse_browser = node_reverse_sub.add_parser(
+        "browser-simulate", help="模拟浏览器环境执行本地 JS 文件"
+    )
+    node_reverse_browser.add_argument(
+        "--base-url", default="http://localhost:3000", help="NodeReverse 服务地址"
+    )
+    node_reverse_browser.add_argument(
+        "--code-file", required=True, help="本地代码文件路径"
+    )
+    node_reverse_browser.add_argument(
+        "--user-agent",
+        default="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        help="浏览器 User-Agent",
+    )
+    node_reverse_browser.add_argument(
+        "--language", default="zh-CN", help="浏览器语言"
+    )
+    node_reverse_browser.add_argument(
+        "--platform", default="Win32", help="浏览器平台"
+    )
+    node_reverse_browser.set_defaults(func=cmd_node_reverse)
+
     config = subparsers.add_parser("config", help="共享配置接口")
     config_sub = config.add_subparsers(dest="config_command")
     config_init = config_sub.add_parser("init", help="生成共享配置文件")
@@ -1693,6 +1794,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     console.add_argument("--lines", type=int, default=20)
     console.set_defaults(func=cmd_console)
+
+    audit = subparsers.add_parser("audit", help="共享审计控制台")
+    audit.add_argument("audit_command", choices=["snapshot", "tail"])
+    audit.add_argument("--control-plane", default="artifacts/control-plane")
+    audit.add_argument("--job-name", default="")
+    audit.add_argument(
+        "--stream",
+        choices=["events", "results", "audit", "connector", "all"],
+        default="all",
+    )
+    audit.add_argument("--lines", type=int, default=20)
+    audit.set_defaults(func=cmd_audit)
 
     return parser
 
@@ -1825,6 +1938,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         run_dependency_doctor,
     )
 
+    command_name = str(getattr(args, "command", "doctor") or "doctor")
     cfg = load_contract_config(getattr(args, "config", None))
     doctor_cfg = cfg.get("doctor", {})
     redis_url = args.redis_url or doctor_cfg.get("redis_url")
@@ -1838,6 +1952,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     )
     if args.json:
         payload = dependency_report_to_dict(report)
+        payload["command"] = command_name
         payload["framework"] = "pyspider"
         payload["version"] = VERSION
         payload["shared_contracts"] = [
@@ -1856,7 +1971,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "fail": "FAIL",
         "skip": "SKIP",
     }
-    print("pyspider doctor")
+    print(f"pyspider {command_name}")
     print("================")
     for status in report.statuses:
         print(
@@ -1952,6 +2067,21 @@ def cmd_console(args: argparse.Namespace) -> int:
     if args.console_command == "tail":
         tool_args.extend(["--stream", args.stream])
     return run_shared_python_tool("runtime_console.py", tool_args)
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    tool_args = [
+        args.audit_command,
+        "--control-plane",
+        args.control_plane,
+        "--job-name",
+        args.job_name,
+        "--lines",
+        str(args.lines),
+    ]
+    if args.audit_command == "tail":
+        tool_args.extend(["--stream", args.stream])
+    return run_shared_python_tool("audit_console.py", tool_args)
 
 
 def cmd_browser_fetch(args: argparse.Namespace) -> int:
@@ -2070,6 +2200,42 @@ def cmd_async_job(args: argparse.Namespace) -> int:
     return asyncio.run(runtime_cli._run_async_job_file(args.file, args.content))
 
 
+def cmd_workflow(args: argparse.Namespace) -> int:
+    from pyspider.connectors import FileConnector
+    from pyspider.events import FileEventBus
+    from pyspider.workflow import FlowJob, WorkflowRunner
+
+    spec_path = Path(args.file)
+    payload = json.loads(spec_path.read_text(encoding="utf-8"))
+    job = FlowJob.from_mapping(payload)
+
+    control_plane = spec_path.parent / "artifacts" / "control-plane"
+    event_path = control_plane / f"{job.name}-workflow-events.jsonl"
+    connector_path = control_plane / f"{job.name}-workflow-connector.jsonl"
+    runner = WorkflowRunner(
+        event_bus=FileEventBus(event_path),
+        connectors=[FileConnector(connector_path)],
+    )
+    result = runner.execute(job)
+    print(
+        json.dumps(
+            {
+                "command": "workflow run",
+                "runtime": "python",
+                "job_id": result.job_id,
+                "run_id": result.run_id,
+                "extract": result.extracted,
+                "artifacts": result.artifacts,
+                "events_path": str(event_path),
+                "connector_path": str(connector_path),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
 def cmd_capabilities(_: argparse.Namespace) -> int:
     from pyspider import __main__ as runtime_cli
 
@@ -2121,7 +2287,12 @@ def cmd_profile_site(args: argparse.Namespace) -> int:
             "profile": reverse_payload,
             "fingerprint_spoof": spoof_payload,
             "tls_fingerprint": tls_payload,
+            "canvas_fingerprint": client.canvas_fingerprint(),
+            "crypto_analysis": client.analyze_crypto(content),
         }
+        focus = _reverse_focus_payload(payload["reverse"])
+        if focus:
+            payload["reverse_focus"] = focus
         if reverse_payload.get("success"):
             payload["anti_bot_level"] = reverse_payload.get("level", "")
             payload["anti_bot_signals"] = reverse_payload.get("signals", [])
@@ -2131,6 +2302,45 @@ def cmd_profile_site(args: argparse.Namespace) -> int:
 
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
+
+
+def _reverse_focus_payload(reverse_payload: Dict[str, Any]) -> Dict[str, Any]:
+    crypto = reverse_payload.get("crypto_analysis") if isinstance(reverse_payload, dict) else {}
+    analysis = crypto.get("analysis") if isinstance(crypto, dict) else {}
+    chains = analysis.get("keyFlowChains") if isinstance(analysis, dict) else None
+    if not isinstance(chains, list) or not chains:
+        return {}
+    ranked = sorted(
+        [chain for chain in chains if isinstance(chain, dict)],
+        key=lambda chain: (
+            -float(chain.get("confidence") or 0.0),
+            -len(chain.get("sinks") or []),
+            -len(chain.get("derivations") or []),
+        ),
+    )
+    if not ranked:
+        return {}
+    top = ranked[0]
+    source = top.get("source") or {}
+    source_kind = str(source.get("kind") or "unknown")
+    sinks = [str(item) for item in (top.get("sinks") or []) if str(item).strip()]
+    primary_sink = sinks[0] if sinks else "unknown-sink"
+    next_steps = []
+    if source_kind.startswith("storage."):
+        next_steps.append("instrument browser storage reads first")
+    if source_kind.startswith("network."):
+        next_steps.append("capture response body before key derivation")
+    if "crypto.subtle." in primary_sink:
+        next_steps.append("hook WebCrypto at the sink boundary")
+    if primary_sink.startswith("jwt.") or "HMAC" in json.dumps(crypto):
+        next_steps.append("rebuild canonical signing input before reproducing the sink")
+    if not next_steps:
+        next_steps.append("trace the chain from source through derivations into the first sink")
+    return {
+        "priority_chain": top,
+        "summary": f"trace `{top.get('variable')}` from `{source_kind}` into `{primary_sink}`",
+        "next_steps": next_steps,
+    }
 
 
 def cmd_sitemap_discover(args: argparse.Namespace) -> int:
@@ -4499,9 +4709,64 @@ def cmd_node_reverse(args: argparse.Namespace) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0 if payload.get("success") else 1
 
+    if command == "canvas-fingerprint":
+        payload = client.canvas_fingerprint()
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload.get("success") else 1
+
     if command == "analyze-crypto":
         code = Path(args.code_file).read_text(encoding="utf-8")
         payload = client.analyze_crypto(code)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload.get("success") else 1
+
+    if command == "signature-reverse":
+        code = Path(args.code_file).read_text(encoding="utf-8")
+        payload = client.reverse_signature(
+            code,
+            args.input_data,
+            args.expected_output,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload.get("success") else 1
+
+    if command == "ast":
+        code = Path(args.code_file).read_text(encoding="utf-8")
+        analysis = [
+            item.strip()
+            for item in str(getattr(args, "analysis", "")).split(",")
+            if item.strip()
+        ]
+        payload = client.analyze_ast(code, analysis or None)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload.get("success") else 1
+
+    if command == "webpack":
+        code = Path(args.code_file).read_text(encoding="utf-8")
+        payload = client.analyze_webpack(code)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload.get("success") else 1
+
+    if command == "function-call":
+        code = Path(args.code_file).read_text(encoding="utf-8")
+        payload = client.call_function(
+            args.function_name,
+            list(getattr(args, "arg", []) or []),
+            code,
+        )
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload.get("success") else 1
+
+    if command == "browser-simulate":
+        code = Path(args.code_file).read_text(encoding="utf-8")
+        payload = client.simulate_browser(
+            code,
+            {
+                "userAgent": args.user_agent,
+                "language": args.language,
+                "platform": args.platform,
+            },
+        )
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0 if payload.get("success") else 1
 

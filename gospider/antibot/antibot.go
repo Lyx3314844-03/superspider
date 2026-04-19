@@ -300,6 +300,7 @@ type AntiBotManager struct {
 	HeadersGen    *RequestHeadersGenerator
 	MinDelay      time.Duration
 	MaxDelay      time.Duration
+	NightMode     NightModePolicy
 	cookies       map[string]map[string]string
 	mu            sync.RWMutex
 }
@@ -312,6 +313,7 @@ func NewAntiBotManager() *AntiBotManager {
 		HeadersGen: NewRequestHeadersGenerator(),
 		MinDelay:   time.Second,
 		MaxDelay:   3 * time.Second,
+		NightMode:  DefaultNightModePolicy(),
 		cookies:    make(map[string]map[string]string),
 	}
 }
@@ -329,6 +331,7 @@ func (m *AntiBotManager) GetProxy() *ProxyInfo {
 // AddRandomDelay - 添加随机延迟
 func (m *AntiBotManager) AddRandomDelay() {
 	delay := m.MinDelay + time.Duration(rand.Int63n(int64(m.MaxDelay-m.MinDelay)))
+	delay = m.NightMode.ApplyDelay(delay, time.Now())
 	time.Sleep(delay)
 }
 

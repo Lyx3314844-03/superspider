@@ -33,10 +33,15 @@ public class EncryptedSiteProcessor extends BasePageProcessor {
     
     // 加密检测模式
     private static final List<Pattern> ENCRYPTION_PATTERNS = Arrays.asList(
-        Pattern.compile("CryptoJS\\.(AES|DES|RSA|MD5|SHA|HMAC|RC4|Base64)"),
+        Pattern.compile("CryptoJS\\.(AES|DES|TripleDES|MD5|SHA(?:1|256|512|3)?|HmacSHA(?:1|256|512)|RC4|Rabbit|PBKDF2|Base64)"),
         Pattern.compile("encrypt\\(|decrypt\\("),
         Pattern.compile("createCipheriv|createDecipheriv"),
+        Pattern.compile("createHmac|createHash|pbkdf2|scrypt|bcrypt|hkdf"),
         Pattern.compile("publicEncrypt|privateDecrypt"),
+        Pattern.compile("JSEncrypt|NodeRSA|jsrsasign|elliptic|secp256k1|ed25519|x25519"),
+        Pattern.compile("sm2|sm3|sm4|sm-crypto"),
+        Pattern.compile("ChaCha20|XChaCha20|Salsa20|Blowfish|Twofish|XXTEA|XTEA|TEA"),
+        Pattern.compile("crypto\\.subtle|subtle\\.(encrypt|decrypt|digest|sign|verify)"),
         Pattern.compile("btoa\\(|atob\\("),
         Pattern.compile("window\\[.*\\]\\s*="),
         Pattern.compile("eval\\(function\\(p,a,c,k,e,d\\)"),
@@ -252,7 +257,18 @@ public class EncryptedSiteProcessor extends BasePageProcessor {
                code.contains("encrypt(") ||
                code.contains("decrypt(") ||
                code.contains("atob(") ||
-               code.contains("btoa(");
+               code.contains("btoa(") ||
+               code.toLowerCase().contains("createhmac(") ||
+               code.toLowerCase().contains("createhash(") ||
+               code.toLowerCase().contains("crypto.subtle") ||
+               code.toLowerCase().contains("sm4") ||
+               code.toLowerCase().contains("sm2") ||
+               code.toLowerCase().contains("sm3") ||
+               code.toLowerCase().contains("jsencrypt") ||
+               code.toLowerCase().contains("nodersa") ||
+               code.toLowerCase().contains("chacha20") ||
+               code.toLowerCase().contains("pbkdf2") ||
+               code.toLowerCase().contains("bcrypt");
     }
 
     /**
@@ -281,7 +297,15 @@ public class EncryptedSiteProcessor extends BasePageProcessor {
                         "vendor", "Google Inc."
                     ));
                     
-                    JsonNode result = reverseClient.doPost("/api/browser/simulate", payload);
+                    JsonNode result = reverseClient.simulateBrowser(
+                        String.valueOf(payload.get("code")),
+                        Map.of(
+                            "userAgent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                            "language", "zh-CN",
+                            "platform", "Win32",
+                            "vendor", "Google Inc."
+                        )
+                    );
                     System.out.println("  ✅ 浏览器环境模拟成功");
                 } catch (Exception e) {
                     System.out.println("  ⚠️  浏览器模拟失败: " + e.getMessage());

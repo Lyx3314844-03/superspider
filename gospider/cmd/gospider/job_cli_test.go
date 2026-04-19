@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -90,22 +89,12 @@ func TestValidateContractConfigRejectsUnsupportedDeclarativeComponent(t *testing
 }
 
 func TestPrintCapabilitiesIncludesIntegratedRuntimes(t *testing.T) {
-	originalStdout := os.Stdout
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe failed: %v", err)
-	}
-	os.Stdout = writer
-	defer func() { os.Stdout = originalStdout }()
-
-	capabilitiesCommand()
-	_ = writer.Close()
-
-	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(reader)
+	output := captureStdout(t, func() {
+		capabilitiesCommand()
+	})
 
 	var payload map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
 		t.Fatalf("expected json output: %v", err)
 	}
 
@@ -129,6 +118,18 @@ func TestPrintCapabilitiesIncludesIntegratedRuntimes(t *testing.T) {
 	if operatorProducts, ok := payload["operator_products"].(map[string]interface{}); !ok || len(operatorProducts) == 0 {
 		t.Fatalf("expected operator_products in payload: %#v", payload)
 	}
+	if browserCompatibility, ok := payload["browser_compatibility"].(map[string]interface{}); ok {
+		surfaces, ok := browserCompatibility["surfaces"].(map[string]interface{})
+		if !ok || len(surfaces) == 0 {
+			t.Fatalf("expected browser compatibility surfaces in payload: %#v", payload)
+		}
+		playwright, ok := surfaces["playwright"].(map[string]interface{})
+		if !ok || playwright["adapter_engine"] != "chromedp" {
+			t.Fatalf("expected chromedp-backed playwright compatibility in payload: %#v", payload)
+		}
+	} else {
+		t.Fatalf("expected browser_compatibility in payload: %#v", payload)
+	}
 	if observability, ok := payload["observability"].([]interface{}); !ok || len(observability) == 0 {
 		t.Fatalf("expected observability in payload: %#v", payload)
 	}
@@ -140,6 +141,13 @@ func TestPrintCapabilitiesIncludesIntegratedRuntimes(t *testing.T) {
 	var hasJobdir bool
 	var hasHttpCache bool
 	var hasConsole bool
+	var hasAudit bool
+	var hasPreflight bool
+	var hasRun bool
+	var hasAsyncJob bool
+	var hasWeb bool
+	var hasResearch bool
+	var hasWorkflow bool
 	for _, entrypoint := range entrypoints {
 		if entrypoint == "ultimate" {
 			hasUltimate = true
@@ -150,6 +158,21 @@ func TestPrintCapabilitiesIncludesIntegratedRuntimes(t *testing.T) {
 		if entrypoint == "scrapy" {
 			hasScrapy = true
 		}
+		if entrypoint == "run" {
+			hasRun = true
+		}
+		if entrypoint == "async-job" {
+			hasAsyncJob = true
+		}
+		if entrypoint == "web" {
+			hasWeb = true
+		}
+		if entrypoint == "research" {
+			hasResearch = true
+		}
+		if entrypoint == "workflow" {
+			hasWorkflow = true
+		}
 		if entrypoint == "jobdir" {
 			hasJobdir = true
 		}
@@ -159,11 +182,17 @@ func TestPrintCapabilitiesIncludesIntegratedRuntimes(t *testing.T) {
 		if entrypoint == "console" {
 			hasConsole = true
 		}
+		if entrypoint == "audit" {
+			hasAudit = true
+		}
 		if entrypoint == "node-reverse" {
 			hasNodeReverse = true
 		}
 		if entrypoint == "anti-bot" {
 			hasAntiBot = true
+		}
+		if entrypoint == "preflight" {
+			hasPreflight = true
 		}
 	}
 	if !hasUltimate {
@@ -178,11 +207,68 @@ func TestPrintCapabilitiesIncludesIntegratedRuntimes(t *testing.T) {
 	if !hasJobdir || !hasHttpCache || !hasConsole {
 		t.Fatalf("expected shared operator entrypoints in payload: %#v", payload)
 	}
+	if !hasAudit || !hasPreflight {
+		t.Fatalf("expected audit and preflight entrypoints in payload: %#v", payload)
+	}
+	if !hasRun || !hasAsyncJob || !hasWeb || !hasResearch || !hasWorkflow {
+		t.Fatalf("expected run, async-job, web, and research entrypoints in payload: %#v", payload)
+	}
 	if !hasNodeReverse || !hasAntiBot {
 		t.Fatalf("expected anti-bot and node-reverse entrypoints in payload: %#v", payload)
 	}
-	if !strings.Contains(buf.String(), "runtime.dispatch") {
-		t.Fatalf("expected integrated modules in capabilities output: %s", buf.String())
+	operatorProducts := payload["operator_products"].(map[string]interface{})
+	messageQueue, ok := operatorProducts["message_queue"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected message_queue operator product in payload: %#v", payload)
+	}
+	if _, ok := operatorProducts["storage_backends"].(map[string]interface{}); !ok {
+		t.Fatalf("expected storage_backends operator product in payload: %#v", payload)
+	}
+	antibot, ok := operatorProducts["antibot"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected antibot operator product in payload: %#v", payload)
+	}
+	nightMode, ok := antibot["night_mode"].(map[string]interface{})
+	if !ok || nightMode["enabled"] != true {
+		t.Fatalf("expected night_mode operator product in payload: %#v", payload)
+	}
+	backends, ok := messageQueue["backends"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected message_queue backends in payload: %#v", payload)
+	}
+	bridged, ok := backends["bridged"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected bridged queue backend support in payload: %#v", payload)
+	}
+	if _, ok := bridged["rabbitmq"]; !ok {
+		t.Fatalf("expected rabbitmq bridge support in payload: %#v", payload)
+	}
+	if _, ok := bridged["kafka"]; !ok {
+		t.Fatalf("expected kafka bridge support in payload: %#v", payload)
+	}
+	if !strings.Contains(output, "runtime.dispatch") {
+		t.Fatalf("expected integrated modules in capabilities output: %s", output)
+	}
+	if !strings.Contains(output, "research.Runtime") {
+		t.Fatalf("expected research runtime modules in capabilities output: %s", output)
+	}
+	if !strings.Contains(output, "\"feature_gates\"") ||
+		!strings.Contains(output, "bridge.CrawleeBridgeClient") ||
+		!strings.Contains(output, "workflow.WorkflowSpider") ||
+		!strings.Contains(output, "\"event_system\"") ||
+		!strings.Contains(output, "\"connectors\"") {
+		t.Fatalf("expected workflow/connectors/crawlee/feature-gate capability surfaces in output: %s", output)
+	}
+}
+
+func TestConfiguredProcessResultStoreBuildsFromEnv(t *testing.T) {
+	t.Setenv("GOSPIDER_STORAGE_BACKEND", "postgres")
+	t.Setenv("GOSPIDER_STORAGE_ENDPOINT", "postgres://user:secret@localhost:5432/spider?sslmode=disable")
+	t.Setenv("GOSPIDER_STORAGE_TABLE", "results")
+
+	store := configuredProcessResultStore()
+	if store == nil {
+		t.Fatal("expected configured process result store")
 	}
 }
 
@@ -200,8 +286,67 @@ func TestPrintUsageMentionsUltimateCommand(t *testing.T) {
 	if !strings.Contains(output, "jobdir") || !strings.Contains(output, "http-cache") || !strings.Contains(output, "console") {
 		t.Fatalf("expected usage to mention shared operator commands, got: %s", output)
 	}
+	if !strings.Contains(output, "audit") || !strings.Contains(output, "preflight") {
+		t.Fatalf("expected usage to mention audit and preflight, got: %s", output)
+	}
+	if !strings.Contains(output, "run") || !strings.Contains(output, "async-job") || !strings.Contains(output, "web") || !strings.Contains(output, "workflow") {
+		t.Fatalf("expected usage to mention run, async-job, and web, got: %s", output)
+	}
 	if !strings.Contains(output, "node-reverse") || !strings.Contains(output, "anti-bot") {
 		t.Fatalf("expected usage to mention anti-bot and node-reverse commands, got: %s", output)
+	}
+}
+
+func TestPrintAndPersistJobResultWritesAuditAndConnectorFiles(t *testing.T) {
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working dir: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(originalWD) }()
+
+	job := &core.JobSpec{
+		Name:    "go-audit-job",
+		Runtime: core.RuntimeHTTP,
+		Target: core.TargetSpec{
+			URL: "https://example.com",
+		},
+		Output: core.OutputSpec{
+			Format: "json",
+			Path:   filepath.Join(tempDir, "artifacts", "exports", "job-output.json"),
+		},
+	}
+	result := core.NewJobResult(*job, core.StateSucceeded)
+	result.URL = "https://example.com"
+	result.Extract["title"] = "Go Audit"
+	result.Finalize()
+
+	printAndPersistJobResult(job, result)
+
+	auditPath := filepath.Join(tempDir, "artifacts", "control-plane", "go-audit-job-audit.jsonl")
+	connectorPath := filepath.Join(tempDir, "artifacts", "control-plane", "go-audit-job-connector.jsonl")
+	if _, err := os.Stat(auditPath); err != nil {
+		t.Fatalf("expected audit file to exist: %v", err)
+	}
+	if _, err := os.Stat(connectorPath); err != nil {
+		t.Fatalf("expected connector file to exist: %v", err)
+	}
+	auditContent, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("failed to read audit file: %v", err)
+	}
+	connectorContent, err := os.ReadFile(connectorPath)
+	if err != nil {
+		t.Fatalf("failed to read connector file: %v", err)
+	}
+	if !strings.Contains(string(auditContent), "go-audit-job") {
+		t.Fatalf("expected audit file to mention job name, got: %s", string(auditContent))
+	}
+	if !strings.Contains(string(connectorContent), "\"title\":\"Go Audit\"") {
+		t.Fatalf("expected connector file to include extract payload, got: %s", string(connectorContent))
 	}
 }
 
@@ -226,6 +371,63 @@ func TestCurlCommandConvertsToRestyTemplate(t *testing.T) {
 	}
 	if !strings.Contains(output, "resty.New") || !strings.Contains(output, "https://example.com/api") {
 		t.Fatalf("expected generated resty code, got: %s", output)
+	}
+}
+
+func TestWorkflowCommandRunsAndPersistsControlPlaneArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "workflow.json")
+	if err := os.WriteFile(specPath, []byte(`{
+  "id": "go-workflow",
+  "name": "go-workflow",
+  "steps": [
+    { "id": "goto", "type": "goto", "selector": "https://example.com" },
+    { "id": "title", "type": "extract", "selector": "title", "metadata": { "value": "Workflow Title" } }
+  ]
+}`), 0644); err != nil {
+		t.Fatalf("failed to write workflow spec: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if code := workflowCommand([]string{"run", "--file", specPath}); code != 0 {
+			t.Fatalf("expected workflow command to succeed, got %d", code)
+		}
+	})
+
+	if !strings.Contains(output, `"command": "workflow run"`) || !strings.Contains(output, "Workflow Title") {
+		t.Fatalf("unexpected workflow output: %s", output)
+	}
+	eventPath := filepath.Join(dir, "artifacts", "control-plane", "go-workflow-workflow-events.jsonl")
+	connectorPath := filepath.Join(dir, "artifacts", "control-plane", "go-workflow-workflow-connector.jsonl")
+	if _, err := os.Stat(eventPath); err != nil {
+		t.Fatalf("expected workflow events file: %v", err)
+	}
+	if _, err := os.Stat(connectorPath); err != nil {
+		t.Fatalf("expected workflow connector file: %v", err)
+	}
+}
+
+func TestExportCommandSupportsJSONL(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "input.json")
+	output := filepath.Join(dir, "output.jsonl")
+	if err := os.WriteFile(input, []byte(`{"items":[{"title":"Demo","url":"https://example.com","snippet":"hello","source":"test","time":"now"}]}`), 0644); err != nil {
+		t.Fatalf("failed to write input: %v", err)
+	}
+
+	outputText := captureStdout(t, func() {
+		exportCommand([]string{"--input", input, "--format", "jsonl", "--output", output})
+	})
+
+	if !strings.Contains(outputText, "exported:") {
+		t.Fatalf("unexpected export output: %s", outputText)
+	}
+	content, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("failed to read jsonl output: %v", err)
+	}
+	if !strings.Contains(string(content), `"title":"Demo"`) {
+		t.Fatalf("unexpected jsonl content: %s", string(content))
 	}
 }
 
@@ -314,6 +516,151 @@ func TestNodeReverseTLSFingerprintCommandAgainstMockServer(t *testing.T) {
 	}
 }
 
+func TestNodeReverseCanvasFingerprintCommandAgainstMockServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/canvas/fingerprint" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"hash":"mock-canvas"}`))
+	}))
+	defer server.Close()
+
+	output := captureStdout(t, func() {
+		_ = nodeReverseCanvasFingerprintCommand([]string{"--base-url", server.URL})
+	})
+
+	if !strings.Contains(output, `"hash": "mock-canvas"`) {
+		t.Fatalf("unexpected node-reverse canvas-fingerprint output: %s", output)
+	}
+}
+
+func TestNodeReverseSignatureReverseCommandAgainstMockServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/signature/reverse" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"functionName":"sign"}`))
+	}))
+	defer server.Close()
+
+	codePath := filepath.Join(t.TempDir(), "sign.js")
+	if err := os.WriteFile(codePath, []byte(`function sign(v){return v}`), 0644); err != nil {
+		t.Fatalf("failed to write code fixture: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		_ = nodeReverseSignatureReverseCommand([]string{"--base-url", server.URL, "--code-file", codePath, "--input-data", "left", "--expected-output", "left"})
+	})
+
+	if !strings.Contains(output, `"functionName": "sign"`) {
+		t.Fatalf("unexpected node-reverse signature-reverse output: %s", output)
+	}
+}
+
+func TestNodeReverseASTCommandAgainstMockServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/ast/analyze" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"results":{"obfuscation":[{"type":"eval-packer"}]}}`))
+	}))
+	defer server.Close()
+
+	codePath := filepath.Join(t.TempDir(), "bundle.js")
+	if err := os.WriteFile(codePath, []byte(`eval(function(p,a,c,k,e,d){return p;})`), 0644); err != nil {
+		t.Fatalf("failed to write code fixture: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		_ = nodeReverseASTCommand([]string{"--base-url", server.URL, "--code-file", codePath, "--analysis", "obfuscation"})
+	})
+
+	if !strings.Contains(output, `"success": true`) || !strings.Contains(output, `eval-packer`) {
+		t.Fatalf("unexpected node-reverse ast output: %s", output)
+	}
+}
+
+func TestNodeReverseWebpackCommandAgainstMockServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/webpack/analyze" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"entrypoints":["main"]}`))
+	}))
+	defer server.Close()
+
+	codePath := filepath.Join(t.TempDir(), "webpack.js")
+	if err := os.WriteFile(codePath, []byte(`__webpack_require__(1)`), 0644); err != nil {
+		t.Fatalf("failed to write code fixture: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		_ = nodeReverseWebpackCommand([]string{"--base-url", server.URL, "--code-file", codePath})
+	})
+
+	if !strings.Contains(output, `"entrypoints": [`) || !strings.Contains(output, `"main"`) {
+		t.Fatalf("unexpected node-reverse webpack output: %s", output)
+	}
+}
+
+func TestNodeReverseFunctionCallCommandAgainstMockServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/function/call" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"result":"left|right"}`))
+	}))
+	defer server.Close()
+
+	codePath := filepath.Join(t.TempDir(), "call.js")
+	if err := os.WriteFile(codePath, []byte(`function sign(a,b){return a+'|'+b;}`), 0644); err != nil {
+		t.Fatalf("failed to write code fixture: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		_ = nodeReverseFunctionCallCommand([]string{"--base-url", server.URL, "--code-file", codePath, "--function-name", "sign", "--arg", "left", "--arg", "right"})
+	})
+
+	if !strings.Contains(output, `"result": "left|right"`) {
+		t.Fatalf("unexpected node-reverse function-call output: %s", output)
+	}
+}
+
+func TestNodeReverseBrowserSimulateCommandAgainstMockServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/browser/simulate" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"result":{"ok":true},"cookies":"session=1"}`))
+	}))
+	defer server.Close()
+
+	codePath := filepath.Join(t.TempDir(), "browser.js")
+	if err := os.WriteFile(codePath, []byte(`navigator.userAgent`), 0644); err != nil {
+		t.Fatalf("failed to write code fixture: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		_ = nodeReverseBrowserSimulateCommand([]string{"--base-url", server.URL, "--code-file", codePath})
+	})
+
+	if !strings.Contains(output, `"cookies": "session=1"`) {
+		t.Fatalf("unexpected node-reverse browser-simulate output: %s", output)
+	}
+}
+
 func TestAntiBotProfileCommandDetectsBlockedFixture(t *testing.T) {
 	htmlPath := filepath.Join(t.TempDir(), "blocked.html")
 	if err := os.WriteFile(htmlPath, []byte(`<html><title>Blocked</title><body>Access denied. captcha required.</body></html>`), 0644); err != nil {
@@ -349,6 +696,10 @@ func TestProfileSiteCommandBuildsSiteProfile(t *testing.T) {
 			_, _ = w.Write([]byte(`{"success":true,"browser":"chrome"}`))
 		case "/api/tls/fingerprint":
 			_, _ = w.Write([]byte(`{"success":true,"fingerprint":{"ja3":"mock-ja3"}}`))
+		case "/api/canvas/fingerprint":
+			_, _ = w.Write([]byte(`{"success":true,"hash":"mock-canvas"}`))
+		case "/api/crypto/analyze":
+			_, _ = w.Write([]byte(`{"success":true,"cryptoTypes":[{"name":"AES"}],"analysis":{"keyFlowChains":[{"variable":"sessionKey","source":{"kind":"storage.localStorage","expression":"localStorage.getItem('session-key')"},"derivations":[{"variable":"derivedKey","kind":"hash","expression":"sha256(sessionKey)"}],"sinks":["crypto.subtle.encrypt"],"confidence":0.87}]}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -368,8 +719,11 @@ func TestProfileSiteCommandBuildsSiteProfile(t *testing.T) {
 	if !strings.Contains(output, `"recommended_runtime": "python"`) {
 		t.Fatalf("expected recommended runtime in output: %s", output)
 	}
-	if !strings.Contains(output, `"reverse":`) || !strings.Contains(output, `mock-ja3`) {
+	if !strings.Contains(output, `"reverse":`) || !strings.Contains(output, `mock-ja3`) || !strings.Contains(output, `"canvas_fingerprint"`) || !strings.Contains(output, `mock-canvas`) || !strings.Contains(output, `"crypto_analysis"`) || !strings.Contains(output, `AES`) {
 		t.Fatalf("expected reverse summary in output: %s", output)
+	}
+	if !strings.Contains(output, `"reverse_focus":`) || !strings.Contains(output, `sessionKey`) || !strings.Contains(output, `crypto.subtle.encrypt`) {
+		t.Fatalf("expected reverse focus hint in output: %s", output)
 	}
 }
 
@@ -433,6 +787,65 @@ func TestSelectorStudioCommandExtractsValues(t *testing.T) {
 	}
 	if !strings.Contains(output, `"framework": "gospider"`) {
 		t.Fatalf("expected framework marker in selector-studio output: %s", output)
+	}
+}
+
+func TestResearchCommandRunAsyncAndSoak(t *testing.T) {
+	runOutput := captureStdout(t, func() {
+		if code := researchCommand([]string{
+			"run",
+			"--url",
+			"https://example.com",
+			"--schema-json",
+			`{"properties":{"title":{"type":"string"}}}`,
+			"--content",
+			"<title>Research Demo</title>",
+		}); code != 0 {
+			t.Fatalf("expected research run to succeed, got %d", code)
+		}
+	})
+	if !strings.Contains(runOutput, `"title": "Research Demo"`) {
+		t.Fatalf("unexpected research run output: %s", runOutput)
+	}
+
+	asyncOutput := captureStdout(t, func() {
+		if code := researchCommand([]string{
+			"async",
+			"--url",
+			"https://example.com/1",
+			"--url",
+			"https://example.com/2",
+			"--schema-json",
+			`{"properties":{"title":{"type":"string"}}}`,
+			"--content",
+			"<title>Async Research</title>",
+		}); code != 0 {
+			t.Fatalf("expected research async to succeed, got %d", code)
+		}
+	})
+	if !strings.Contains(asyncOutput, `"command": "research async"`) {
+		t.Fatalf("unexpected research async output: %s", asyncOutput)
+	}
+
+	soakOutput := captureStdout(t, func() {
+		if code := researchCommand([]string{
+			"soak",
+			"--url",
+			"https://example.com/1",
+			"--url",
+			"https://example.com/2",
+			"--schema-json",
+			`{"properties":{"title":{"type":"string"}}}`,
+			"--content",
+			"<title>Soak Research</title>",
+			"--rounds",
+			"2",
+		}); code != 0 {
+			t.Fatalf("expected research soak to succeed, got %d", code)
+		}
+	})
+	if !strings.Contains(soakOutput, `"results": 4`) {
+		t.Fatalf("unexpected research soak output: %s", soakOutput)
 	}
 }
 
@@ -1003,6 +1416,8 @@ func TestUltimateCommandRunsWithMockServices(t *testing.T) {
 			_, _ = w.Write([]byte(`{"success":true,"browser":"chrome","platform":"windows","fingerprint":{"userAgent":"mock"}}`))
 		case "/api/tls/fingerprint":
 			_, _ = w.Write([]byte(`{"success":true,"browser":"chrome","version":"120","fingerprint":{"ja3":"mock-ja3"}}`))
+		case "/api/canvas/fingerprint":
+			_, _ = w.Write([]byte(`{"success":true,"hash":"mock-canvas"}`))
 		case "/api/browser/simulate":
 			_, _ = w.Write([]byte(`{"success":true,"result":{"ok":true},"cookies":"session=1"}`))
 		case "/api/crypto/analyze":
@@ -1068,7 +1483,7 @@ func TestUltimateCommandRunsWithMockServices(t *testing.T) {
 	if !strings.Contains(output, `"summary": "passed"`) {
 		t.Fatalf("expected passed summary, got: %s", output)
 	}
-	if !strings.Contains(output, `"reverse":`) || !strings.Contains(output, `mock-ja3`) {
+	if !strings.Contains(output, `"reverse":`) || !strings.Contains(output, `mock-ja3`) || !strings.Contains(output, `mock-canvas`) || !strings.Contains(output, `"canvas_fingerprint"`) || !strings.Contains(output, `"crypto_analysis"`) || !strings.Contains(output, `AES`) {
 		t.Fatalf("expected reverse runtime summary in output, got: %s", output)
 	}
 	if !strings.Contains(output, "成功: 1, 失败: 0") {

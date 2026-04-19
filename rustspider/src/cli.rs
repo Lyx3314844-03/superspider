@@ -201,8 +201,10 @@ async fn cmd_download(
     // 确定下载 URL
     let download_url = video
         .m3u8_url
-        .or(video.mp4_url)
-        .or(video.dash_url)
+        .clone()
+        .or(video.dash_url.clone())
+        .or(video.mp4_url.clone())
+        .or(video.download_url.clone())
         .ok_or("未找到可下载的 URL")?;
 
     let name = output_name.unwrap_or(&video.video_id);
@@ -278,8 +280,17 @@ fn cmd_parse(
     if let Some(url) = &video.m3u8_url {
         println!("  M3U8: {}", url);
     }
+    if let Some(url) = &video.dash_url {
+        println!("  DASH: {}", url);
+    }
     if let Some(url) = &video.mp4_url {
         println!("  MP4: {}", url);
+    }
+    if let Some(url) = &video.download_url {
+        println!("  Download: {}", url);
+    }
+    if let Some(url) = &video.cover_url {
+        println!("  Cover: {}", url);
     }
 
     Ok(())

@@ -358,6 +358,21 @@ class UltimateSpider:
             "tls_fingerprint": self.reverse_client.generate_tls_fingerprint(
                 "chrome", "120"
             ),
+            "canvas_fingerprint": self.reverse_client.canvas_fingerprint(),
+            "crypto_analysis": self.reverse_client.analyze_crypto(
+                next(
+                    (
+                        script.strip()
+                        for script in re.findall(
+                            r"<script[^>]*>(.*?)</script>",
+                            response.text or "",
+                            re.IGNORECASE | re.DOTALL,
+                        )
+                        if script.strip()
+                    ),
+                    (response.text or "")[:20000],
+                )
+            ),
         }
 
     def simulate_browser(self, url: str) -> Dict[str, Any]:

@@ -19,6 +19,7 @@ type AIConfig struct {
 	Model       string  `json:"model"`
 	MaxTokens   int     `json:"max_tokens"`
 	Temperature float64 `json:"temperature"`
+	Provider    string  `json:"provider"`
 }
 
 // DefaultAIConfig - 默认配置
@@ -27,13 +28,31 @@ func DefaultAIConfig() *AIConfig {
 	if apiKey == "" {
 		apiKey = os.Getenv("AI_API_KEY")
 	}
+	if apiKey == "" {
+		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+	}
+	if apiKey == "" {
+		apiKey = os.Getenv("CLAUDE_API_KEY")
+	}
+
+	provider := strings.TrimSpace(os.Getenv("AI_PROVIDER"))
+	if provider == "" && (os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("CLAUDE_API_KEY") != "") {
+		provider = "anthropic"
+	}
 
 	baseURL := os.Getenv("OPENAI_BASE_URL")
 	if baseURL == "" {
 		baseURL = os.Getenv("AI_BASE_URL")
 	}
 	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
+		baseURL = os.Getenv("ANTHROPIC_BASE_URL")
+	}
+	if baseURL == "" {
+		if strings.EqualFold(provider, "anthropic") {
+			baseURL = "https://api.anthropic.com/v1"
+		} else {
+			baseURL = "https://api.openai.com/v1"
+		}
 	}
 
 	model := os.Getenv("OPENAI_MODEL")
@@ -41,7 +60,14 @@ func DefaultAIConfig() *AIConfig {
 		model = os.Getenv("AI_MODEL")
 	}
 	if model == "" {
-		model = "gpt-3.5-turbo"
+		model = firstNonBlankEnv("ANTHROPIC_MODEL", "CLAUDE_MODEL")
+	}
+	if model == "" {
+		if strings.EqualFold(provider, "anthropic") {
+			model = "claude-sonnet-4-20250514"
+		} else {
+			model = "gpt-5.2"
+		}
 	}
 
 	maxTokens := 2000
@@ -64,6 +90,7 @@ func DefaultAIConfig() *AIConfig {
 		Model:       model,
 		MaxTokens:   maxTokens,
 		Temperature: temperature,
+		Provider:    provider,
 	}
 }
 
@@ -102,6 +129,20 @@ type ChatResponse struct {
 	Choices []struct {
 		Message ChatMessage `json:"message"`
 	} `json:"choices"`
+}
+
+type AnthropicRequest struct {
+	Model       string        `json:"model"`
+	Messages    []ChatMessage `json:"messages"`
+	MaxTokens   int           `json:"max_tokens"`
+	Temperature float64       `json:"temperature"`
+}
+
+type AnthropicResponse struct {
+	Content []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content"`
 }
 
 // ExtractStructured - 提取结构化数据
@@ -191,6 +232,10 @@ func (e *AIExtractor) callLLM(prompt string) (string, error) {
 		return "", fmt.Errorf("API key is required")
 	}
 
+	if e.isAnthropicProvider() {
+		return e.callAnthropic(prompt)
+	}
+
 	requestBody, err := json.Marshal(ChatRequest{
 		Model: e.config.Model,
 		Messages: []ChatMessage{
@@ -235,6 +280,80 @@ func (e *AIExtractor) callLLM(prompt string) (string, error) {
 	return chatResp.Choices[0].Message.Content, nil
 }
 
+func (e *AIExtractor) callAnthropic(prompt string) (string, error) {
+	requestBody, err := json.Marshal(AnthropicRequest{
+		Model: e.config.Model,
+		Messages: []ChatMessage{
+			{Role: "user", Content: prompt},
+		},
+		MaxTokens:   e.config.MaxTokens,
+		Temperature: e.config.Temperature,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", buildAnthropicEndpoint(e.config.BaseURL), bytes.NewBuffer(requestBody))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("x-api-key", e.config.APIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+	}
+
+	var anthropicResp AnthropicResponse
+	if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
+		return "", err
+	}
+
+	for _, block := range anthropicResp.Content {
+		if block.Type == "text" && block.Text != "" {
+			return block.Text, nil
+		}
+	}
+
+	return "", fmt.Errorf("no response from API")
+}
+
+func (e *AIExtractor) isAnthropicProvider() bool {
+	provider := strings.ToLower(strings.TrimSpace(e.config.Provider))
+	if provider == "anthropic" || provider == "claude" {
+		return true
+	}
+	baseURL := strings.ToLower(strings.TrimSpace(e.config.BaseURL))
+	model := strings.ToLower(strings.TrimSpace(e.config.Model))
+	return strings.Contains(baseURL, "anthropic") || strings.Contains(model, "claude")
+}
+
+func buildAnthropicEndpoint(baseURL string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if strings.HasSuffix(trimmed, "/messages") {
+		return trimmed
+	}
+	return trimmed + "/messages"
+}
+
+func firstNonBlankEnv(names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 // SpiderAssistant - 智能爬虫助手
 type SpiderAssistant struct {
 	extractor *AIExtractor
@@ -245,7 +364,7 @@ func NewSpiderAssistant(apiKey string) *SpiderAssistant {
 	config := &AIConfig{
 		APIKey:      apiKey,
 		BaseURL:     "https://api.openai.com/v1",
-		Model:       "gpt-3.5-turbo",
+		Model:       "gpt-5.2",
 		MaxTokens:   2000,
 		Temperature: 0.7,
 	}

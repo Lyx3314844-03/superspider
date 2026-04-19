@@ -2,6 +2,7 @@ package com.javaspider.cli;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.javaspider.media.*;
+import com.javaspider.media.drm.DRMChecker;
 import com.javaspider.media.parser.*;
 import com.javaspider.media.ffmpeg.FFmpegProcessor;
 
@@ -33,6 +34,9 @@ public class MediaDownloaderCLI {
                 break;
             case "artifact":
                 handleArtifact(Arrays.copyOfRange(args, 1, args.length));
+                break;
+            case "drm":
+                handleDrm(Arrays.copyOfRange(args, 1, args.length));
                 break;
             case "convert":
                 handleConvert(Arrays.copyOfRange(args, 1, args.length));
@@ -132,40 +136,26 @@ public class MediaDownloaderCLI {
         
         try {
             // 1. 解析视频
-            VideoParser parser = getParser(url);
-            if (parser == null) {
-                System.out.println("Unsupported platform");
-                return;
-            }
-
             VideoInfo info = (!htmlFile.isBlank() || !networkFile.isBlank() || !harFile.isBlank())
                 ? parseVideoArtifacts(url, htmlFile, networkFile, harFile)
-                : parser.parse(url);
+                : parseVideoInfo(url, true);
             System.out.println("Title: " + info.getTitle());
             System.out.println("Platform: " + info.getPlatform());
+            if (info.isDRMProtected()) {
+                System.out.println("Warning: DRM protection detected; download may require license handling.");
+            }
             System.out.println();
+            if (audioOnly) {
+                if (downloadAudioOnly(info, url, outputDir, quality)) {
+                    System.out.println("\nDownload completed!");
+                }
+                return;
+            }
             String mediaUrl = resolveMediaUrl(info, url);
             
             // 2. 下载
-            if (mediaUrl.contains(".m3u8")) {
-                // HLS 流
-                HLSDownloader hls = new HLSDownloader(outputDir);
-                HLSDownloader.DownloadResult result = hls.download(mediaUrl, info.getTitle() + ".ts");
-                System.out.println("Downloaded: " + result.outputFile);
-                
-            } else if (mediaUrl.contains(".mpd")) {
-                // DASH 流
-                DASHDownloader dash = new DASHDownloader(outputDir);
-                DASHDownloader.DownloadResult result = dash.download(mediaUrl, quality);
-                System.out.println("Downloaded: " + result.outputFile);
-                
-            } else {
-                // 普通下载
-                AdvancedMediaDownloader downloader = new AdvancedMediaDownloader(outputDir);
-                MediaItem item = new MediaItem(info.getTitle(), mediaUrl, MediaType.VIDEO);
-                String outputFile = downloader.downloadWithResume(item);
-                System.out.println("Downloaded: " + outputFile);
-            }
+            String outputFile = downloadResolvedAsset(info, mediaUrl, outputDir, quality, MediaType.VIDEO);
+            System.out.println("Downloaded: " + outputFile);
             
             System.out.println("\nDownload completed!");
             
@@ -224,21 +214,9 @@ public class MediaDownloaderCLI {
         harFile = artifacts[2];
 
         try {
-            VideoParser parser = getParser(url);
-            if (parser == null) {
-                // 尝试从 URL 推断平台
-                if (url.contains("youtube.com") || url.contains("youtu.be")) {
-                    System.out.println("Platform: YouTube");
-                    System.out.println("Title: " + fallbackVideoTitle(url, null));
-                    return;
-                }
-                System.out.println("Unsupported platform");
-                return;
-            }
-
             VideoInfo info = (!htmlFile.isBlank() || !networkFile.isBlank() || !harFile.isBlank())
                 ? parseVideoArtifacts(url, htmlFile, networkFile, harFile)
-                : parser.parse(url);
+                : parseVideoInfo(url, false);
             String displayTitle = fallbackVideoTitle(url, info.getTitle());
 
             System.out.println("========== Video Info ==========");
@@ -247,6 +225,8 @@ public class MediaDownloaderCLI {
             System.out.println("Duration: " + info.getDuration() + "s");
             System.out.println("Views: " + info.getViewCount());
             System.out.println("Description: " + info.getDescription());
+            System.out.println("Audio tracks: " + info.getAudioUrls().size());
+            System.out.println("DRM protected: " + info.isDRMProtected());
             System.out.println("================================");
 
         } catch (Exception e) {
@@ -256,6 +236,94 @@ public class MediaDownloaderCLI {
                 System.out.println("Platform: YouTube");
                 System.out.println("Title: " + fallbackVideoTitle(url, null));
             }
+        }
+    }
+
+    private static void handleDrm(String[] args) {
+        String url = "";
+        String inlineContent = "";
+        String htmlFile = "";
+        String m3u8File = "";
+        String mpdFile = "";
+
+        for (int i = 0; i < args.length; i++) {
+            switch (args[i]) {
+                case "--url" -> {
+                    if (i + 1 < args.length) {
+                        url = args[++i];
+                    }
+                }
+                case "--content" -> {
+                    if (i + 1 < args.length) {
+                        inlineContent = args[++i];
+                    }
+                }
+                case "--html-file" -> {
+                    if (i + 1 < args.length) {
+                        htmlFile = args[++i];
+                    }
+                }
+                case "--m3u8-file" -> {
+                    if (i + 1 < args.length) {
+                        m3u8File = args[++i];
+                    }
+                }
+                case "--mpd-file" -> {
+                    if (i + 1 < args.length) {
+                        mpdFile = args[++i];
+                    }
+                }
+                default -> {
+                    // keep the lightweight CLI permissive
+                }
+            }
+        }
+
+        DRMChecker checker = new DRMChecker();
+        DRMChecker.DRMResult result;
+        String source = "url";
+
+        try {
+            if (!m3u8File.isBlank()) {
+                result = checker.checkFromM3U8(java.nio.file.Files.readString(java.nio.file.Path.of(m3u8File)));
+                source = "m3u8";
+            } else if (!mpdFile.isBlank()) {
+                result = checker.checkFromMPD(java.nio.file.Files.readString(java.nio.file.Path.of(mpdFile)));
+                source = "mpd";
+            } else if (!htmlFile.isBlank()) {
+                result = checker.checkFromHTML(java.nio.file.Files.readString(java.nio.file.Path.of(htmlFile)));
+                source = "html";
+            } else if (!inlineContent.isBlank()) {
+                if (inlineContent.contains("#EXTM3U")) {
+                    result = checker.checkFromM3U8(inlineContent);
+                    source = "m3u8";
+                } else if (inlineContent.contains("<ContentProtection") || inlineContent.contains("<MPD")) {
+                    result = checker.checkFromMPD(inlineContent);
+                    source = "mpd";
+                } else {
+                    result = checker.checkFromHTML(inlineContent);
+                    source = "html";
+                }
+            } else if (!url.isBlank()) {
+                result = checker.checkFromURL(url);
+            } else {
+                System.out.println("drm requires --url, --content, --html-file, --m3u8-file, or --mpd-file");
+                return;
+            }
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("command", "drm");
+            payload.put("runtime", "java");
+            payload.put("source", source);
+            payload.put("url", url);
+            payload.put("protected", result.isProtected());
+            payload.put("drm_type", result.getDrmType().name());
+            payload.put("license_url", result.getLicenseUrl() == null ? "" : result.getLicenseUrl());
+            payload.put("detected_systems", result.getDetectedSystems());
+            ObjectMapper mapper = new ObjectMapper();
+            System.out.println(mapper.writeValueAsString(payload));
+        } catch (Exception e) {
+            System.err.println("Error: " + e.getMessage());
         }
     }
 
@@ -278,6 +346,71 @@ public class MediaDownloaderCLI {
             }
         }
         return videoId;
+    }
+
+    static VideoInfo parseVideoInfo(String url, boolean requireMedia) throws Exception {
+        VideoParser primary = getParser(url);
+        VideoInfo candidate = null;
+        Exception primaryFailure = null;
+
+        if (primary != null) {
+            try {
+                candidate = primary.parse(url);
+                if (candidate != null && (!requireMedia || hasMediaCandidate(candidate))) {
+                    return candidate;
+                }
+            } catch (Exception e) {
+                primaryFailure = e;
+            }
+        }
+
+        if (!(primary instanceof GenericParser)) {
+            try {
+                VideoInfo fallback = new GenericParser().parse(url);
+                if (fallback != null && (!requireMedia || hasMediaCandidate(fallback))) {
+                    return fallback;
+                }
+                if (fallback != null && candidate == null) {
+                    candidate = fallback;
+                }
+            } catch (Exception e) {
+                if (primaryFailure == null) {
+                    primaryFailure = e;
+                }
+            }
+        }
+
+        if (candidate != null && !requireMedia) {
+            return candidate;
+        }
+        if (primaryFailure != null) {
+            throw primaryFailure;
+        }
+        throw new IllegalStateException(requireMedia ? "Unable to resolve downloadable media URL" : "Unsupported platform");
+    }
+
+    private static boolean hasMediaCandidate(VideoInfo info) {
+        if (info == null) {
+            return false;
+        }
+        if (info.getVideoUrl() != null && !info.getVideoUrl().isBlank()) {
+            return true;
+        }
+        if (info.getVideoUrls() != null) {
+            for (String value : info.getVideoUrls()) {
+                if (value != null && !value.isBlank()) {
+                    return true;
+                }
+            }
+        }
+        if (info.getAudioUrls() != null) {
+            for (String value : info.getAudioUrls()) {
+                if (value != null && !value.isBlank()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static void handleArtifact(String[] args) {
@@ -340,6 +473,16 @@ public class MediaDownloaderCLI {
 
         try {
             VideoInfo info = parseVideoArtifacts(url, htmlFile, networkFile, harFile);
+            Map<String, Object> videoPayload = new LinkedHashMap<>();
+            videoPayload.put("title", info.getTitle());
+            videoPayload.put("platform", info.getPlatform());
+            videoPayload.put("video_id", info.getVideoId());
+            videoPayload.put("description", info.getDescription());
+            videoPayload.put("cover_url", info.getCoverUrl());
+            videoPayload.put("video_url", info.getVideoUrl());
+            videoPayload.put("video_urls", info.getVideoUrls());
+            videoPayload.put("audio_urls", info.getAudioUrls());
+            videoPayload.put("drm_protected", info.isDRMProtected());
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("command", "media artifact");
             payload.put("runtime", "java");
@@ -348,15 +491,7 @@ public class MediaDownloaderCLI {
             payload.put("html_file", htmlFile);
             payload.put("network_file", networkFile);
             payload.put("har_file", harFile);
-            payload.put("video", Map.of(
-                "title", info.getTitle(),
-                "platform", info.getPlatform(),
-                "video_id", info.getVideoId(),
-                "description", info.getDescription(),
-                "cover_url", info.getCoverUrl(),
-                "video_url", info.getVideoUrl(),
-                "video_urls", info.getVideoUrls()
-            ));
+            payload.put("video", videoPayload);
             payload.put("download", Map.of(
                 "requested", download,
                 "output", ""
@@ -375,6 +510,7 @@ public class MediaDownloaderCLI {
                 } else {
                     AdvancedMediaDownloader downloader = new AdvancedMediaDownloader(outputDir);
                     MediaItem item = new MediaItem(info.getTitle(), mediaUrl, MediaType.VIDEO);
+                    item.setDownloadUrl(mediaUrl);
                     String output = downloader.downloadWithResume(item);
                     payload.put("download", Map.of("requested", true, "output", output));
                 }
@@ -420,6 +556,53 @@ public class MediaDownloaderCLI {
             List.of("*.har")
         );
         return new String[]{htmlFile, networkFile, harFile};
+    }
+
+    private static boolean downloadAudioOnly(VideoInfo info, String originalUrl, String outputDir, String quality) throws Exception {
+        String audioUrl = resolveAudioUrl(info);
+        if (audioUrl != null && !audioUrl.isBlank()) {
+            String outputFile = downloadResolvedAsset(info, audioUrl, outputDir, quality, MediaType.AUDIO);
+            System.out.println("Downloaded audio: " + outputFile);
+            return true;
+        }
+
+        FFmpegProcessor ffmpeg = createFFmpegProcessor();
+        DependencyCheck ffmpegCheck = checkFFmpeg(ffmpeg);
+        if (!ffmpegCheck.available()) {
+            System.out.println("FFmpeg dependency check failed for audio-only.");
+            System.out.println(ffmpegCheck.message());
+            return false;
+        }
+
+        String mediaUrl = resolveMediaUrl(info, originalUrl);
+        String downloaded = downloadResolvedAsset(info, mediaUrl, outputDir, quality, MediaType.VIDEO);
+        String audioOutput = buildAudioOutputPath(outputDir, defaultMediaTitle(info, originalUrl));
+        String extracted = ffmpeg.extractAudio(downloaded, audioOutput);
+        System.out.println("Downloaded source: " + downloaded);
+        System.out.println("Extracted audio: " + extracted);
+        return true;
+    }
+
+    private static String downloadResolvedAsset(VideoInfo info, String mediaUrl, String outputDir, String quality, MediaType mediaType) throws Exception {
+        if (mediaUrl == null || mediaUrl.isBlank()) {
+            throw new IllegalStateException("Unable to resolve downloadable media URL");
+        }
+        String title = defaultMediaTitle(info, mediaUrl);
+        if (mediaUrl.contains(".m3u8")) {
+            HLSDownloader hls = new HLSDownloader(outputDir);
+            HLSDownloader.DownloadResult result = hls.download(mediaUrl, sanitizeFileName(title) + ".ts");
+            return result.outputFile;
+        }
+        if (mediaUrl.contains(".mpd")) {
+            DASHDownloader dash = new DASHDownloader(outputDir);
+            DASHDownloader.DownloadResult result = dash.download(mediaUrl, quality);
+            return result.outputFile;
+        }
+
+        AdvancedMediaDownloader downloader = new AdvancedMediaDownloader(outputDir);
+        MediaItem item = new MediaItem(title, mediaUrl, mediaType);
+        item.setDownloadUrl(mediaUrl);
+        return downloader.downloadWithResume(item);
     }
 
     private static String discoverArtifactPath(String artifactDir, String currentValue, List<String> candidates, List<String> patterns) {
@@ -470,6 +653,42 @@ public class MediaDownloaderCLI {
             }
         }
         return originalUrl;
+    }
+
+    private static String resolveAudioUrl(VideoInfo info) {
+        if (info != null && info.getAudioUrls() != null) {
+            for (String value : info.getAudioUrls()) {
+                if (value != null && !value.isBlank()) {
+                    return value;
+                }
+            }
+        }
+        if (info != null && info.getVideoUrl() != null && isAudioUrl(info.getVideoUrl())) {
+            return info.getVideoUrl();
+        }
+        return null;
+    }
+
+    private static boolean isAudioUrl(String value) {
+        if (value == null) {
+            return false;
+        }
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.contains(".mp3") || lower.contains(".m4a") || lower.contains(".aac")
+            || lower.contains(".flac") || lower.contains(".ogg") || lower.contains(".wav");
+    }
+
+    private static String defaultMediaTitle(VideoInfo info, String fallbackUrl) {
+        return fallbackVideoTitle(fallbackUrl, info == null ? null : info.getTitle());
+    }
+
+    private static String buildAudioOutputPath(String outputDir, String title) {
+        return new File(outputDir, sanitizeFileName(title) + ".mp3").getPath();
+    }
+
+    private static String sanitizeFileName(String value) {
+        String base = value == null || value.isBlank() ? "audio" : value;
+        return base.replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fa5._-]", "_").replaceAll("_+", "_");
     }
     
     /**
@@ -565,6 +784,9 @@ public class MediaDownloaderCLI {
         List<VideoParser> parsers = Arrays.asList(
             new YoukuParser(),
             new YouTubeParser(),
+            new BilibiliParser(),
+            new IqiyiParser(),
+            new TencentParser(),
             new GenericParser()
         );
         
@@ -589,6 +811,7 @@ public class MediaDownloaderCLI {
         System.out.println("  download <url> [options]  Download video");
         System.out.println("  info <url>                Show video info");
         System.out.println("  artifact [options]        Parse or download from artifact directory");
+        System.out.println("  drm [options]             Inspect DRM signals from HTML/manifests/URLs");
         System.out.println("  convert <input> <format>  Convert video format");
         System.out.println("  merge <output> <inputs>   Merge videos");
         System.out.println("  doctor [--json]           Check runtime dependencies");
@@ -604,6 +827,7 @@ public class MediaDownloaderCLI {
         System.out.println("  download https://www.youku.tv/v/xxx.html");
         System.out.println("  download https://www.youku.tv/v/xxx.html -o ./videos -q 1080p");
         System.out.println("  info https://www.youku.tv/v/xxx.html");
+        System.out.println("  drm --content \"#EXTM3U ...\"");
         System.out.println("  convert video.mp4 avi");
         System.out.println("  merge output.mp4 part1.mp4 part2.mp4");
         System.out.println("  doctor");

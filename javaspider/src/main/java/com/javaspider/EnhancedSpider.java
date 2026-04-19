@@ -83,6 +83,9 @@ public class EnhancedSpider {
             case "doctor":
                 handleDoctor(rest);
                 break;
+            case "preflight":
+                handleDoctor(rest, "preflight");
+                break;
             case "export":
                 handleExport(rest);
                 break;
@@ -97,6 +100,15 @@ public class EnhancedSpider {
                 break;
             case "console":
                 handleConsole(rest);
+                break;
+            case "audit":
+                handleAudit(rest);
+                break;
+            case "web":
+            case "run":
+            case "async-job":
+            case "research":
+                SuperSpiderCLI.main(args);
                 break;
             case "ultimate":
                 UltimateSpiderProcessor.main(rest);
@@ -165,8 +177,10 @@ public class EnhancedSpider {
         System.out.println("          用法: ai --url <url> [--instructions <text>] [--schema-json <json>]");
         System.out.println("  doctor  输出运行时和文件系统检查");
         System.out.println("          用法: doctor [--json] [--config <path>]");
+        System.out.println("  preflight 运行前自检，是 doctor 的跨运行时别名");
+        System.out.println("            用法: preflight [--json] [--config <path>]");
         System.out.println("  export  统一导出接口");
-        System.out.println("          用法: export --input <path> --format <json|csv|md> --output <path>");
+        System.out.println("          用法: export --input <path> --format <json|jsonl|csv|md> --output <path>");
         System.out.println("  curl    将 curl 命令转换为 Java 代码");
         System.out.println("          用法: curl convert --command <curl> [--target <java|http|okhttp|apache>]");
         System.out.println("  jobdir  共享作业目录管理");
@@ -175,6 +189,12 @@ public class EnhancedSpider {
         System.out.println("             用法: http-cache <status|clear|seed> --path <path>");
         System.out.println("  console 共享运行时控制台");
         System.out.println("          用法: console <snapshot|tail> --control-plane <dir>");
+        System.out.println("  audit   共享审计控制台");
+        System.out.println("          用法: audit <snapshot|tail> --control-plane <dir> [--job-name <name>]");
+        System.out.println("  web     启动内置 Web 服务");
+        System.out.println("          用法: web [--port <port>]");
+        System.out.println("  research 运行 pyspider 风格 research runtime");
+        System.out.println("           用法: research <run|async|soak> ...");
         System.out.println("  ultimate 运行高级终极爬虫");
         System.out.println("           用法: ultimate <url>");
         System.out.println("  sitemap-discover 在抓取前发现 sitemap URL");
@@ -190,13 +210,17 @@ public class EnhancedSpider {
         System.out.println("  profile-site 在抓取前对站点做画像");
         System.out.println("               用法: profile-site --url <url> [--html-file <path>] [--base-url <url>]");
         System.out.println("  node-reverse 调用 Node.js 逆向服务");
-        System.out.println("               用法: node-reverse <health|profile|detect|fingerprint-spoof|tls-fingerprint|analyze-crypto> [options]");
+        System.out.println("               用法: node-reverse <health|profile|detect|fingerprint-spoof|tls-fingerprint|canvas-fingerprint|analyze-crypto|signature-reverse|ast|webpack|function-call|browser-simulate> [options]");
         System.out.println("  anti-bot 运行反反爬诊断工具");
         System.out.println("           用法: anti-bot <headers|profile> [options]");
         System.out.println("  workflow  执行工作流 CLI");
         System.out.println("            用法: workflow <step...>");
+        System.out.println("  run     执行 pyspider 风格的内联 URL 任务");
+        System.out.println("          用法: run <url> [--runtime <http|browser|media|ai>] [--output <path>]");
         System.out.println("  job     执行统一 JobSpec JSON");
         System.out.println("          用法: job --file <job.json>");
+        System.out.println("  async-job 执行统一 JobSpec JSON 的异步兼容入口");
+        System.out.println("            用法: async-job --file <job.json>");
         System.out.println("  capabilities 输出框架能力清单");
         System.out.println("  media   委托给媒体下载 CLI");
         System.out.println("  version 显示版本");
@@ -528,13 +552,21 @@ public class EnhancedSpider {
     }
 
     private static void handleConsole(String[] args) {
+        handleConsoleTool(args, "console", "runtime_console.py");
+    }
+
+    private static void handleAudit(String[] args) {
+        handleConsoleTool(args, "audit", "audit_console.py");
+    }
+
+    private static void handleConsoleTool(String[] args, String commandName, String scriptName) {
         if (args.length == 0) {
-            System.out.println("用法: console <snapshot|tail> --control-plane <dir>");
+            System.out.println("用法: " + commandName + " <snapshot|tail> --control-plane <dir>");
             return;
         }
         String subcommand = args[0];
         if (!List.of("snapshot", "tail").contains(subcommand)) {
-            System.out.println("用法: console <snapshot|tail> --control-plane <dir>");
+            System.out.println("用法: " + commandName + " <snapshot|tail> --control-plane <dir>");
             return;
         }
 
@@ -542,7 +574,7 @@ public class EnhancedSpider {
         String controlPlane = stringValue(extractOption(rest, "--control-plane"), "artifacts/control-plane");
         String lines = stringValue(extractOption(rest, "--lines"), "20");
         List<String> toolArgs = new ArrayList<>(List.of(subcommand, "--control-plane", controlPlane, "--lines", lines));
-        if ("snapshot".equals(subcommand)) {
+        if ("console".equals(commandName) && "snapshot".equals(subcommand)) {
             String jobdir = stringValue(extractOption(rest, "--jobdir"), "");
             if (!jobdir.isBlank()) {
                 toolArgs.add("--jobdir");
@@ -551,12 +583,21 @@ public class EnhancedSpider {
         }
         if ("tail".equals(subcommand)) {
             toolArgs.add("--stream");
-            toolArgs.add(stringValue(extractOption(rest, "--stream"), "both"));
+            toolArgs.add(
+                stringValue(
+                    extractOption(rest, "--stream"),
+                    "console".equals(commandName) ? "both" : "all"
+                )
+            );
+        }
+        if ("audit".equals(commandName)) {
+            toolArgs.add("--job-name");
+            toolArgs.add(stringValue(extractOption(rest, "--job-name"), ""));
         }
 
-        int exitCode = runSharedPythonTool("runtime_console.py", toolArgs);
+        int exitCode = runSharedPythonTool(scriptName, toolArgs);
         if (exitCode != 0) {
-            throw new RuntimeException("console command failed with exit code " + exitCode);
+            throw new RuntimeException(commandName + " command failed with exit code " + exitCode);
         }
     }
 
@@ -673,6 +714,10 @@ public class EnhancedSpider {
     }
 
     private static void handleDoctor(String[] args) {
+        handleDoctor(args, "doctor");
+    }
+
+    private static void handleDoctor(String[] args, String commandName) {
         Map<String, Object> cfg = loadContractConfig(extractOption(args, "--config"));
         boolean json = contains(args, "--json");
         String javaVersion = System.getProperty("java.version", "unknown");
@@ -721,7 +766,7 @@ public class EnhancedSpider {
 
         if (json) {
             Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("command", "doctor");
+            payload.put("command", commandName);
             payload.put("framework", "javaspider");
             payload.put("runtime", "java");
             payload.put("version", VERSION);
@@ -748,7 +793,7 @@ public class EnhancedSpider {
             return;
         }
 
-        System.out.println("========== JavaSpider Doctor ==========");
+        System.out.println("========== JavaSpider " + commandName + " ==========");
         System.out.println("Java: " + javaVersion);
         System.out.println("OS: " + osName);
         System.out.println("Working directory: " + workingDir);
@@ -774,7 +819,7 @@ public class EnhancedSpider {
         String format = extractOption(args, "--format");
         String output = extractOption(args, "--output");
         if (input == null || output == null) {
-            System.out.println("用法: export --input <path> --format <json|csv|md> --output <path>");
+            System.out.println("用法: export --input <path> --format <json|jsonl|csv|md> --output <path>");
             return;
         }
 
@@ -796,7 +841,9 @@ public class EnhancedSpider {
             Path outputDir = outputPath.getParent() != null ? outputPath.getParent() : Paths.get(".");
             Exporter exporter = new Exporter(outputDir.toString());
             String filename = outputPath.getFileName().toString();
-            if ("csv".equals(format)) {
+            if ("jsonl".equals(format)) {
+                exporter.exportJSONL(items, filename);
+            } else if ("csv".equals(format)) {
                 exporter.exportCSV(items, filename);
             } else if ("md".equals(format)) {
                 exporter.exportMD(items, filename);
@@ -875,7 +922,7 @@ public class EnhancedSpider {
 
     private static void handleNodeReverse(String[] args) {
         if (args.length == 0) {
-            System.out.println("用法: node-reverse <health|profile|detect|fingerprint-spoof|tls-fingerprint|analyze-crypto> [options]");
+            System.out.println("用法: node-reverse <health|profile|detect|fingerprint-spoof|tls-fingerprint|canvas-fingerprint|analyze-crypto|signature-reverse|ast|webpack|function-call|browser-simulate> [options]");
             return;
         }
         String subcommand = args[0];
@@ -927,6 +974,10 @@ public class EnhancedSpider {
                     JsonNode payload = client.generateTlsFingerprint(browser, version);
                     System.out.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(payload));
                 }
+                case "canvas-fingerprint" -> {
+                    JsonNode payload = client.canvasFingerprint();
+                    System.out.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(payload));
+                }
                 case "analyze-crypto" -> {
                     String codeFile = stringValue(extractOption(rest, "--code-file"), "");
                     if (codeFile.isBlank()) {
@@ -934,6 +985,66 @@ public class EnhancedSpider {
                     }
                     String code = Files.readString(Paths.get(codeFile));
                     JsonNode payload = client.analyzeCrypto(code);
+                    System.out.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(payload));
+                }
+                case "signature-reverse" -> {
+                    String codeFile = stringValue(extractOption(rest, "--code-file"), "");
+                    String inputData = stringValue(extractOption(rest, "--input-data"), "");
+                    String expectedOutput = stringValue(extractOption(rest, "--expected-output"), "");
+                    if (codeFile.isBlank() || inputData.isBlank() || expectedOutput.isBlank()) {
+                        throw new IllegalArgumentException("node-reverse signature-reverse 需要 --code-file、--input-data 和 --expected-output");
+                    }
+                    String code = Files.readString(Paths.get(codeFile));
+                    JsonNode payload = client.reverseSignature(code, inputData, expectedOutput);
+                    System.out.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(payload));
+                }
+                case "ast" -> {
+                    String codeFile = stringValue(extractOption(rest, "--code-file"), "");
+                    if (codeFile.isBlank()) {
+                        throw new IllegalArgumentException("node-reverse ast 需要 --code-file");
+                    }
+                    String analysis = stringValue(extractOption(rest, "--analysis"), "crypto,obfuscation,anti-debug");
+                    List<String> analysisTypes = java.util.Arrays.stream(analysis.split(","))
+                        .map(String::trim)
+                        .filter(value -> !value.isBlank())
+                        .toList();
+                    String code = Files.readString(Paths.get(codeFile));
+                    JsonNode payload = client.analyzeAST(code, analysisTypes);
+                    System.out.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(payload));
+                }
+                case "webpack" -> {
+                    String codeFile = stringValue(extractOption(rest, "--code-file"), "");
+                    if (codeFile.isBlank()) {
+                        throw new IllegalArgumentException("node-reverse webpack 需要 --code-file");
+                    }
+                    String code = Files.readString(Paths.get(codeFile));
+                    JsonNode payload = client.analyzeWebpack(code);
+                    System.out.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(payload));
+                }
+                case "function-call" -> {
+                    String codeFile = stringValue(extractOption(rest, "--code-file"), "");
+                    String functionName = stringValue(extractOption(rest, "--function-name"), "");
+                    if (codeFile.isBlank() || functionName.isBlank()) {
+                        throw new IllegalArgumentException("node-reverse function-call 需要 --code-file 和 --function-name");
+                    }
+                    String code = Files.readString(Paths.get(codeFile));
+                    JsonNode payload = client.callFunction(functionName, new ArrayList<>(extractOptions(rest, "--arg")), code);
+                    System.out.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(payload));
+                }
+                case "browser-simulate" -> {
+                    String codeFile = stringValue(extractOption(rest, "--code-file"), "");
+                    if (codeFile.isBlank()) {
+                        throw new IllegalArgumentException("node-reverse browser-simulate 需要 --code-file");
+                    }
+                    String code = Files.readString(Paths.get(codeFile));
+                    JsonNode payload = client.simulateBrowser(
+                        code,
+                        Map.of(
+                            "userAgent", stringValue(extractOption(rest, "--user-agent"), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+                            "language", stringValue(extractOption(rest, "--language"), "zh-CN"),
+                            "platform", stringValue(extractOption(rest, "--platform"), "Win32")
+                        )
+                    );
                     System.out.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(payload));
                 }
                 default -> throw new IllegalArgumentException("未知 node-reverse 子命令: " + subcommand);
@@ -1018,12 +1129,20 @@ public class EnhancedSpider {
                 JsonNode profile = client.profileAntiBot(html, "", Map.of(), "", null, url);
                 JsonNode spoof = client.spoofFingerprint("chrome", "windows");
                 JsonNode tls = client.generateTlsFingerprint("chrome", "120");
+                JsonNode canvas = client.canvasFingerprint();
+                JsonNode crypto = client.analyzeCrypto(html);
                 Map<String, Object> reverse = new LinkedHashMap<>();
                 reverse.put("detect", detect);
                 reverse.put("profile", profile);
                 reverse.put("fingerprint_spoof", spoof);
                 reverse.put("tls_fingerprint", tls);
+                reverse.put("canvas_fingerprint", canvas);
+                reverse.put("crypto_analysis", crypto);
                 payload.put("reverse", reverse);
+                Map<String, Object> reverseFocus = buildReverseFocus(reverse);
+                if (!reverseFocus.isEmpty()) {
+                    payload.put("reverse_focus", reverseFocus);
+                }
                 if (profile.path("success").asBoolean(false)) {
                     payload.put("anti_bot_level", profile.path("level").asText(""));
                     payload.put("anti_bot_signals", profile.path("signals"));
@@ -1063,6 +1182,66 @@ public class EnhancedSpider {
         } catch (IOException e) {
             throw new RuntimeException("sitemap-discover 调用失败", e);
         }
+    }
+
+    private static Map<String, Object> buildReverseFocus(Map<String, Object> reverse) {
+        Object cryptoRaw = reverse.get("crypto_analysis");
+        if (!(cryptoRaw instanceof JsonNode crypto)) {
+            return Map.of();
+        }
+        JsonNode chains = crypto.path("analysis").path("keyFlowChains");
+        if (!chains.isArray() || chains.isEmpty()) {
+            return Map.of();
+        }
+        JsonNode top = null;
+        double bestConfidence = -1.0;
+        int bestSinkCount = -1;
+        int bestDerivationCount = -1;
+        for (JsonNode chain : chains) {
+            double confidence = chain.path("confidence").asDouble(0.0);
+            int sinkCount = chain.path("sinks").size();
+            int derivationCount = chain.path("derivations").size();
+            if (top == null
+                || confidence > bestConfidence
+                || (confidence == bestConfidence && sinkCount > bestSinkCount)
+                || (confidence == bestConfidence && sinkCount == bestSinkCount && derivationCount > bestDerivationCount)) {
+                top = chain;
+                bestConfidence = confidence;
+                bestSinkCount = sinkCount;
+                bestDerivationCount = derivationCount;
+            }
+        }
+        if (top == null) {
+            return Map.of();
+        }
+        String sourceKind = top.path("source").path("kind").asText("unknown");
+        String primarySink = top.path("sinks").isArray() && top.path("sinks").size() > 0
+            ? top.path("sinks").get(0).asText("unknown-sink")
+            : "unknown-sink";
+        List<String> nextSteps = new ArrayList<>();
+        if (sourceKind.startsWith("storage.")) {
+            nextSteps.add("instrument browser storage reads first");
+        }
+        if (sourceKind.startsWith("network.")) {
+            nextSteps.add("capture response body before key derivation");
+        }
+        if (primarySink.contains("crypto.subtle.")) {
+            nextSteps.add("hook WebCrypto at the sink boundary");
+        }
+        if (primarySink.startsWith("jwt.") || crypto.toString().contains("HMAC")) {
+            nextSteps.add("rebuild canonical signing input before reproducing the sink");
+        }
+        if (nextSteps.isEmpty()) {
+            nextSteps.add("trace the chain from source through derivations into the first sink");
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("priority_chain", top);
+        payload.put(
+            "summary",
+            "trace `" + top.path("variable").asText("") + "` from `" + sourceKind + "` into `" + primarySink + "`"
+        );
+        payload.put("next_steps", nextSteps);
+        return payload;
     }
 
     private static void handlePlugins(String[] args) {
@@ -1154,6 +1333,7 @@ public class EnhancedSpider {
             payload.put("attr", attr);
             payload.put("count", values.size());
             payload.put("values", values);
+            payload.put("suggested_xpaths", com.javaspider.selector.SmartXPathSuggester.suggest(mode, expr, attr));
             System.out.println(new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(payload));
         } catch (IOException e) {
             throw new RuntimeException("selector-studio 调用失败", e);
@@ -3053,8 +3233,8 @@ public class EnhancedSpider {
         Map<String, Object> export = nestedMap(cfg, "export");
         validateString(errors, export, "output_path", "export", false);
         String exportFormat = stringValue(export.get("format"), "");
-        if (!List.of("json", "csv", "md").contains(exportFormat)) {
-            errors.add("export.format must be one of [json, csv, md]");
+        if (!List.of("json", "jsonl", "csv", "md").contains(exportFormat)) {
+            errors.add("export.format must be one of [json, jsonl, csv, md]");
         }
         Map<String, Object> frontier = nestedMap(cfg, "frontier");
         validateBoolean(errors, frontier, "enabled", "frontier");

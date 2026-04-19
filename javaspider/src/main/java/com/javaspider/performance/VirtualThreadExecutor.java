@@ -3,6 +3,8 @@ package com.javaspider.performance;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 高性能线程池执行器
@@ -34,6 +36,14 @@ public class VirtualThreadExecutor {
      */
     public void submit(Runnable task) {
         executor.submit(task);
+    }
+
+    public <T> CompletableFuture<T> supplyAsync(Supplier<T> supplier) {
+        return CompletableFuture.supplyAsync(supplier, executor);
+    }
+
+    public CompletableFuture<Void> runAsync(Runnable task) {
+        return CompletableFuture.runAsync(task, executor);
     }
 
     /**

@@ -9,7 +9,13 @@ import com.javaspider.core.Site;
 import com.javaspider.core.Spider;
 import com.javaspider.graph.GraphBuilder;
 import com.javaspider.processor.PageProcessor;
+import com.javaspider.research.AsyncResearchConfig;
+import com.javaspider.research.AsyncResearchResult;
+import com.javaspider.research.AsyncResearchRuntime;
+import com.javaspider.research.ResearchJob;
+import com.javaspider.research.ResearchRuntime;
 import com.javaspider.session.SessionProfile;
+import com.javaspider.util.JsonlWriterRegistry;
 import com.javaspider.workflow.*;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
@@ -39,6 +45,7 @@ public class SpiderController {
     private final Map<String, SpiderInstance> spiders = new ConcurrentHashMap<>();
     private final Map<String, FlowJob> workflowJobs = new ConcurrentHashMap<>();
     private final Map<String, FlowResult> workflowResults = new ConcurrentHashMap<>();
+    private final List<Map<String, Object>> researchHistory = Collections.synchronizedList(new ArrayList<>());
     private final InMemoryAuditTrail auditTrail = new InMemoryAuditTrail();
     private final InMemoryConnector outputConnector = new InMemoryConnector();
     private final String apiToken;
@@ -69,6 +76,12 @@ public class SpiderController {
         server.createContext("/api/stats", withApiAuth(new StatsHandler()));
         server.createContext("/api/graph/extract", withApiAuth(new GraphExtractHandler()));
         server.createContext("/api/v1/graph/extract", withApiAuth(new GraphExtractHandler()));
+        server.createContext("/api/research", withApiAuth(new ResearchHandler()));
+        server.createContext("/api/research/", withApiAuth(new ResearchHandler()));
+        server.createContext("/api/v1/research", withApiAuth(new ResearchHandler()));
+        server.createContext("/api/v1/research/", withApiAuth(new ResearchHandler()));
+        server.createContext("/api/research/history", withApiAuth(new ResearchHistoryHandler()));
+        server.createContext("/api/v1/research/history", withApiAuth(new ResearchHistoryHandler()));
         server.createContext("/api/workflows", withApiAuth(new WorkflowsHandler()));
         server.createContext("/api/workflows/", withApiAuth(new WorkflowDetailHandler()));
         server.createContext("/api/workflows/run", withApiAuth(new WorkflowRunHandler()));
@@ -156,12 +169,166 @@ public class SpiderController {
         return value == null ? "" : String.valueOf(value).trim();
     }
 
+    private static int intValue(Object value, int defaultValue) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
+        } catch (NumberFormatException ignored) {
+            return defaultValue;
+        }
+    }
+
     // ==================== Request Handlers ====================
 
     private class IndexHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String response = "<html><body><h1>JavaSpider Web UI</h1><p>Visit /api/tasks for task API</p><p>Legacy alias: /api/spiders</p></body></html>";
+            String response = """
+                <!DOCTYPE html>
+                <html lang="zh-CN">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>JavaSpider Web UI</title>
+                    <style>
+                        * { box-sizing: border-box; }
+                        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #fef7f0 0%, #fde7d9 100%); color: #1f2937; }
+                        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+                        header, .panel { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+                        header { margin-bottom: 20px; }
+                        h1 { margin: 0 0 8px 0; color: #c2410c; }
+                        p { color: #475569; }
+                        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+                        .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #ffedd5; color: #c2410c; font-size: 12px; font-weight: 700; margin-bottom: 12px; }
+                        .field { margin-bottom: 12px; }
+                        .field label { display: block; margin-bottom: 6px; font-size: 13px; color: #475569; }
+                        .field input, .field textarea, .field select { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; }
+                        .field textarea { min-height: 96px; resize: vertical; }
+                        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+                        button { border: none; border-radius: 10px; padding: 11px 16px; cursor: pointer; font-weight: 600; }
+                        .primary { background: #ea580c; color: white; }
+                        .secondary { background: #e2e8f0; color: #0f172a; }
+                        pre { background: #111827; color: #fed7aa; border-radius: 12px; padding: 14px; overflow: auto; max-height: 420px; font-size: 12px; }
+                        a { color: #c2410c; text-decoration: none; margin-right: 12px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <header>
+                            <h1>☕ JavaSpider 控制台</h1>
+                            <p>任务控制、workflow 和 research runtime 已经合并到同一个 Web UI。下面的 research 面板可以直接调用 run / async / soak。</p>
+                            <div>
+                                <a href="/api/tasks">/api/tasks</a>
+                                <a href="/api/research/run">/api/research/run</a>
+                                <a href="/api/v1/research/run">/api/v1/research/run</a>
+                            </div>
+                        </header>
+                        <div class="grid">
+                            <section class="panel">
+                                <div class="pill">Task Panel</div>
+                                <h2>任务面板</h2>
+                                <div class="field">
+                                    <label>任务名称</label>
+                                    <input id="task-name" value="java-task" />
+                                </div>
+                                <div class="field">
+                                    <label>URL</label>
+                                    <input id="task-url" value="https://example.com" />
+                                </div>
+                                <div class="btn-row">
+                                    <button class="primary" onclick="createTask()">创建任务</button>
+                                    <button class="secondary" onclick="refreshTasks()">刷新任务</button>
+                                </div>
+                                <pre id="task-output">等待任务数据...</pre>
+                            </section>
+                            <section class="panel">
+                                <div class="pill">Research Panel</div>
+                                <h2>Research 面板</h2>
+                                <div class="field">
+                                    <label>模式</label>
+                                    <select id="research-mode">
+                                        <option value="run">run</option>
+                                        <option value="async">async</option>
+                                        <option value="soak">soak</option>
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label>URL 列表（每行一个）</label>
+                                    <textarea id="research-urls">https://example.com/article
+https://example.com/list</textarea>
+                                </div>
+                                <div class="field">
+                                    <label>Schema JSON</label>
+                                    <textarea id="research-schema">{"properties":{"title":{"type":"string"}}}</textarea>
+                                </div>
+                                <div class="field">
+                                    <label>Inline Content</label>
+                                    <textarea id="research-content"><title>Research Demo</title></textarea>
+                                </div>
+                                <div class="btn-row">
+                                    <button class="primary" onclick="runResearch()">执行 research</button>
+                                    <button class="secondary" onclick="loadExample()">示例</button>
+                                </div>
+                                <pre id="research-output">等待 research 结果...</pre>
+                                <div class="pill" style="margin-top:16px;">Recent Research</div>
+                                <pre id="research-history">等待 research 历史...</pre>
+                            </section>
+                        </div>
+                    </div>
+                    <script>
+                        async function refreshTasks() {
+                            const res = await fetch('/api/tasks');
+                            document.getElementById('task-output').textContent = JSON.stringify(await res.json(), null, 2);
+                        }
+                        async function createTask() {
+                            const res = await fetch('/api/tasks', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    name: document.getElementById('task-name').value,
+                                    url: document.getElementById('task-url').value
+                                })
+                            });
+                            document.getElementById('task-output').textContent = JSON.stringify(await res.json(), null, 2);
+                        }
+                        function loadExample() {
+                            document.getElementById('research-schema').value = '{"properties":{"title":{"type":"string"},"price":{"type":"string"}}}';
+                            document.getElementById('research-content').value = '<title>Research Demo</title>\\nprice: 42';
+                        }
+                        async function runResearch() {
+                            const mode = document.getElementById('research-mode').value;
+                            const urls = document.getElementById('research-urls').value.split('\\n').map(v => v.trim()).filter(Boolean);
+                            const payload = {
+                                url: urls[0] || '',
+                                urls,
+                                content: document.getElementById('research-content').value,
+                                schema_json: document.getElementById('research-schema').value,
+                                concurrency: 2,
+                                rounds: 2
+                            };
+                            const res = await fetch('/api/research/' + mode, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+                            document.getElementById('research-output').textContent = JSON.stringify(await res.json(), null, 2);
+                            refreshResearchHistory();
+                        }
+                        async function refreshResearchHistory() {
+                            const res = await fetch('/api/research/history');
+                            document.getElementById('research-history').textContent = JSON.stringify(await res.json(), null, 2);
+                        }
+                        refreshTasks();
+                        refreshResearchHistory();
+                    </script>
+                </body>
+                </html>
+                """;
             sendResponse(exchange, 200, response, "text/html");
         }
     }
@@ -586,6 +753,184 @@ public class SpiderController {
         }
     }
 
+    private class ResearchHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendError(exchange, 405, "Method not allowed");
+                return;
+            }
+            String path = exchange.getRequestURI().getPath();
+            Map<String, Object> payload = parseJson(readBody(exchange));
+            try {
+                Object response;
+                if (path.endsWith("/async")) {
+                    response = buildResearchAsyncResponse(payload);
+                } else if (path.endsWith("/soak")) {
+                    response = buildResearchSoakResponse(payload);
+                } else {
+                    response = buildResearchRunResponse(payload);
+                }
+                recordResearchHistory((Map<String, Object>) response);
+                sendResponse(exchange, 200, toJson(response), "application/json");
+            } catch (IllegalArgumentException e) {
+                sendError(exchange, 400, e.getMessage());
+            }
+        }
+    }
+
+    private class ResearchHistoryHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"GET".equals(exchange.getRequestMethod())) {
+                sendError(exchange, 405, "Method not allowed");
+                return;
+            }
+            sendResponse(exchange, 200, toJson(Map.of("success", true, "data", List.copyOf(researchHistory))), "application/json");
+        }
+    }
+
+    private Map<String, Object> buildResearchRunResponse(Map<String, Object> payload) {
+        ResearchJob job = buildResearchJob(payload);
+        String content = rawStringValue(payload.get("content"));
+        return Map.of(
+            "command", "research run",
+            "runtime", "java",
+            "result", new ResearchRuntime().run(job, content)
+        );
+    }
+
+    private Map<String, Object> buildResearchAsyncResponse(Map<String, Object> payload) {
+        List<ResearchJob> jobs = buildResearchJobs(payload);
+        List<String> contents = buildResearchContents(payload, jobs.size());
+        int concurrency = intValue(payload.get("concurrency"), 5);
+        try (AsyncResearchRuntime runtime = new AsyncResearchRuntime(new AsyncResearchConfig(concurrency, 30.0, false))) {
+            List<AsyncResearchResult> results = runtime.runMultiple(jobs, contents);
+            return Map.of(
+                "command", "research async",
+                "runtime", "java",
+                "results", results,
+                "metrics", runtime.snapshotMetrics()
+            );
+        }
+    }
+
+    private Map<String, Object> buildResearchSoakResponse(Map<String, Object> payload) {
+        List<ResearchJob> jobs = buildResearchJobs(payload);
+        List<String> contents = buildResearchContents(payload, jobs.size());
+        int concurrency = intValue(payload.get("concurrency"), 5);
+        int rounds = intValue(payload.get("rounds"), 1);
+        try (AsyncResearchRuntime runtime = new AsyncResearchRuntime(new AsyncResearchConfig(concurrency, 30.0, false))) {
+            return Map.of(
+                "command", "research soak",
+                "runtime", "java",
+                "report", runtime.runSoak(jobs, contents, rounds)
+            );
+        }
+    }
+
+    private ResearchJob buildResearchJob(Map<String, Object> payload) {
+        List<String> urls = buildResearchUrls(payload);
+        if (urls.isEmpty()) {
+            throw new IllegalArgumentException("research request requires url or urls");
+        }
+        return new ResearchJob(
+            List.of(urls.get(0)),
+            Map.of(),
+            parseResearchSchema(payload),
+            List.of(),
+            mapValue(payload.get("policy")),
+            mapValue(payload.get("output"))
+        );
+    }
+
+    private List<ResearchJob> buildResearchJobs(Map<String, Object> payload) {
+        List<String> urls = buildResearchUrls(payload);
+        if (urls.isEmpty()) {
+            throw new IllegalArgumentException("research request requires url or urls");
+        }
+        Map<String, Object> schema = parseResearchSchema(payload);
+        Map<String, Object> policy = mapValue(payload.get("policy"));
+        Map<String, Object> output = mapValue(payload.get("output"));
+        List<ResearchJob> jobs = new ArrayList<>();
+        for (String url : urls) {
+            jobs.add(new ResearchJob(List.of(url), Map.of(), schema, List.of(), policy, output));
+        }
+        return jobs;
+    }
+
+    private List<String> buildResearchUrls(Map<String, Object> payload) {
+        List<String> urls = new ArrayList<>();
+        Object url = payload.get("url");
+        if (url != null && !rawStringValue(url).isBlank()) {
+            urls.add(rawStringValue(url));
+        }
+        Object rawUrls = payload.get("urls");
+        if (rawUrls instanceof List<?> list) {
+            for (Object item : list) {
+                String text = rawStringValue(item);
+                if (!text.isBlank()) {
+                    urls.add(text);
+                }
+            }
+        }
+        return urls;
+    }
+
+    private List<String> buildResearchContents(Map<String, Object> payload, int size) {
+        List<String> contents = new ArrayList<>();
+        String inline = rawStringValue(payload.get("content"));
+        Object rawContents = payload.get("contents");
+        List<?> list = rawContents instanceof List<?> values ? values : List.of();
+        for (int index = 0; index < size; index++) {
+            if (index < list.size() && !rawStringValue(list.get(index)).isBlank()) {
+                contents.add(rawStringValue(list.get(index)));
+            } else if (!inline.isBlank()) {
+                contents.add(inline);
+            } else {
+                contents.add("<title>Research " + (index + 1) + "</title>");
+            }
+        }
+        return contents;
+    }
+
+    private Map<String, Object> parseResearchSchema(Map<String, Object> payload) {
+        if (payload.get("schema") instanceof Map<?, ?>) {
+            return mapValue(payload.get("schema"));
+        }
+        String schemaJson = rawStringValue(payload.get("schema_json"));
+        if (schemaJson.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return MAPPER.readValue(schemaJson, new TypeReference<Map<String, Object>>() {});
+        } catch (IOException e) {
+            throw new IllegalArgumentException("invalid schema_json");
+        }
+    }
+
+    private void recordResearchHistory(Map<String, Object> response) {
+        Map<String, Object> record = new LinkedHashMap<>();
+        record.put("id", "research-" + System.nanoTime());
+        record.put("created_at", System.currentTimeMillis());
+        record.put("command", response.get("command"));
+        record.put("runtime", response.get("runtime"));
+        record.put("status", "completed");
+        record.put("result", response);
+        researchHistory.add(0, record);
+        if (researchHistory.size() > 20) {
+            researchHistory.remove(researchHistory.size() - 1);
+        }
+        try {
+            JsonlWriterRegistry.append(
+                Path.of("artifacts", "control-plane", "research-history.jsonl"),
+                (toJson(record) + System.lineSeparator()).getBytes(StandardCharsets.UTF_8)
+            );
+        } catch (RuntimeException ignored) {
+            // best-effort persistence
+        }
+    }
+
     private void sendResponse(HttpExchange exchange, int code, String body, String contentType) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", contentType);
@@ -865,13 +1210,30 @@ public class SpiderController {
 
         Map<String, Object> getStats() {
             Map<String, Object> stats = new HashMap<>();
-            long total = results.stream().filter(entry -> entry.containsKey("status")).count();
-            long success = results.stream().filter(entry -> "completed".equals(entry.get("status"))).count();
-            long failed = results.stream().filter(entry -> "failed".equals(entry.get("status"))).count();
+            List<Map<String, Object>> snapshot = snapshotResults();
+            long total = snapshot.stream().filter(entry -> entry.containsKey("status")).count();
+            long success = snapshot.stream().filter(entry -> "completed".equals(entry.get("status"))).count();
+            long failed = snapshot.stream().filter(entry -> "failed".equals(entry.get("status"))).count();
+            long totalBytes = snapshot.stream()
+                .mapToLong(entry -> longValue(entry.get("bytes")))
+                .sum();
+            List<Long> durations = snapshot.stream()
+                .map(entry -> longValue(entry.get("duration_ms")))
+                .filter(value -> value > 0)
+                .sorted()
+                .toList();
+            long elapsedMillis = elapsedMillis();
+            long resolved = success + failed;
             stats.put("total_requests", total);
             stats.put("success_requests", success);
             stats.put("failed_requests", failed);
-            stats.put("qps", 0); // Placeholder
+            stats.put("success_rate", resolved > 0 ? (double) success / resolved * 100.0 : 0.0);
+            stats.put("qps", elapsedMillis > 0 ? (double) success * 1000.0 / elapsedMillis : 0.0);
+            stats.put("duration_ms", elapsedMillis);
+            stats.put("total_bytes", totalBytes);
+            stats.put("avg_duration_ms", averageDurationMillis(durations));
+            stats.put("p95_duration_ms", percentileDurationMillis(durations, 0.95));
+            stats.put("p99_duration_ms", percentileDurationMillis(durations, 0.99));
             return stats;
         }
 
@@ -930,6 +1292,52 @@ public class SpiderController {
             synchronized (logs) {
                 logs.add(payload);
             }
+        }
+
+        private long elapsedMillis() {
+            if (startedAt == null || startedAt.isBlank()) {
+                return 0L;
+            }
+            try {
+                java.time.Instant started = java.time.Instant.parse(startedAt);
+                java.time.Instant ended = (finishedAt == null || finishedAt.isBlank())
+                    ? java.time.Instant.now()
+                    : java.time.Instant.parse(finishedAt);
+                return Math.max(0L, java.time.Duration.between(started, ended).toMillis());
+            } catch (Exception ignored) {
+                return 0L;
+            }
+        }
+
+        private long longValue(Object value) {
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+            if (value == null) {
+                return 0L;
+            }
+            try {
+                return Long.parseLong(String.valueOf(value));
+            } catch (NumberFormatException ignored) {
+                return 0L;
+            }
+        }
+
+        private double averageDurationMillis(List<Long> durations) {
+            if (durations.isEmpty()) {
+                return 0.0;
+            }
+            long total = durations.stream().mapToLong(Long::longValue).sum();
+            return (double) total / durations.size();
+        }
+
+        private double percentileDurationMillis(List<Long> durations, double percentile) {
+            if (durations.isEmpty()) {
+                return 0.0;
+            }
+            int index = (int) Math.ceil(percentile * durations.size()) - 1;
+            index = Math.max(0, Math.min(index, durations.size() - 1));
+            return durations.get(index);
         }
 
         private void executeTaskRequest() {

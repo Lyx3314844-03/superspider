@@ -1,3 +1,5 @@
+pub mod node_discovery;
+
 // Redis 客户端（需要 redis 特性）
 #[cfg(feature = "distributed")]
 pub mod redis_client;

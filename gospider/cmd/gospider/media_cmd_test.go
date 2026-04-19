@@ -19,6 +19,7 @@ func TestDetectPlatformRecognizesSupportedMediaSites(t *testing.T) {
 		"https://www.iqiyi.com/v_demo.html":           "iqiyi",
 		"https://v.qq.com/x/page/demo.html":           "tencent",
 		"https://www.bilibili.com/video/BV1demo":      "bilibili",
+		"https://www.douyin.com/video/123456789":      "douyin",
 		"https://example.com/video.mp4":               "unknown",
 	}
 

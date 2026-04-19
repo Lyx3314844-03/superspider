@@ -1,49 +1,42 @@
 # PySpider
 
-PySpider 是 SuperSpider 中最强调项目化开发体验和 AI 编排能力的 Python 爬虫框架。
+PySpider is the SuperSpider runtime that leans hardest into project-oriented development, AI orchestration, and Python ecosystem flexibility.
 
-## Why PySpider
+## Core Functions
 
-如果你更关心：
+- Python-native CLI: `python -m pyspider`
+- scrapy-style project runtime
+- AI extraction and research workflows
+- browser + HTTP hybrid crawling
+- anti-bot, captcha, node-reverse, media handling, and dataset output
 
-- 从零快速起项目
-- 用 Python 直接驱动抓取、抽取、清洗和输出
-- 让浏览器抓取、HTTP 抓取和 AI 提取放在同一个工作流里
+## Concrete Media Coverage
 
-那 PySpider 会是这四个框架里最自然的一支。
+- HLS / DASH parsing and download
+- FFmpeg-assisted media processing
+- DRM inspection
+- platform parsing for YouTube, Bilibili, IQIYI, Tencent Video, and Youku
 
-## Standout Capabilities
+## Capability Range
 
-- Python 原生 CLI：`python -m pyspider`
-- scrapy 风格项目运行模型最完整
-- AI 提取、研究流程、插件注入能力强
-- 浏览器与 HTTP 混合抓取路径成熟
-- 反爬、验证码、节点逆向、媒体处理和数据集输出丰富
+- from quick crawler experiments to full project scaffolding
+- from web-page extraction to AI-assisted extraction pipelines
+- from browser-driven crawling to structured result output
 
-## Install Versions
+## Install Packages
 
-Windows:
+- Windows: `..\scripts\windows\install-pyspider.bat`
+- Linux: `../scripts/linux/install-pyspider.sh`
+- macOS: `../scripts/macos/install-pyspider.sh`
 
-- `..\scripts\windows\install-pyspider.bat`
+## Install Output
 
-Linux:
+- `.venv-pyspider`
+- editable Python install
+- runnable `python -m pyspider version`
 
-- `../scripts/linux/install-pyspider.sh`
+## Best Fit
 
-macOS:
-
-- `../scripts/macos/install-pyspider.sh`
-
-## Typical Output
-
-- 创建 `.venv-pyspider`
-- 安装 `pyspider` 可编辑包
-- 可以直接运行 `python -m pyspider version`
-
-## Quick Start
-
-```bash
-python -m pip install -r requirements.txt
-python -m pip install -e .
-python -m pyspider version
-```
+- rapid project starts
+- AI-assisted extraction and orchestration
+- teams that want Python-side flexibility for analysis and automation

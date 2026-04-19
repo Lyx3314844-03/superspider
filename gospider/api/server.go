@@ -19,6 +19,7 @@ import (
 	"gospider/events"
 	"gospider/graph"
 	"gospider/monitor"
+	"gospider/research"
 )
 
 // Server API 服务器
@@ -124,6 +125,9 @@ func (s *Server) setupRoutes() {
 			r.Get("/stats", s.getStats)
 			r.Get("/events", s.listEvents)
 			r.Post("/graph/extract", s.extractGraph)
+			r.Post("/research/run", s.runResearch)
+			r.Post("/research/async", s.runResearchAsync)
+			r.Post("/research/soak", s.runResearchSoak)
 
 			// 任务管理
 			r.Route("/tasks", func(r chi.Router) {
@@ -672,6 +676,74 @@ func (s *Server) extractGraph(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) runResearch(w http.ResponseWriter, r *http.Request) {
+	var req researchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, "invalid research request body", http.StatusBadRequest)
+		return
+	}
+	job, err := req.toJob()
+	if err != nil {
+		s.errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	result, err := research.NewResearchRuntime().Run(job, req.Content)
+	if err != nil {
+		s.errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.jsonResponse(w, map[string]interface{}{
+		"command": "research run",
+		"runtime": "go",
+		"result":  result,
+	})
+}
+
+func (s *Server) runResearchAsync(w http.ResponseWriter, r *http.Request) {
+	var req researchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, "invalid research request body", http.StatusBadRequest)
+		return
+	}
+	jobs, contents, err := req.toJobs()
+	if err != nil {
+		s.errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	runtime := research.NewAsyncResearchRuntime(&research.AsyncResearchConfig{
+		MaxConcurrent: maxIntValue(req.Concurrency, 1),
+	})
+	results := runtime.RunMultiple(jobs, contents)
+	s.jsonResponse(w, map[string]interface{}{
+		"command": "research async",
+		"runtime": "go",
+		"results": results,
+		"metrics": runtime.SnapshotMetrics(),
+	})
+}
+
+func (s *Server) runResearchSoak(w http.ResponseWriter, r *http.Request) {
+	var req researchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, "invalid research request body", http.StatusBadRequest)
+		return
+	}
+	jobs, contents, err := req.toJobs()
+	if err != nil {
+		s.errorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	runtime := research.NewAsyncResearchRuntime(&research.AsyncResearchConfig{
+		MaxConcurrent: maxIntValue(req.Concurrency, 1),
+	})
+	report := runtime.RunSoak(jobs, contents, maxIntValue(req.Rounds, 1))
+	s.jsonResponse(w, map[string]interface{}{
+		"command": "research soak",
+		"runtime": "go",
+		"report":  report,
+	})
+}
+
 // ===== 辅助函数 =====
 
 // jsonResponse 返回 JSON 响应
@@ -741,6 +813,101 @@ type createTaskRequest struct {
 	Policy    *core.PolicySpec       `json:"policy"`
 	Schedule  *core.ScheduleSpec     `json:"schedule"`
 	Metadata  map[string]interface{} `json:"metadata"`
+}
+
+type researchRequest struct {
+	URL        string                   `json:"url"`
+	URLs       []string                 `json:"urls"`
+	Content    string                   `json:"content"`
+	Contents   []string                 `json:"contents"`
+	Schema     map[string]interface{}   `json:"schema"`
+	SchemaJSON string                   `json:"schema_json"`
+	Output     map[string]interface{}   `json:"output"`
+	Rounds     int                      `json:"rounds"`
+	Concurrency int                     `json:"concurrency"`
+	Policy     map[string]interface{}   `json:"policy"`
+}
+
+func (r researchRequest) toJob() (research.ResearchJob, error) {
+	urls := r.URLs
+	if len(urls) == 0 && strings.TrimSpace(r.URL) != "" {
+		urls = []string{r.URL}
+	}
+	if len(urls) == 0 {
+		return research.ResearchJob{}, fmt.Errorf("research request requires url or urls")
+	}
+	schema, err := r.schemaMap()
+	if err != nil {
+		return research.ResearchJob{}, err
+	}
+	return research.ResearchJob{
+		SeedURLs:      urls,
+		ExtractSchema: schema,
+		Policy:        cloneAnyMap(r.Policy),
+		Output:        cloneAnyMap(r.Output),
+	}, nil
+}
+
+func (r researchRequest) toJobs() ([]research.ResearchJob, []string, error) {
+	urls := r.URLs
+	if len(urls) == 0 && strings.TrimSpace(r.URL) != "" {
+		urls = []string{r.URL}
+	}
+	if len(urls) == 0 {
+		return nil, nil, fmt.Errorf("research request requires url or urls")
+	}
+	schema, err := r.schemaMap()
+	if err != nil {
+		return nil, nil, err
+	}
+	jobs := make([]research.ResearchJob, 0, len(urls))
+	contents := make([]string, 0, len(urls))
+	for index, url := range urls {
+		jobs = append(jobs, research.ResearchJob{
+			SeedURLs:      []string{url},
+			ExtractSchema: cloneAnyMap(schema),
+			Policy:        cloneAnyMap(r.Policy),
+			Output:        cloneAnyMap(r.Output),
+		})
+		if len(r.Contents) > index && strings.TrimSpace(r.Contents[index]) != "" {
+			contents = append(contents, r.Contents[index])
+		} else {
+			contents = append(contents, r.Content)
+		}
+	}
+	return jobs, contents, nil
+}
+
+func (r researchRequest) schemaMap() (map[string]interface{}, error) {
+	if len(r.Schema) > 0 {
+		return cloneAnyMap(r.Schema), nil
+	}
+	if strings.TrimSpace(r.SchemaJSON) == "" {
+		return map[string]interface{}{}, nil
+	}
+	var schema map[string]interface{}
+	if err := json.Unmarshal([]byte(r.SchemaJSON), &schema); err != nil {
+		return nil, fmt.Errorf("invalid schema_json: %w", err)
+	}
+	return schema, nil
+}
+
+func cloneAnyMap(source map[string]interface{}) map[string]interface{} {
+	if source == nil {
+		return map[string]interface{}{}
+	}
+	clone := make(map[string]interface{}, len(source))
+	for key, value := range source {
+		clone[key] = value
+	}
+	return clone
+}
+
+func maxIntValue(value int, minimum int) int {
+	if value < minimum {
+		return minimum
+	}
+	return value
 }
 
 type createTaskTarget struct {

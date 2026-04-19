@@ -80,6 +80,29 @@ public class Exporter {
         fw.close();
         return filepath;
     }
+
+    public String exportJSONL(List<Map<String, String>> data, String filename) throws IOException {
+        if (!filename.endsWith(".jsonl")) filename += ".jsonl";
+        String filepath = outputDir + "/" + filename;
+
+        StringBuilder sb = new StringBuilder();
+        for (Map<String, String> item : data) {
+            sb.append("{");
+            boolean first = true;
+            for (String key : item.keySet()) {
+                if (!first) sb.append(", ");
+                sb.append("\"").append(key).append("\": \"").append(item.get(key)).append("\"");
+                first = false;
+            }
+            sb.append("}").append("\n");
+        }
+
+        FileWriter fw = new FileWriter(filepath);
+        fw.write(sb.toString());
+        fw.close();
+
+        return filepath;
+    }
     
     public String exportMD(List<Map<String, String>> data, String filename) throws IOException {
         if (!filename.endsWith(".md")) filename += ".md";
@@ -108,6 +131,7 @@ public class Exporter {
     public void showMenu() {
         System.out.println("\n📊 数据导出功能:");
         System.out.println("  export json <filename> - 导出为 JSON");
+        System.out.println("  export jsonl <filename> - 导出为 JSONL");
         System.out.println("  export csv <filename>   - 导出为 CSV");
         System.out.println("  export md <filename>    - 导出为 Markdown");
     }

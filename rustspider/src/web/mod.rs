@@ -2,7 +2,9 @@
 //!
 //! 提供可运行的任务生命周期控制面：创建、启动、停止、结果、日志与统计。
 
+use crate::async_research::{AsyncResearchConfig, AsyncResearchRuntime};
 use crate::graph::GraphBuilder;
+use crate::research::{ResearchJob, ResearchRuntime};
 use actix_web::{delete, get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -185,8 +187,19 @@ impl TaskManager {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ResearchRecord {
+    pub id: String,
+    pub mode: String,
+    pub urls: Vec<String>,
+    pub status: String,
+    pub created_at: String,
+    pub result: serde_json::Value,
+}
+
 pub struct AppState {
     pub task_manager: Arc<TaskManager>,
+    pub research_records: Arc<RwLock<Vec<ResearchRecord>>>,
     pub api_token: String,
 }
 
@@ -258,6 +271,31 @@ fn persist_control_plane_record<T: Serialize>(filename: &str, payload: &T) {
     let _ = writeln!(handle, "{}", json);
 }
 
+fn record_research(
+    data: &web::Data<AppState>,
+    mode: &str,
+    urls: Vec<String>,
+    payload: serde_json::Value,
+) {
+    let record = ResearchRecord {
+        id: format!(
+            "research-{}",
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ),
+        mode: mode.to_string(),
+        urls,
+        status: "completed".to_string(),
+        created_at: timestamp_string(Utc::now()),
+        result: payload.clone(),
+    };
+    persist_control_plane_record("research-history.jsonl", &record);
+    let mut records = data.research_records.write().unwrap();
+    records.insert(0, record);
+    if records.len() > 20 {
+        records.truncate(20);
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ApiResponse<T> {
     pub success: bool,
@@ -304,6 +342,20 @@ pub struct PaginationParams {
 pub struct GraphExtractRequest {
     pub html: Option<String>,
     pub url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResearchRequest {
+    pub url: Option<String>,
+    pub urls: Option<Vec<String>>,
+    pub content: Option<String>,
+    pub contents: Option<Vec<String>>,
+    pub schema: Option<serde_json::Value>,
+    pub schema_json: Option<String>,
+    pub output: Option<serde_json::Value>,
+    pub rounds: Option<usize>,
+    pub concurrency: Option<usize>,
+    pub policy: Option<serde_json::Value>,
 }
 
 fn default_page() -> u32 {
@@ -557,7 +609,13 @@ async fn extract_graph_impl(body: GraphExtractRequest) -> HttpResponse {
     let html = if let Some(html) = body.html.as_ref().filter(|value| !value.trim().is_empty()) {
         html.clone()
     } else if let Some(url) = body.url.as_ref().filter(|value| !value.trim().is_empty()) {
-        match reqwest::get(url).await {
+        let safe_url = match crate::security::validate_safe_url(url) {
+            Ok(value) => value,
+            Err(err) => {
+                return HttpResponse::BadRequest().json(ApiResponse::<()>::error(&err));
+            }
+        };
+        match reqwest::get(safe_url).await {
             Ok(response) => match response.text().await {
                 Ok(text) => text,
                 Err(err) => {
@@ -611,8 +669,315 @@ async fn extract_graph_v1(
     extract_graph_impl(body.into_inner()).await
 }
 
+#[post("/api/research/run")]
+async fn research_run(
+    req: HttpRequest,
+    data: web::Data<AppState>,
+    body: web::Json<ResearchRequest>,
+) -> impl Responder {
+    research_run_impl(req, data, body.into_inner()).await
+}
+
+async fn research_run_impl(
+    req: HttpRequest,
+    data: web::Data<AppState>,
+    body: ResearchRequest,
+) -> HttpResponse {
+    if let Some(response) = ensure_authorized(&req, &data) {
+        return response;
+    }
+    let job = match build_research_job(&body) {
+        Ok(job) => job,
+        Err(err) => {
+            return HttpResponse::BadRequest().json(ApiResponse::<serde_json::Value>::error(&err))
+        }
+    };
+    let content = body.content.unwrap_or_default();
+    match ResearchRuntime::new().run(&job, Some(&content)) {
+        Ok(result) => {
+            let payload = serde_json::json!({
+                "command": "research run",
+                "runtime": "rust",
+                "result": result
+            });
+            record_research(&data, "run", job.seed_urls.clone(), payload.clone());
+            HttpResponse::Ok().json(ApiResponse::success(payload))
+        }
+        Err(err) => HttpResponse::BadRequest()
+            .json(ApiResponse::<serde_json::Value>::error(&err.to_string())),
+    }
+}
+
+#[post("/api/v1/research/run")]
+async fn research_run_v1(
+    req: HttpRequest,
+    data: web::Data<AppState>,
+    body: web::Json<ResearchRequest>,
+) -> impl Responder {
+    research_run_impl(req, data, body.into_inner()).await
+}
+
+#[post("/api/research/async")]
+async fn research_async(
+    req: HttpRequest,
+    data: web::Data<AppState>,
+    body: web::Json<ResearchRequest>,
+) -> impl Responder {
+    research_async_impl(req, data, body.into_inner()).await
+}
+
+async fn research_async_impl(
+    req: HttpRequest,
+    data: web::Data<AppState>,
+    body: ResearchRequest,
+) -> HttpResponse {
+    if let Some(response) = ensure_authorized(&req, &data) {
+        return response;
+    }
+    let jobs = match build_research_jobs(&body) {
+        Ok(jobs) => jobs,
+        Err(err) => {
+            return HttpResponse::BadRequest().json(ApiResponse::<serde_json::Value>::error(&err))
+        }
+    };
+    let contents = build_research_contents(&body, jobs.len());
+    let runtime = AsyncResearchRuntime::new(Some(AsyncResearchConfig {
+        max_concurrent: body.concurrency.unwrap_or(5).max(1),
+        timeout_seconds: 30.0,
+        enable_streaming: false,
+    }));
+    let results = runtime.run_multiple(jobs, Some(contents)).await;
+    let urls = results
+        .iter()
+        .map(|item| item.seed.clone())
+        .collect::<Vec<_>>();
+    let payload = serde_json::json!({
+        "command": "research async",
+        "runtime": "rust",
+        "results": results,
+        "metrics": runtime.snapshot_metrics(),
+    });
+    record_research(&data, "async", urls, payload.clone());
+    HttpResponse::Ok().json(ApiResponse::success(payload))
+}
+
+#[post("/api/v1/research/async")]
+async fn research_async_v1(
+    req: HttpRequest,
+    data: web::Data<AppState>,
+    body: web::Json<ResearchRequest>,
+) -> impl Responder {
+    research_async_impl(req, data, body.into_inner()).await
+}
+
+#[post("/api/research/soak")]
+async fn research_soak(
+    req: HttpRequest,
+    data: web::Data<AppState>,
+    body: web::Json<ResearchRequest>,
+) -> impl Responder {
+    research_soak_impl(req, data, body.into_inner()).await
+}
+
+async fn research_soak_impl(
+    req: HttpRequest,
+    data: web::Data<AppState>,
+    body: ResearchRequest,
+) -> HttpResponse {
+    if let Some(response) = ensure_authorized(&req, &data) {
+        return response;
+    }
+    let jobs = match build_research_jobs(&body) {
+        Ok(jobs) => jobs,
+        Err(err) => {
+            return HttpResponse::BadRequest().json(ApiResponse::<serde_json::Value>::error(&err))
+        }
+    };
+    let contents = build_research_contents(&body, jobs.len());
+    let runtime = AsyncResearchRuntime::new(Some(AsyncResearchConfig {
+        max_concurrent: body.concurrency.unwrap_or(5).max(1),
+        timeout_seconds: 30.0,
+        enable_streaming: false,
+    }));
+    let report = runtime
+        .run_soak(jobs, Some(contents), body.rounds.unwrap_or(1))
+        .await;
+    let payload = serde_json::json!({
+        "command": "research soak",
+        "runtime": "rust",
+        "report": report,
+    });
+    record_research(&data, "soak", build_research_urls(&body), payload.clone());
+    HttpResponse::Ok().json(ApiResponse::success(payload))
+}
+
+#[post("/api/v1/research/soak")]
+async fn research_soak_v1(
+    req: HttpRequest,
+    data: web::Data<AppState>,
+    body: web::Json<ResearchRequest>,
+) -> impl Responder {
+    research_soak_impl(req, data, body.into_inner()).await
+}
+
+#[get("/api/research/history")]
+async fn research_history(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
+    research_history_impl(req, data).await
+}
+
+async fn research_history_impl(req: HttpRequest, data: web::Data<AppState>) -> HttpResponse {
+    if let Some(response) = ensure_authorized(&req, &data) {
+        return response;
+    }
+    let records = data.research_records.read().unwrap().clone();
+    HttpResponse::Ok().json(ApiResponse::success(records))
+}
+
+#[get("/api/v1/research/history")]
+async fn research_history_v1(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
+    research_history_impl(req, data).await
+}
+
 async fn index_page() -> impl Responder {
-    let html = r#"<!DOCTYPE html><html><head><title>RustSpider Web UI</title></head><body><h1>RustSpider Web UI</h1><p>Visit /api/tasks for the task control plane.</p></body></html>"#;
+    let html = r#"<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustSpider Web UI</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #1f2937 0%, #374151 100%); color: #e5e7eb; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        header, .panel { background: rgba(17,24,39,0.82); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px; backdrop-filter: blur(8px); }
+        header { margin-bottom: 20px; }
+        h1 { margin: 0 0 8px 0; color: #f59e0b; }
+        p { color: #cbd5e1; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+        .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: rgba(245,158,11,0.16); color: #fbbf24; font-size: 12px; font-weight: 700; margin-bottom: 12px; }
+        .field { margin-bottom: 12px; }
+        .field label { display: block; margin-bottom: 6px; font-size: 13px; color: #cbd5e1; }
+        .field input, .field textarea, .field select { width: 100%; padding: 10px 12px; border: 1px solid #4b5563; border-radius: 10px; font-size: 14px; background: #111827; color: #f9fafb; }
+        .field textarea { min-height: 96px; resize: vertical; }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        button { border: none; border-radius: 10px; padding: 11px 16px; cursor: pointer; font-weight: 600; }
+        .primary { background: #f59e0b; color: #111827; }
+        .secondary { background: #374151; color: #f9fafb; }
+        pre { background: #020617; color: #f8fafc; border-radius: 12px; padding: 14px; overflow: auto; max-height: 420px; font-size: 12px; }
+        a { color: #fbbf24; text-decoration: none; margin-right: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🦀 RustSpider 控制台</h1>
+            <p>任务面板和 research 面板现在在同一个首页里。你可以直接从这里调用 run / async / soak。</p>
+            <div>
+                <a href="/api/tasks">/api/tasks</a>
+                <a href="/api/research/run">/api/research/run</a>
+                <a href="/api/v1/research/run">/api/v1/research/run</a>
+            </div>
+        </header>
+        <div class="grid">
+            <section class="panel">
+                <div class="pill">Task Panel</div>
+                <h2>任务面板</h2>
+                <div class="field">
+                    <label>任务名称</label>
+                    <input id="task-name" value="rust-task" />
+                </div>
+                <div class="field">
+                    <label>URL</label>
+                    <input id="task-url" value="https://example.com" />
+                </div>
+                <div class="btn-row">
+                    <button class="primary" onclick="createTask()">创建任务</button>
+                    <button class="secondary" onclick="refreshTasks()">刷新任务</button>
+                </div>
+                <pre id="task-output">等待任务数据...</pre>
+            </section>
+            <section class="panel">
+                <div class="pill">Research Panel</div>
+                <h2>Research 面板</h2>
+                <div class="field">
+                    <label>模式</label>
+                    <select id="research-mode">
+                        <option value="run">run</option>
+                        <option value="async">async</option>
+                        <option value="soak">soak</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>URL 列表（每行一个）</label>
+                    <textarea id="research-urls">https://example.com/article
+https://example.com/list</textarea>
+                </div>
+                <div class="field">
+                    <label>Schema JSON</label>
+                    <textarea id="research-schema">{"properties":{"title":{"type":"string"}}}</textarea>
+                </div>
+                <div class="field">
+                    <label>Inline Content</label>
+                    <textarea id="research-content"><title>Research Demo</title></textarea>
+                </div>
+                <div class="btn-row">
+                    <button class="primary" onclick="runResearch()">执行 research</button>
+                    <button class="secondary" onclick="loadExample()">示例</button>
+                </div>
+                <pre id="research-output">等待 research 结果...</pre>
+                <div class="pill" style="margin-top:16px;">Recent Research</div>
+                <pre id="research-history">等待 research 历史...</pre>
+            </section>
+        </div>
+    </div>
+    <script>
+        async function refreshTasks() {
+            const res = await fetch('/api/tasks');
+            document.getElementById('task-output').textContent = JSON.stringify(await res.json(), null, 2);
+        }
+        async function createTask() {
+            const res = await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: document.getElementById('task-name').value,
+                    url: document.getElementById('task-url').value
+                })
+            });
+            document.getElementById('task-output').textContent = JSON.stringify(await res.json(), null, 2);
+        }
+        function loadExample() {
+            document.getElementById('research-schema').value = '{"properties":{"title":{"type":"string"},"price":{"type":"string"}}}';
+            document.getElementById('research-content').value = '<title>Research Demo</title>\nprice: 42';
+        }
+        async function runResearch() {
+            const mode = document.getElementById('research-mode').value;
+            const urls = document.getElementById('research-urls').value.split('\n').map(v => v.trim()).filter(Boolean);
+            const payload = {
+                url: urls[0] || '',
+                urls,
+                content: document.getElementById('research-content').value,
+                schema_json: document.getElementById('research-schema').value,
+                concurrency: 2,
+                rounds: 2
+            };
+            const res = await fetch('/api/research/' + mode, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            document.getElementById('research-output').textContent = JSON.stringify(await res.json(), null, 2);
+            refreshResearchHistory();
+        }
+        async function refreshResearchHistory() {
+            const res = await fetch('/api/research/history');
+            document.getElementById('research-history').textContent = JSON.stringify(await res.json(), null, 2);
+        }
+        refreshTasks();
+        refreshResearchHistory();
+    </script>
+</body>
+</html>"#;
     HttpResponse::Ok().content_type("text/html").body(html)
 }
 
@@ -640,13 +1005,22 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         .service(get_task_artifacts)
         .service(get_stats)
         .service(extract_graph)
-        .service(extract_graph_v1);
+        .service(extract_graph_v1)
+        .service(research_run)
+        .service(research_run_v1)
+        .service(research_async)
+        .service(research_async_v1)
+        .service(research_soak)
+        .service(research_soak_v1)
+        .service(research_history)
+        .service(research_history_v1);
 }
 
 pub async fn run_server(host: &str, port: u16) -> std::io::Result<()> {
     let task_manager = Arc::new(TaskManager::new());
     let app_state = web::Data::new(AppState {
         task_manager,
+        research_records: Arc::new(RwLock::new(Vec::new())),
         api_token: resolve_api_token(),
     });
 
@@ -671,6 +1045,13 @@ async fn run_task(
     target_url: String,
     mut cancel_rx: watch::Receiver<bool>,
 ) {
+    let safe_url = match crate::security::validate_safe_url(&target_url) {
+        Ok(value) => value,
+        Err(err) => {
+            finish_failed_task(manager, &task_id, &target_url, started, &err);
+            return;
+        }
+    };
     if *cancel_rx.borrow() {
         manager.add_log(&task_id, "warning", "task cancelled before request");
         return;
@@ -699,7 +1080,7 @@ async fn run_task(
             manager.add_log(&task_id, "warning", "task cancelled during request");
             return;
         }
-        response = client.get(&target_url).send() => response
+        response = client.get(&safe_url).send() => response
     };
 
     let response = match response {
@@ -800,6 +1181,121 @@ async fn run_task(
         ),
     );
     manager.cancel(&task_id);
+}
+
+fn build_research_job(request: &ResearchRequest) -> Result<ResearchJob, String> {
+    let urls = build_research_urls(request);
+    if urls.is_empty() {
+        return Err("research request requires url or urls".to_string());
+    }
+    Ok(ResearchJob {
+        seed_urls: vec![urls[0].clone()],
+        extract_schema: parse_research_schema(request)?,
+        output: request
+            .output
+            .clone()
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_default(),
+        policy: request
+            .policy
+            .clone()
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_default(),
+        ..ResearchJob::default()
+    })
+}
+
+fn build_research_jobs(request: &ResearchRequest) -> Result<Vec<ResearchJob>, String> {
+    let urls = build_research_urls(request);
+    if urls.is_empty() {
+        return Err("research request requires url or urls".to_string());
+    }
+    let schema = parse_research_schema(request)?;
+    let output = request
+        .output
+        .clone()
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    let policy = request
+        .policy
+        .clone()
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    Ok(urls
+        .into_iter()
+        .map(|url| ResearchJob {
+            seed_urls: vec![url],
+            extract_schema: schema.clone(),
+            output: output.clone(),
+            policy: policy.clone(),
+            ..ResearchJob::default()
+        })
+        .collect())
+}
+
+fn build_research_urls(request: &ResearchRequest) -> Vec<String> {
+    let mut urls = Vec::new();
+    if let Some(url) = request
+        .url
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        urls.push(url.clone());
+    }
+    if let Some(more) = &request.urls {
+        for url in more {
+            if !url.trim().is_empty() {
+                urls.push(url.clone());
+            }
+        }
+    }
+    urls
+}
+
+fn build_research_contents(request: &ResearchRequest, size: usize) -> Vec<String> {
+    let mut contents = Vec::with_capacity(size);
+    for index in 0..size {
+        if let Some(values) = &request.contents {
+            if let Some(value) = values.get(index).filter(|value| !value.trim().is_empty()) {
+                contents.push(value.clone());
+                continue;
+            }
+        }
+        if let Some(content) = request
+            .content
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            contents.push(content.clone());
+        } else {
+            contents.push(format!("<title>Research {}</title>", index + 1));
+        }
+    }
+    contents
+}
+
+fn parse_research_schema(
+    request: &ResearchRequest,
+) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    if let Some(schema) = request
+        .schema
+        .as_ref()
+        .and_then(|value| value.as_object().cloned())
+    {
+        return Ok(schema);
+    }
+    if let Some(raw) = request
+        .schema_json
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        return serde_json::from_str::<serde_json::Value>(raw)
+            .map_err(|err| format!("invalid schema_json: {err}"))?
+            .as_object()
+            .cloned()
+            .ok_or_else(|| "schema_json must decode to an object".to_string());
+    }
+    Ok(serde_json::Map::new())
 }
 
 fn finish_failed_task(
@@ -953,6 +1449,7 @@ mod tests {
         let upstream = spawn_stub_server("<title>Rust Demo</title>", Duration::ZERO);
         let data = web::Data::new(AppState {
             task_manager: Arc::new(TaskManager::new()),
+            research_records: Arc::new(RwLock::new(Vec::new())),
             api_token: String::new(),
         });
         let app = test::init_service(
@@ -1029,6 +1526,7 @@ mod tests {
         let upstream = spawn_stub_server("<title>Slow Rust</title>", Duration::from_millis(500));
         let data = web::Data::new(AppState {
             task_manager: Arc::new(TaskManager::new()),
+            research_records: Arc::new(RwLock::new(Vec::new())),
             api_token: String::new(),
         });
         let app = test::init_service(
@@ -1075,6 +1573,7 @@ mod tests {
     async fn graph_extract_returns_nodes_edges_and_stats() {
         let data = web::Data::new(AppState {
             task_manager: Arc::new(TaskManager::new()),
+            research_records: Arc::new(RwLock::new(Vec::new())),
             api_token: String::new(),
         });
         let app = test::init_service(
@@ -1103,6 +1602,7 @@ mod tests {
     async fn auth_protects_api_when_token_configured() {
         let data = web::Data::new(AppState {
             task_manager: Arc::new(TaskManager::new()),
+            research_records: Arc::new(RwLock::new(Vec::new())),
             api_token: "secret-token".to_string(),
         });
         let app = test::init_service(
@@ -1125,5 +1625,69 @@ mod tests {
             .to_request();
         let authorized_resp = test::call_service(&app, authorized).await;
         assert_eq!(authorized_resp.status(), actix_web::http::StatusCode::OK);
+    }
+
+    #[actix_web::test]
+    async fn research_endpoints_run_async_and_soak() {
+        let data = web::Data::new(AppState {
+            task_manager: Arc::new(TaskManager::new()),
+            research_records: Arc::new(RwLock::new(Vec::new())),
+            api_token: String::new(),
+        });
+        let app = test::init_service(
+            App::new()
+                .app_data(data.clone())
+                .configure(configure_routes),
+        )
+        .await;
+
+        let run_req = test::TestRequest::post()
+            .uri("/api/research/run")
+            .set_json(json!({
+                "url": "https://example.com",
+                "content": "<title>Research API</title>",
+                "schema_json": "{\"properties\":{\"title\":{\"type\":\"string\"}}}"
+            }))
+            .to_request();
+        let run_resp: Value = test::call_and_read_body_json(&app, run_req).await;
+        assert_eq!(run_resp["success"], true);
+        assert_eq!(
+            run_resp["data"]["result"]["extract"]["title"],
+            "Research API"
+        );
+
+        let async_req = test::TestRequest::post()
+            .uri("/api/research/async")
+            .set_json(json!({
+                "urls": ["https://example.com/1", "https://example.com/2"],
+                "content": "<title>Async API</title>",
+                "schema_json": "{\"properties\":{\"title\":{\"type\":\"string\"}}}",
+                "concurrency": 2
+            }))
+            .to_request();
+        let async_resp: Value = test::call_and_read_body_json(&app, async_req).await;
+        assert_eq!(async_resp["success"], true);
+        assert_eq!(async_resp["data"]["results"].as_array().unwrap().len(), 2);
+
+        let soak_req = test::TestRequest::post()
+            .uri("/api/research/soak")
+            .set_json(json!({
+                "urls": ["https://example.com/1", "https://example.com/2"],
+                "content": "<title>Soak API</title>",
+                "schema_json": "{\"properties\":{\"title\":{\"type\":\"string\"}}}",
+                "concurrency": 2,
+                "rounds": 2
+            }))
+            .to_request();
+        let soak_resp: Value = test::call_and_read_body_json(&app, soak_req).await;
+        assert_eq!(soak_resp["success"], true);
+        assert_eq!(soak_resp["data"]["report"]["results"], 4);
+
+        let history_req = test::TestRequest::get()
+            .uri("/api/research/history")
+            .to_request();
+        let history_resp: Value = test::call_and_read_body_json(&app, history_req).await;
+        assert_eq!(history_resp["success"], true);
+        assert!(history_resp["data"].as_array().unwrap().len() >= 3);
     }
 }

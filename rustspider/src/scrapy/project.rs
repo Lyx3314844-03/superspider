@@ -559,18 +559,21 @@ pub fn collect_reverse_summary(reverse_url: &str, target_url: &str, html_file: &
     let tls = runtime
         .block_on(client.tls_fingerprint("chrome", "120"))
         .ok();
+    let canvas = runtime.block_on(client.canvas_fingerprint()).ok();
 
-    let crypto = if script_sample.trim().is_empty() {
-        None
+    let crypto_input = if script_sample.trim().is_empty() {
+        request.html.chars().take(32_000).collect::<String>()
     } else {
-        runtime.block_on(client.analyze_crypto(&script_sample)).ok()
+        script_sample
     };
+    let crypto = runtime.block_on(client.analyze_crypto(&crypto_input)).ok();
 
     json!({
         "detect": detect,
         "profile": profile,
         "fingerprint_spoof": spoof,
         "tls_fingerprint": tls,
+        "canvas_fingerprint": canvas,
         "crypto_analysis": crypto,
     })
 }

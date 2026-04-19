@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -123,6 +124,68 @@ func TestTaskLifecycleMutationResponsesExposeDataMessage(t *testing.T) {
 	if stop["data"].(map[string]interface{})["message"] != "Task stopped" {
 		t.Fatalf("unexpected stop payload: %#v", stop)
 	}
+}
+
+func TestServerResearchEndpointsAndHomePanel(t *testing.T) {
+	server := NewServer("0")
+	api := httptest.NewServer(server.mux)
+	defer api.Close()
+
+	rootResp, err := http.Get(api.URL + "/")
+	if err != nil {
+		t.Fatalf("get root page: %v", err)
+	}
+	defer rootResp.Body.Close()
+	rootBody, _ := io.ReadAll(rootResp.Body)
+	if !strings.Contains(string(rootBody), "Research 面板") {
+		t.Fatalf("expected root page to contain research panel, got: %s", string(rootBody))
+	}
+
+	runPayload := map[string]interface{}{
+		"url":         "https://example.com",
+		"content":     "<title>Research UI</title>",
+		"schema_json": `{"properties":{"title":{"type":"string"}}}`,
+	}
+	runResp := postJSON(t, http.MethodPost, api.URL+"/api/research/run", runPayload, http.StatusOK)
+	runData := runResp["data"].(map[string]interface{})
+	runResult := runData["result"].(map[string]interface{})
+	runExtract := runResult["extract"].(map[string]interface{})
+	if runExtract["title"] != "Research UI" {
+		t.Fatalf("unexpected research run response: %#v", runResp)
+	}
+
+	asyncPayload := map[string]interface{}{
+		"urls":        []string{"https://example.com/1", "https://example.com/2"},
+		"content":     "<title>Async UI</title>",
+		"schema_json": `{"properties":{"title":{"type":"string"}}}`,
+		"concurrency": 2,
+	}
+	asyncResp := postJSON(t, http.MethodPost, api.URL+"/api/research/async", asyncPayload, http.StatusOK)
+	asyncData := asyncResp["data"].(map[string]interface{})
+	if len(asyncData["results"].([]interface{})) != 2 {
+		t.Fatalf("unexpected research async response: %#v", asyncResp)
+	}
+
+	soakPayload := map[string]interface{}{
+		"urls":        []string{"https://example.com/1", "https://example.com/2"},
+		"content":     "<title>Soak UI</title>",
+		"schema_json": `{"properties":{"title":{"type":"string"}}}`,
+		"concurrency": 2,
+		"rounds":      2,
+	}
+	soakResp := postJSON(t, http.MethodPost, api.URL+"/api/research/soak", soakPayload, http.StatusOK)
+	soakData := soakResp["data"].(map[string]interface{})
+	report := soakData["report"].(map[string]interface{})
+	if int(report["results"].(float64)) != 4 {
+		t.Fatalf("unexpected research soak response: %#v", soakResp)
+	}
+
+	historyResp := getJSON(t, api.URL+"/api/research/history")
+	history := historyResp["data"].([]interface{})
+	if len(history) < 3 {
+		t.Fatalf("expected recent research history, got %#v", historyResp)
+	}
+	assertFileContains(t, filepath.Join("artifacts", "control-plane", "research-history.jsonl"), "\"mode\":\"run\"")
 }
 
 func createTaskViaAPI(t *testing.T, baseURL string, targetURL string) string {

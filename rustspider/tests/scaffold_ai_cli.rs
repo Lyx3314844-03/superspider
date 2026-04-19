@@ -274,7 +274,10 @@ print(json.dumps({"title":"capture","url":value("--url"),"html_path":value("--ht
             "--url",
             "https://example.com",
         ])
-        .env("RUSTSPIDER_PLAYWRIGHT_HELPER", helper.to_string_lossy().to_string())
+        .env(
+            "RUSTSPIDER_PLAYWRIGHT_HELPER",
+            helper.to_string_lossy().to_string(),
+        )
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("auth-capture should run");

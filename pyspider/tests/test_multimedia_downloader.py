@@ -214,3 +214,67 @@ def test_bilibili_multimedia_spider_uses_platform_parser(monkeypatch):
         "https://static.example.com/bili-cover.jpg"
     ]
     assert [audio.url for audio in audios] == ["https://media.example.com/video.mpd"]
+
+
+def test_iqiyi_parser_extracts_hls_and_dash(monkeypatch):
+    from pyspider.media.video_parser import IqiyiParser
+
+    html = """
+    <html>
+      <head>
+        <title>示例爱奇艺 - 爱奇艺</title>
+      </head>
+      <body>
+        <script>
+          {
+            "duration": 88,
+            "m3u8Url": "https://media.example.com/master.m3u8",
+            "dashUrl": "https://media.example.com/manifest.mpd"
+          }
+        </script>
+      </body>
+    </html>
+    """
+
+    parser = IqiyiParser()
+    monkeypatch.setattr(parser.session, "get", lambda url, timeout=30: FakeResponse(html))
+
+    video = parser.parse("https://www.iqiyi.com/v_19rrdemo.html")
+
+    assert video is not None
+    assert video.platform == "iqiyi"
+    assert video.video_id == "19rrdemo"
+    assert video.m3u8_url == "https://media.example.com/master.m3u8"
+    assert video.dash_url == "https://media.example.com/manifest.mpd"
+
+
+def test_tencent_parser_extracts_mp4_cover_and_duration(monkeypatch):
+    from pyspider.media.video_parser import TencentParser
+
+    html = """
+    <html>
+      <head>
+        <title>示例腾讯视频 - 腾讯视频</title>
+      </head>
+      <body>
+        <script>
+          {
+            "duration": 45,
+            "pic": "https://img.example.com/tencent-cover.jpg",
+            "url": "https://media.example.com/tencent.mp4"
+          }
+        </script>
+      </body>
+    </html>
+    """
+
+    parser = TencentParser()
+    monkeypatch.setattr(parser.session, "get", lambda url, timeout=30: FakeResponse(html))
+
+    video = parser.parse("https://v.qq.com/x/page/demo123.html")
+
+    assert video is not None
+    assert video.platform == "tencent"
+    assert video.video_id == "demo123"
+    assert video.mp4_url == "https://media.example.com/tencent.mp4"
+    assert video.cover_url == "https://img.example.com/tencent-cover.jpg"

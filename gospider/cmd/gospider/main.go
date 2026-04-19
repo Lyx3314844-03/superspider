@@ -27,16 +27,22 @@ import (
 	"gopkg.in/yaml.v3"
 	spiderai "gospider/ai"
 	"gospider/antibot"
+	"gospider/api"
+	"gospider/browser"
 	"gospider/core"
+	"gospider/distributed"
 	"gospider/events"
+	"gospider/features"
 	nodereverse "gospider/node_reverse"
 	"gospider/parser"
 	"gospider/queue"
+	"gospider/research"
 	runtimedispatch "gospider/runtime/dispatch"
 	scrapyapi "gospider/scrapy"
 	projectruntime "gospider/scrapy/project"
 	"gospider/storage"
 	"gospider/ultimate"
+	webui "gospider/web"
 )
 
 const version = "2.0.0"
@@ -342,24 +348,34 @@ func main() {
 		os.Exit(aiCommand(os.Args[2:]))
 	case "doctor":
 		doctorCommand(os.Args[2:])
+	case "preflight":
+		doctorCommandNamed(os.Args[2:], "preflight")
 	case "browser":
 		browserCommand(os.Args[2:])
 	case "export":
 		exportCommand(os.Args[2:])
 	case "curl":
 		os.Exit(curlCommand(os.Args[2:]))
+	case "run":
+		os.Exit(runCommand(os.Args[2:]))
 	case "job":
-		jobCommand(os.Args[2:])
+		os.Exit(jobCommand(os.Args[2:]))
+	case "async-job":
+		os.Exit(asyncJobCommand(os.Args[2:]))
 	case "jobdir":
 		os.Exit(jobdirCommand(os.Args[2:]))
 	case "http-cache":
 		os.Exit(httpCacheCommand(os.Args[2:]))
 	case "console":
 		os.Exit(runtimeConsoleCommand(os.Args[2:]))
+	case "audit":
+		os.Exit(auditCommand(os.Args[2:]))
 	case "capabilities":
 		capabilitiesCommand()
 	case "config":
 		configCommand(os.Args[2:])
+	case "web":
+		os.Exit(webCommand(os.Args[2:]))
 	case "media":
 		mediaCommand(os.Args[2:])
 	case "ultimate":
@@ -374,6 +390,10 @@ func main() {
 		os.Exit(pluginsCommand(os.Args[2:]))
 	case "profile-site":
 		os.Exit(profileSiteCommand(os.Args[2:]))
+	case "research":
+		os.Exit(researchCommand(os.Args[2:]))
+	case "workflow":
+		os.Exit(workflowCommand(os.Args[2:]))
 	case "node-reverse":
 		os.Exit(nodeReverseCommand(os.Args[2:]))
 	case "anti-bot", "antibot":
@@ -395,11 +415,16 @@ func printUsage() {
 	fmt.Println("  browser    Fetch or instrument a dynamic page")
 	fmt.Println("  export     Export JSON items to a contract format")
 	fmt.Println("  curl      Convert curl commands into Go code")
+	fmt.Println("  run        Execute an inline pyspider-style URL job")
 	fmt.Println("  job        Execute a normalized JobSpec from JSON")
+	fmt.Println("  async-job  Execute a normalized JobSpec through the async parity surface")
 	fmt.Println("  jobdir     Manage a shared pause/resume job directory")
 	fmt.Println("  http-cache Inspect or seed the shared HTTP cache store")
 	fmt.Println("  console    Inspect shared control-plane and jobdir artifacts")
+	fmt.Println("  audit      Inspect audit, connector, and control-plane traces")
 	fmt.Println("  capabilities  Print integrated runtime capabilities")
+	fmt.Println("  web        Launch the embedded Web UI or API server")
+	fmt.Println("  workflow   Execute the lightweight workflow orchestration surface")
 	fmt.Println("  media      Download media (YouTube, Youku, etc.)")
 	fmt.Println("  ultimate   Run the advanced ultimate spider")
 	fmt.Println("  ai         Run AI-assisted extraction, understanding, or spider generation")
@@ -409,9 +434,11 @@ func printUsage() {
 	fmt.Println("  sitemap-discover  Discover sitemap URLs before crawling")
 	fmt.Println("  plugins    Inspect shared plugin/integration manifests")
 	fmt.Println("  profile-site  Profile a target before crawling")
+	fmt.Println("  research   Run the pyspider-style research runtime surfaces")
 	fmt.Println("  node-reverse  Call the NodeReverse service directly")
 	fmt.Println("  anti-bot   Run anti-bot utilities and local block detection")
 	fmt.Println("  doctor     Run diagnostics")
+	fmt.Println("  preflight  Run diagnostics through the cross-runtime preflight alias")
 	fmt.Println("  version    Show version")
 	fmt.Println()
 	fmt.Println("Examples:")
@@ -421,11 +448,15 @@ func printUsage() {
 	fmt.Println("  gospider browser trace --url https://example.com --trace-path artifacts/browser/page.trace.zip --har-path artifacts/browser/page.har")
 	fmt.Println("  gospider export --input artifacts/datasets/crawl.json --format json --output artifacts/exports/results.json")
 	fmt.Println("  gospider curl convert --command \"curl https://example.com\" --target resty")
+	fmt.Println("  gospider run https://example.com --runtime http")
 	fmt.Println("  gospider job --file contracts/example-job.json")
+	fmt.Println("  gospider async-job --file contracts/example-job.json")
 	fmt.Println("  gospider jobdir init --path artifacts/jobs/demo --runtime go --url https://example.com")
 	fmt.Println("  gospider http-cache status --path artifacts/cache/incremental.json")
 	fmt.Println("  gospider console snapshot --control-plane artifacts/control-plane --jobdir artifacts/jobs/demo")
+	fmt.Println("  gospider audit tail --control-plane artifacts/control-plane --job-name demo --stream audit")
 	fmt.Println("  gospider capabilities")
+	fmt.Println("  gospider web --mode ui --port 8080")
 	fmt.Println("  gospider media -url https://www.youtube.com/watch?v=xxx -download")
 	fmt.Println("  gospider media drm --content \"#EXTM3U ...\"")
 	fmt.Println("  gospider ultimate --url https://example.com")
@@ -437,9 +468,11 @@ func printUsage() {
 	fmt.Println("  gospider sitemap-discover --url https://example.com")
 	fmt.Println("  gospider plugins list")
 	fmt.Println("  gospider profile-site --url https://example.com")
+	fmt.Println("  gospider research run --url https://example.com --schema-json '{\"properties\":{\"title\":{\"type\":\"string\"}}}'")
 	fmt.Println("  gospider node-reverse health --base-url http://localhost:3000")
 	fmt.Println("  gospider anti-bot headers --profile cloudflare")
 	fmt.Println("  gospider doctor")
+	fmt.Println("  gospider preflight --json")
 	fmt.Println("  gospider version")
 }
 
@@ -615,8 +648,8 @@ func validateContractConfig(cfg contractConfig, expectedRuntime string) error {
 	if strings.TrimSpace(cfg.Storage.ExportDir) == "" {
 		errors = append(errors, "storage.export_dir must be a non-empty string")
 	}
-	if !map[string]bool{"json": true, "csv": true, "md": true}[cfg.Export.Format] {
-		errors = append(errors, "export.format must be one of [json csv md]")
+	if !map[string]bool{"json": true, "jsonl": true, "csv": true, "md": true}[cfg.Export.Format] {
+		errors = append(errors, "export.format must be one of [json jsonl csv md]")
 	}
 	if strings.TrimSpace(cfg.Export.OutputPath) == "" {
 		errors = append(errors, "export.output_path must be a non-empty string")
@@ -938,7 +971,201 @@ func runtimeConsoleCommand(args []string) int {
 	return runSharedPythonTool("runtime_console.py", toolArgs)
 }
 
+func auditCommand(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: gospider audit <snapshot|tail> --control-plane <dir>")
+		return 2
+	}
+	subcommand := args[0]
+	if subcommand != "snapshot" && subcommand != "tail" {
+		fmt.Fprintln(os.Stderr, "usage: gospider audit <snapshot|tail> --control-plane <dir>")
+		return 2
+	}
+
+	cmd := flag.NewFlagSet("audit "+subcommand, flag.ExitOnError)
+	controlPlane := cmd.String("control-plane", "artifacts/control-plane", "control-plane directory")
+	jobName := cmd.String("job-name", "", "job name filter")
+	stream := cmd.String("stream", "all", "stream to tail: events|results|audit|connector|all")
+	lines := cmd.Int("lines", 20, "line count")
+	_ = cmd.Parse(args[1:])
+
+	toolArgs := []string{
+		subcommand,
+		"--control-plane",
+		*controlPlane,
+		"--job-name",
+		*jobName,
+		"--lines",
+		fmt.Sprintf("%d", *lines),
+	}
+	if subcommand == "tail" {
+		toolArgs = append(toolArgs, "--stream", *stream)
+	}
+	return runSharedPythonTool("audit_console.py", toolArgs)
+}
+
+func webCommand(args []string) int {
+	webCmd := flag.NewFlagSet("web", flag.ExitOnError)
+	mode := webCmd.String("mode", "ui", "server mode: ui|api")
+	host := webCmd.String("host", "0.0.0.0", "listen host")
+	port := webCmd.Int("port", 8080, "listen port")
+	authToken := webCmd.String("auth-token", "", "optional bearer token")
+	_ = webCmd.Parse(args)
+
+	switch strings.ToLower(strings.TrimSpace(*mode)) {
+	case "ui":
+		server := webui.NewServer(fmt.Sprintf("%d", *port))
+		if *host != "0.0.0.0" && *host != "127.0.0.1" && *host != "localhost" {
+			fmt.Fprintf(os.Stderr, "web ui currently binds by port only; ignoring host=%s\n", *host)
+		}
+		if err := server.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "web ui failed: %v\n", err)
+			return 1
+		}
+		return 0
+	case "api":
+		cfg := &api.Config{
+			Host:       *host,
+			Port:       *port,
+			EnableCORS: true,
+			EnableAuth: strings.TrimSpace(*authToken) != "",
+			AuthToken:  strings.TrimSpace(*authToken),
+		}
+		server := api.NewServerWithJobService(cfg, core.NewJobService())
+		if err := server.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "api server failed: %v\n", err)
+			return 1
+		}
+		return 0
+	default:
+		fmt.Fprintln(os.Stderr, "usage: gospider web [--mode <ui|api>] [--host <host>] [--port <port>]")
+		return 2
+	}
+}
+
+func researchCommand(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: gospider research <run|async|soak> ...")
+		return 2
+	}
+	switch args[0] {
+	case "run":
+		cmd := flag.NewFlagSet("research run", flag.ExitOnError)
+		url := cmd.String("url", "", "seed url")
+		content := cmd.String("content", "", "inline content")
+		schemaJSON := cmd.String("schema-json", "{}", "schema json")
+		output := cmd.String("output", "", "output path")
+		_ = cmd.Parse(args[1:])
+		if *url == "" {
+			fmt.Fprintln(os.Stderr, "research run requires --url")
+			return 2
+		}
+		job, err := buildResearchJob([]string{*url}, *schemaJSON, *output)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid research schema: %v\n", err)
+			return 2
+		}
+		result, err := research.NewResearchRuntime().Run(job, *content)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "research run failed: %v\n", err)
+			return 1
+		}
+		return printJSON(result)
+	case "async", "soak":
+		cmd := flag.NewFlagSet("research "+args[0], flag.ExitOnError)
+		var urls repeatedStringFlag
+		cmd.Var(&urls, "url", "seed url (repeatable)")
+		content := cmd.String("content", "", "inline content reused for all jobs")
+		schemaJSON := cmd.String("schema-json", "{}", "schema json")
+		output := cmd.String("output", "", "output path for single-run reuse")
+		rounds := cmd.Int("rounds", 1, "soak rounds")
+		concurrency := cmd.Int("concurrency", 5, "max concurrent jobs")
+		_ = cmd.Parse(args[1:])
+		if len(urls) == 0 {
+			fmt.Fprintln(os.Stderr, "research async/soak requires at least one --url")
+			return 2
+		}
+		jobs := make([]research.ResearchJob, 0, len(urls))
+		contents := make([]string, 0, len(urls))
+		for index, url := range urls {
+			jobOutput := ""
+			if *output != "" && len(urls) == 1 {
+				jobOutput = *output
+			}
+			job, err := buildResearchJob([]string{url}, *schemaJSON, jobOutput)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "invalid research schema: %v\n", err)
+				return 2
+			}
+			jobs = append(jobs, job)
+			if *content != "" {
+				contents = append(contents, *content)
+			} else {
+				contents = append(contents, fmt.Sprintf("<title>Research %d</title>", index+1))
+			}
+		}
+		runtime := research.NewAsyncResearchRuntime(&research.AsyncResearchConfig{
+			MaxConcurrent: *concurrency,
+		})
+		if args[0] == "soak" {
+			return printJSON(runtime.RunSoak(jobs, contents, *rounds))
+		}
+		results := runtime.RunMultiple(jobs, contents)
+		rows := make([]map[string]interface{}, 0, len(results))
+		for _, result := range results {
+			rows = append(rows, map[string]interface{}{
+				"seed":        result.Seed,
+				"profile":     result.Profile,
+				"extract":     result.Extract,
+				"duration_ms": result.DurationMS,
+				"dataset":     result.Dataset,
+				"error":       result.Error,
+			})
+		}
+		return printJSON(map[string]interface{}{
+			"command": "research async",
+			"runtime": "go",
+			"results": rows,
+			"metrics": runtime.SnapshotMetrics(),
+		})
+	default:
+		fmt.Fprintln(os.Stderr, "usage: gospider research <run|async|soak> ...")
+		return 2
+	}
+}
+
+func buildResearchJob(seedURLs []string, schemaJSON string, outputPath string) (research.ResearchJob, error) {
+	job := research.ResearchJob{SeedURLs: append([]string{}, seedURLs...)}
+	if strings.TrimSpace(schemaJSON) != "" {
+		schema := map[string]interface{}{}
+		if err := json.Unmarshal([]byte(schemaJSON), &schema); err != nil {
+			return job, err
+		}
+		job.ExtractSchema = schema
+	}
+	if strings.TrimSpace(outputPath) != "" {
+		job.Output = map[string]interface{}{
+			"path": outputPath,
+		}
+	}
+	return job, nil
+}
+
+func printJSON(payload interface{}) int {
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "json marshal failed: %v\n", err)
+		return 1
+	}
+	fmt.Println(string(encoded))
+	return 0
+}
+
 func doctorCommand(args []string) {
+	doctorCommandNamed(args, "doctor")
+}
+
+func doctorCommandNamed(args []string, commandName string) {
 	doctorCmd := flag.NewFlagSet("doctor", flag.ExitOnError)
 	configPath := doctorCmd.String("config", "", "shared contract config path")
 	jsonOutput := doctorCmd.Bool("json", false, "render json")
@@ -965,7 +1192,7 @@ func doctorCommand(args []string) {
 	}
 	report := runDoctor(opts)
 	if *jsonOutput {
-		payload, err := renderDoctorReportJSON(report)
+		payload, err := renderDoctorReportJSONForCommand(report, commandName)
 		if err != nil {
 			fmt.Printf("Failed to render doctor JSON: %v\n", err)
 			os.Exit(1)
@@ -973,7 +1200,7 @@ func doctorCommand(args []string) {
 		fmt.Println(payload)
 		return
 	}
-	fmt.Println(renderDoctorReport(report))
+	fmt.Println(renderDoctorReportForCommand(report, commandName))
 }
 
 func exportCommand(args []string) {
@@ -983,7 +1210,7 @@ func exportCommand(args []string) {
 	output := exportCmd.String("output", "", "output path")
 	_ = exportCmd.Parse(args)
 	if *input == "" || *output == "" {
-		fmt.Println("Usage: gospider export --input <path> --format <json|csv|md> --output <path>")
+		fmt.Println("Usage: gospider export --input <path> --format <json|jsonl|csv|md> --output <path>")
 		os.Exit(2)
 	}
 	dataBytes, err := os.ReadFile(*input)
@@ -1019,6 +1246,18 @@ func exportCommand(args []string) {
 			"items":          items,
 		}, "", "  ")
 		_ = os.WriteFile(*output, payload, 0644)
+	case "jsonl":
+		var builder strings.Builder
+		for _, item := range items {
+			row, err := json.Marshal(item)
+			if err != nil {
+				fmt.Printf("Failed to encode jsonl row: %v\n", err)
+				os.Exit(1)
+			}
+			builder.Write(row)
+			builder.WriteByte('\n')
+		}
+		_ = os.WriteFile(*output, []byte(builder.String()), 0644)
 	case "csv":
 		file, err := os.Create(*output)
 		if err != nil {
@@ -1080,21 +1319,95 @@ func loadJobSpecFromFile(path string) (*core.JobSpec, error) {
 	return &job, nil
 }
 
-func jobCommand(args []string) {
+func jobCommand(args []string) int {
 	jobCmd := flag.NewFlagSet("job", flag.ExitOnError)
 	file := jobCmd.String("file", "", "JobSpec JSON file")
 	_ = jobCmd.Parse(args)
 
 	if *file == "" {
 		fmt.Println("Error: --file is required")
-		os.Exit(2)
+		return 2
 	}
 
 	job, err := loadJobSpecFromFile(*file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load job: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return executeRuntimeJob(job)
+}
+
+func asyncJobCommand(args []string) int {
+	jobCmd := flag.NewFlagSet("async-job", flag.ExitOnError)
+	file := jobCmd.String("file", "", "JobSpec JSON file")
+	content := jobCmd.String("content", "", "inline content override")
+	_ = jobCmd.Parse(args)
+
+	if *file == "" {
+		fmt.Println("Error: --file is required")
+		return 2
+	}
+
+	job, err := loadJobSpecFromFile(*file)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load job: %v\n", err)
+		return 1
+	}
+	if job.Metadata == nil {
+		job.Metadata = map[string]interface{}{}
+	}
+	job.Metadata["execution_mode"] = "async"
+	if strings.TrimSpace(*content) != "" {
+		job.Metadata["content"] = *content
+	}
+	return executeRuntimeJob(job)
+}
+
+func runCommand(args []string) int {
+	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
+	urlValue := runCmd.String("url", "", "target URL")
+	runtimeValue := runCmd.String("runtime", "http", "runtime: http|browser|media|ai")
+	name := runCmd.String("name", "", "job name")
+	output := runCmd.String("output", "", "output JSON path")
+	content := runCmd.String("content", "", "inline content override")
+	_ = runCmd.Parse(args)
+
+	if *urlValue == "" && len(runCmd.Args()) > 0 {
+		*urlValue = runCmd.Args()[0]
+	}
+	if strings.TrimSpace(*urlValue) == "" {
+		fmt.Println("Error: run requires a URL")
+		return 2
+	}
+
+	jobName := strings.TrimSpace(*name)
+	if jobName == "" {
+		jobName = fmt.Sprintf("go-inline-%d", time.Now().UnixMilli())
+	}
+	outputPath := strings.TrimSpace(*output)
+	if outputPath == "" {
+		outputPath = filepath.Join("artifacts", "exports", jobName+".json")
+	}
+	job := &core.JobSpec{
+		Name:    jobName,
+		Runtime: core.Runtime(strings.ToLower(strings.TrimSpace(*runtimeValue))),
+		Target: core.TargetSpec{
+			URL: *urlValue,
+		},
+		Output: core.OutputSpec{
+			Format: "json",
+			Path:   outputPath,
+		},
+	}
+	if strings.TrimSpace(*content) != "" {
+		job.Metadata = map[string]interface{}{
+			"content": *content,
+		}
+	}
+	return executeRuntimeJob(job)
+}
+
+func executeRuntimeJob(job *core.JobSpec) int {
 	if injectedErr := injectedJobFailure(job); injectedErr != nil {
 		result := core.NewJobResult(*job, core.StateFailed)
 		result.Error = injectedErr.Error()
@@ -1102,7 +1415,7 @@ func jobCommand(args []string) {
 		result.Finalize()
 		printAndPersistJobResult(job, result)
 		fmt.Fprintf(os.Stderr, "Job failed: %v\n", injectedErr)
-		os.Exit(1)
+		return 1
 	}
 
 	config := core.DefaultConfig()
@@ -1113,8 +1426,9 @@ func jobCommand(args []string) {
 	printAndPersistJobResult(job, result)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Job failed: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func printAndPersistJobResult(job *core.JobSpec, result *core.JobResult) {
@@ -1161,6 +1475,11 @@ func printAndPersistJobResult(job *core.JobSpec, result *core.JobResult) {
 		}
 	}
 	_ = resultStore.Put(record)
+	if dbStore := configuredSQLResultStore(); dbStore != nil {
+		_ = dbStore.Put(record)
+	} else if dbStore := configuredProcessResultStore(); dbStore != nil {
+		_ = dbStore.Put(record)
+	}
 	_ = eventStore.Put(events.New(events.TopicTaskResult, events.TaskResultPayload{
 		TaskID:       result.JobName,
 		State:        string(result.State),
@@ -1171,6 +1490,96 @@ func printAndPersistJobResult(job *core.JobSpec, result *core.JobResult) {
 		ArtifactRefs: resultArtifactRefs(result),
 		UpdatedAt:    result.FinishedAt,
 	}))
+	controlPlaneDir := filepath.Join("artifacts", "control-plane")
+	_ = appendJSONLRecord(
+		filepath.Join(controlPlaneDir, fmt.Sprintf("%s-audit.jsonl", result.JobName)),
+		map[string]interface{}{
+			"type": "job.result",
+			"payload": map[string]interface{}{
+				"job_name": result.JobName,
+				"runtime":  string(result.Runtime),
+				"state":    string(result.State),
+				"url":      result.URL,
+				"error":    result.Error,
+			},
+		},
+	)
+	_ = appendJSONLRecord(
+		filepath.Join(controlPlaneDir, fmt.Sprintf("%s-connector.jsonl", result.JobName)),
+		map[string]interface{}{
+			"job_name":      result.JobName,
+			"runtime":       string(result.Runtime),
+			"state":         string(result.State),
+			"url":           result.URL,
+			"output_path":   job.Output.Path,
+			"artifact_refs": payload["artifact_refs"],
+			"extract":       result.Extract,
+		},
+	)
+}
+
+func configuredProcessResultStore() *storage.ProcessResultStore {
+	backend := strings.ToLower(strings.TrimSpace(os.Getenv("GOSPIDER_STORAGE_BACKEND")))
+	endpoint := strings.TrimSpace(os.Getenv("GOSPIDER_STORAGE_ENDPOINT"))
+	if backend == "" || endpoint == "" {
+		return nil
+	}
+	config := storage.StorageBackendConfig{
+		Endpoint:   endpoint,
+		Table:      strings.TrimSpace(os.Getenv("GOSPIDER_STORAGE_TABLE")),
+		Collection: strings.TrimSpace(os.Getenv("GOSPIDER_STORAGE_COLLECTION")),
+	}
+	switch backend {
+	case "postgres", "postgresql":
+		config.Kind = storage.StorageBackendPostgres
+	case "mysql":
+		config.Kind = storage.StorageBackendMySQL
+	case "mongo", "mongodb":
+		config.Kind = storage.StorageBackendMongoDB
+	default:
+		return nil
+	}
+	return storage.NewProcessResultStore(config)
+}
+
+func configuredSQLResultStore() *storage.SQLResultStore {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("GOSPIDER_STORAGE_MODE")))
+	backend := strings.ToLower(strings.TrimSpace(os.Getenv("GOSPIDER_STORAGE_BACKEND")))
+	if mode != "driver" || backend == "" {
+		return nil
+	}
+	endpoint := strings.TrimSpace(os.Getenv("GOSPIDER_STORAGE_ENDPOINT"))
+	if endpoint == "" {
+		return nil
+	}
+	table := strings.TrimSpace(os.Getenv("GOSPIDER_STORAGE_TABLE"))
+	switch backend {
+	case "postgres", "postgresql":
+		return storage.NewSQLResultStore(storage.SQLBackendPostgres, endpoint, table)
+	case "mysql":
+		return storage.NewSQLResultStore(storage.SQLBackendMySQL, endpoint, table)
+	default:
+		return nil
+	}
+}
+
+func appendJSONLRecord(path string, payload interface{}) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	handle, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	defer handle.Close()
+	if _, err := handle.Write(append(encoded, '\n')); err != nil {
+		return err
+	}
+	return handle.Sync()
 }
 
 func cliJobResultPayload(result *core.JobResult) map[string]interface{} {
@@ -1305,13 +1714,19 @@ func capabilitiesCommand() {
 			"ai",
 			"export",
 			"curl",
+			"run",
 			"job",
+			"async-job",
 			"jobdir",
 			"http-cache",
 			"console",
+			"audit",
 			"capabilities",
+			"web",
 			"media",
 			"ultimate",
+			"research",
+			"workflow",
 			"selector-studio",
 			"scrapy",
 			"sitemap-discover",
@@ -1320,6 +1735,7 @@ func capabilitiesCommand() {
 			"node-reverse",
 			"anti-bot",
 			"doctor",
+			"preflight",
 			"version",
 		},
 		"runtimes": []string{
@@ -1331,10 +1747,34 @@ func capabilitiesCommand() {
 		"modules": []string{
 			"core.JobSpec",
 			"core.JobRunner",
+			"async.Runtime",
 			"core.AutoscaledFrontier",
 			"core.FileArtifactStore",
 			"core.CurlToGoConverter",
+			"browser.SeleniumClient",
+			"downloader.SSRFGuard",
+			"distributed.NodeDiscovery",
+			"distributed.QueueBridgeClient",
+			"bridge.CrawleeBridgeClient",
+			"connector.FileConnector",
+			"events.FileBus",
+			"audit.MemoryAuditTrail",
+			"audit.FileAuditTrail",
+			"storage.ProcessResultStore",
+			"storage.ProcessDatasetStore",
+			"features.FeatureGateCatalog",
+			"research.Job",
+			"research.Runtime",
+			"research.AsyncRuntime",
+			"research.ExperimentTracker",
+			"workflow.WorkflowSpider",
+			"ai.SentimentAnalyzer",
+			"ai.ContentSummarizer",
+			"ai.EntityExtractor",
 			"runtime.dispatch",
+			"audit.control_plane",
+			"web.Server",
+			"api.Server",
 			"runtime.http",
 			"runtime.browser",
 			"media",
@@ -1359,6 +1799,14 @@ func capabilitiesCommand() {
 			"scrapy-plugins-manifest",
 			"web-control-plane",
 		},
+		"feature_gates": features.Catalog(),
+		"ai_capabilities": map[string]any{
+			"providers":                     []string{"openai", "anthropic", "claude"},
+			"few_shot":                      true,
+			"sentiment_analysis":            true,
+			"summarization":                 true,
+			"entity_extraction_specialized": true,
+		},
 		"operator_products": map[string]any{
 			"jobdir": map[string]any{
 				"pause_resume": true,
@@ -1369,12 +1817,34 @@ func capabilitiesCommand() {
 				"backends":          []string{"file-json", "memory"},
 				"strategies":        []string{"revalidate", "delta-fetch"},
 			},
+			"message_queue": map[string]any{
+				"default":  "redis",
+				"backends": distributed.QueueBackendSupport(),
+			},
+			"queue_backends": distributed.QueueBackendSupport(),
 			"browser_tooling": map[string]any{
 				"trace":         true,
 				"har":           true,
 				"route_mocking": true,
 				"codegen":       true,
 			},
+			"antibot": map[string]any{
+				"behavior_randomization": true,
+				"night_mode": map[string]any{
+					"enabled":           true,
+					"start_hour":        23,
+					"end_hour":          6,
+					"delay_multiplier":  1.5,
+					"rate_limit_factor": 0.5,
+				},
+			},
+			"node_discovery": map[string]any{
+				"providers": []string{"env", "file", "dns-srv", "consul-http", "etcd-http"},
+			},
+			"security": map[string]any{
+				"ssrf_guard": true,
+			},
+			"storage_backends": storage.StorageBackendSupport(),
 			"autoscaling_pools": map[string]any{
 				"frontier":      true,
 				"request_queue": "autoscaled-frontier",
@@ -1386,7 +1856,29 @@ func capabilitiesCommand() {
 				"tail":                true,
 				"control_plane_jsonl": true,
 			},
+			"audit_console": map[string]any{
+				"snapshot":   true,
+				"tail":       true,
+				"job_filter": true,
+			},
+			"event_system": map[string]any{
+				"topics":  []string{"workflow.job.started", "workflow.step.started", "workflow.step.succeeded", "workflow.job.completed"},
+				"storage": "jsonl+memory",
+			},
+			"connectors": map[string]any{
+				"native": []string{"memory", "jsonl"},
+			},
+			"workflow": map[string]any{
+				"step_types": []string{"goto", "wait", "click", "type", "select", "hover", "scroll", "eval", "listen_network", "extract", "download", "screenshot"},
+				"connectors": true,
+				"events":     true,
+			},
+			"crawlee_bridge": map[string]any{
+				"client":   true,
+				"endpoint": "/api/crawl",
+			},
 		},
+		"browser_compatibility": browser.BrowserCompatibilitySupport(),
 		"control_plane": map[string]any{
 			"task_api":        true,
 			"result_envelope": true,
@@ -1408,6 +1900,8 @@ func capabilitiesCommand() {
 		},
 		"observability": []string{
 			"doctor",
+			"preflight",
+			"audit",
 			"profile-site",
 			"selector-studio",
 			"scrapy doctor",
@@ -2184,8 +2678,8 @@ func scrapyCommand(args []string) int {
 				"cookies_file":       "",
 				"session":            "auth",
 				"actions":            []map[string]any{},
-				"action_examples": defaultAuthActionExamples(),
-				"notes": "Fill session headers/cookies here when authentication is required.",
+				"action_examples":    defaultAuthActionExamples(),
+				"notes":              "Fill session headers/cookies here when authentication is required.",
 			}, "", "  ")
 			if err := os.WriteFile(authPath, append(authBytes, '\n'), 0644); err == nil {
 				writtenFiles = append(writtenFiles, authPath)
@@ -2585,13 +3079,13 @@ func scrapyCommand(args []string) int {
 			return 1
 		}
 		authBytes, _ := json.MarshalIndent(map[string]any{
-			"headers":            map[string]string{},
-			"cookies":            map[string]string{},
-			"storage_state_file": "",
-			"cookies_file":       "",
-			"session":            "auth",
-			"actions":            []map[string]any{},
-			"action_examples": defaultAuthActionExamples(),
+			"headers":                 map[string]string{},
+			"cookies":                 map[string]string{},
+			"storage_state_file":      "",
+			"cookies_file":            "",
+			"session":                 "auth",
+			"actions":                 []map[string]any{},
+			"action_examples":         defaultAuthActionExamples(),
 			"node_reverse_base_url":   "http://localhost:3000",
 			"capture_reverse_profile": false,
 			"notes":                   "Fill session headers/cookies here when authentication is required.",
@@ -3415,7 +3909,7 @@ func ultimateCommand(args []string) {
 
 func nodeReverseCommand(args []string) int {
 	if len(args) == 0 {
-		fmt.Println("Usage: gospider node-reverse <health|profile|detect|fingerprint-spoof|tls-fingerprint|analyze-crypto> [options]")
+		fmt.Println("Usage: gospider node-reverse <health|profile|detect|fingerprint-spoof|tls-fingerprint|canvas-fingerprint|analyze-crypto|signature-reverse|ast|webpack|function-call|browser-simulate> [options]")
 		return 2
 	}
 	switch args[0] {
@@ -3429,8 +3923,20 @@ func nodeReverseCommand(args []string) int {
 		return nodeReverseFingerprintSpoofCommand(args[1:])
 	case "tls-fingerprint":
 		return nodeReverseTLSFingerprintCommand(args[1:])
+	case "canvas-fingerprint":
+		return nodeReverseCanvasFingerprintCommand(args[1:])
 	case "analyze-crypto":
 		return nodeReverseAnalyzeCryptoCommand(args[1:])
+	case "signature-reverse":
+		return nodeReverseSignatureReverseCommand(args[1:])
+	case "ast":
+		return nodeReverseASTCommand(args[1:])
+	case "webpack":
+		return nodeReverseWebpackCommand(args[1:])
+	case "function-call":
+		return nodeReverseFunctionCallCommand(args[1:])
+	case "browser-simulate":
+		return nodeReverseBrowserSimulateCommand(args[1:])
 	default:
 		fmt.Printf("unknown node-reverse subcommand: %s\n", args[0])
 		return 2
@@ -3568,6 +4074,25 @@ func nodeReverseTLSFingerprintCommand(args []string) int {
 	return 0
 }
 
+func nodeReverseCanvasFingerprintCommand(args []string) int {
+	cmd := flag.NewFlagSet("node-reverse canvas-fingerprint", flag.ExitOnError)
+	baseURL := cmd.String("base-url", "", "NodeReverse service URL")
+	_ = cmd.Parse(args)
+
+	client := nodereverse.NewNodeReverseClient(*baseURL)
+	resp, err := client.CanvasFingerprint()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "node-reverse canvas-fingerprint failed: %v\n", err)
+		return 1
+	}
+	encoded, _ := json.MarshalIndent(resp, "", "  ")
+	fmt.Println(string(encoded))
+	if !resp.Success {
+		return 1
+	}
+	return 0
+}
+
 func nodeReverseAnalyzeCryptoCommand(args []string) int {
 	cmd := flag.NewFlagSet("node-reverse analyze-crypto", flag.ExitOnError)
 	baseURL := cmd.String("base-url", "", "NodeReverse service URL")
@@ -3587,6 +4112,175 @@ func nodeReverseAnalyzeCryptoCommand(args []string) int {
 	resp, err := client.AnalyzeCrypto(string(code))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "node-reverse analyze-crypto failed: %v\n", err)
+		return 1
+	}
+	encoded, _ := json.MarshalIndent(resp, "", "  ")
+	fmt.Println(string(encoded))
+	if !resp.Success {
+		return 1
+	}
+	return 0
+}
+
+func nodeReverseSignatureReverseCommand(args []string) int {
+	cmd := flag.NewFlagSet("node-reverse signature-reverse", flag.ExitOnError)
+	baseURL := cmd.String("base-url", "", "NodeReverse service URL")
+	codeFile := cmd.String("code-file", "", "local code file")
+	inputData := cmd.String("input-data", "", "sample input data")
+	expectedOutput := cmd.String("expected-output", "", "expected output data")
+	_ = cmd.Parse(args)
+
+	if strings.TrimSpace(*codeFile) == "" || strings.TrimSpace(*inputData) == "" || strings.TrimSpace(*expectedOutput) == "" {
+		fmt.Fprintln(os.Stderr, "node-reverse signature-reverse requires --code-file, --input-data, and --expected-output")
+		return 2
+	}
+	code, err := os.ReadFile(*codeFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read code file: %v\n", err)
+		return 1
+	}
+	client := nodereverse.NewNodeReverseClient(*baseURL)
+	resp, err := client.ReverseSignature(string(code), *inputData, *expectedOutput)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "node-reverse signature-reverse failed: %v\n", err)
+		return 1
+	}
+	encoded, _ := json.MarshalIndent(resp, "", "  ")
+	fmt.Println(string(encoded))
+	if !resp.Success {
+		return 1
+	}
+	return 0
+}
+
+func nodeReverseASTCommand(args []string) int {
+	cmd := flag.NewFlagSet("node-reverse ast", flag.ExitOnError)
+	baseURL := cmd.String("base-url", "", "NodeReverse service URL")
+	codeFile := cmd.String("code-file", "", "local code file")
+	analysis := cmd.String("analysis", "crypto,obfuscation,anti-debug", "comma-separated analysis types")
+	_ = cmd.Parse(args)
+
+	if strings.TrimSpace(*codeFile) == "" {
+		fmt.Fprintln(os.Stderr, "node-reverse ast requires --code-file")
+		return 2
+	}
+	code, err := os.ReadFile(*codeFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read code file: %v\n", err)
+		return 1
+	}
+	analysisTypes := make([]string, 0, 4)
+	for _, item := range strings.Split(*analysis, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			analysisTypes = append(analysisTypes, item)
+		}
+	}
+	client := nodereverse.NewNodeReverseClient(*baseURL)
+	resp, err := client.AnalyzeAST(string(code), analysisTypes)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "node-reverse ast failed: %v\n", err)
+		return 1
+	}
+	encoded, _ := json.MarshalIndent(resp, "", "  ")
+	fmt.Println(string(encoded))
+	if !resp.Success {
+		return 1
+	}
+	return 0
+}
+
+func nodeReverseWebpackCommand(args []string) int {
+	cmd := flag.NewFlagSet("node-reverse webpack", flag.ExitOnError)
+	baseURL := cmd.String("base-url", "", "NodeReverse service URL")
+	codeFile := cmd.String("code-file", "", "local code file")
+	_ = cmd.Parse(args)
+
+	if strings.TrimSpace(*codeFile) == "" {
+		fmt.Fprintln(os.Stderr, "node-reverse webpack requires --code-file")
+		return 2
+	}
+	code, err := os.ReadFile(*codeFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read code file: %v\n", err)
+		return 1
+	}
+	client := nodereverse.NewNodeReverseClient(*baseURL)
+	resp, err := client.AnalyzeWebpack(string(code))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "node-reverse webpack failed: %v\n", err)
+		return 1
+	}
+	encoded, _ := json.MarshalIndent(resp, "", "  ")
+	fmt.Println(string(encoded))
+	if success, ok := resp["success"].(bool); ok && success {
+		return 0
+	}
+	return 1
+}
+
+func nodeReverseFunctionCallCommand(args []string) int {
+	cmd := flag.NewFlagSet("node-reverse function-call", flag.ExitOnError)
+	baseURL := cmd.String("base-url", "", "NodeReverse service URL")
+	codeFile := cmd.String("code-file", "", "local code file")
+	functionName := cmd.String("function-name", "", "function name")
+	var fnArgs repeatedStringFlag
+	cmd.Var(&fnArgs, "arg", "function argument (repeatable)")
+	_ = cmd.Parse(args)
+
+	if strings.TrimSpace(*codeFile) == "" || strings.TrimSpace(*functionName) == "" {
+		fmt.Fprintln(os.Stderr, "node-reverse function-call requires --code-file and --function-name")
+		return 2
+	}
+	code, err := os.ReadFile(*codeFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read code file: %v\n", err)
+		return 1
+	}
+	callArgs := make([]interface{}, 0, len(fnArgs))
+	for _, value := range fnArgs {
+		callArgs = append(callArgs, value)
+	}
+	client := nodereverse.NewNodeReverseClient(*baseURL)
+	resp, err := client.CallFunction(*functionName, callArgs, string(code))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "node-reverse function-call failed: %v\n", err)
+		return 1
+	}
+	encoded, _ := json.MarshalIndent(resp, "", "  ")
+	fmt.Println(string(encoded))
+	if !resp.Success {
+		return 1
+	}
+	return 0
+}
+
+func nodeReverseBrowserSimulateCommand(args []string) int {
+	cmd := flag.NewFlagSet("node-reverse browser-simulate", flag.ExitOnError)
+	baseURL := cmd.String("base-url", "", "NodeReverse service URL")
+	codeFile := cmd.String("code-file", "", "local code file")
+	userAgent := cmd.String("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "browser user agent")
+	language := cmd.String("language", "zh-CN", "browser language")
+	platform := cmd.String("platform", "Win32", "browser platform")
+	_ = cmd.Parse(args)
+
+	if strings.TrimSpace(*codeFile) == "" {
+		fmt.Fprintln(os.Stderr, "node-reverse browser-simulate requires --code-file")
+		return 2
+	}
+	code, err := os.ReadFile(*codeFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to read code file: %v\n", err)
+		return 1
+	}
+	client := nodereverse.NewNodeReverseClient(*baseURL)
+	resp, err := client.SimulateBrowser(string(code), map[string]string{
+		"userAgent": *userAgent,
+		"language":  *language,
+		"platform":  *platform,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "node-reverse browser-simulate failed: %v\n", err)
 		return 1
 	}
 	encoded, _ := json.MarshalIndent(resp, "", "  ")
@@ -3803,11 +4497,18 @@ func profileSiteCommand(args []string) int {
 			Browser: "chrome",
 			Version: "120",
 		})
+		canvasResp, _ := client.CanvasFingerprint()
+		cryptoResp, _ := client.AnalyzeCrypto(html)
 		profile["reverse"] = map[string]any{
-			"detect":            detectResp,
-			"profile":           profileResp,
-			"fingerprint_spoof": spoofResp,
-			"tls_fingerprint":   tlsResp,
+			"detect":             detectResp,
+			"profile":            profileResp,
+			"fingerprint_spoof":  spoofResp,
+			"tls_fingerprint":    tlsResp,
+			"canvas_fingerprint": canvasResp,
+			"crypto_analysis":    cryptoResp,
+		}
+		if focus := reverseFocusPayload(profile["reverse"]); len(focus) > 0 {
+			profile["reverse_focus"] = focus
 		}
 		if profileResp != nil && profileResp.Success {
 			profile["anti_bot_level"] = profileResp.Level
@@ -3818,6 +4519,102 @@ func profileSiteCommand(args []string) int {
 	encoded, _ := json.MarshalIndent(profile, "", "  ")
 	fmt.Println(string(encoded))
 	return 0
+}
+
+func reverseFocusPayload(reversePayload any) map[string]any {
+	reverse, ok := reversePayload.(map[string]any)
+	if !ok {
+		return nil
+	}
+	var chains []map[string]any
+	switch crypto := reverse["crypto_analysis"].(type) {
+	case map[string]any:
+		analysis, ok := crypto["analysis"].(map[string]any)
+		if !ok {
+			return nil
+		}
+		rawChains, ok := analysis["keyFlowChains"].([]any)
+		if !ok || len(rawChains) == 0 {
+			return nil
+		}
+		chains = make([]map[string]any, 0, len(rawChains))
+		for _, item := range rawChains {
+			if chain, ok := item.(map[string]any); ok {
+				chains = append(chains, chain)
+			}
+		}
+	case *nodereverse.CryptoAnalyzeResponse:
+		for _, item := range crypto.Analysis.KeyFlowChains {
+			chains = append(chains, item)
+		}
+	default:
+		return nil
+	}
+	if len(chains) == 0 {
+		return nil
+	}
+	bestIndex := -1
+	bestScore := -1.0
+	bestSinkCount := -1
+	bestDerivationCount := -1
+	for index, chain := range chains {
+		score, _ := chain["confidence"].(float64)
+		sinkCount := 0
+		if sinks, ok := chain["sinks"].([]any); ok {
+			sinkCount = len(sinks)
+		} else if sinks, ok := chain["sinks"].([]string); ok {
+			sinkCount = len(sinks)
+		}
+		derivationCount := 0
+		if derivations, ok := chain["derivations"].([]any); ok {
+			derivationCount = len(derivations)
+		} else if derivations, ok := chain["derivations"].([]map[string]any); ok {
+			derivationCount = len(derivations)
+		}
+		if bestIndex == -1 || score > bestScore || (score == bestScore && sinkCount > bestSinkCount) || (score == bestScore && sinkCount == bestSinkCount && derivationCount > bestDerivationCount) {
+			bestIndex = index
+			bestScore = score
+			bestSinkCount = sinkCount
+			bestDerivationCount = derivationCount
+		}
+	}
+	if bestIndex < 0 {
+		return nil
+	}
+	top := chains[bestIndex]
+	sourceKind := "unknown"
+	if source, ok := top["source"].(map[string]any); ok {
+		if kind, ok := source["kind"].(string); ok && strings.TrimSpace(kind) != "" {
+			sourceKind = kind
+		}
+	}
+	primarySink := "unknown-sink"
+	if sinks, ok := top["sinks"].([]any); ok && len(sinks) > 0 {
+		if sink, ok := sinks[0].(string); ok && strings.TrimSpace(sink) != "" {
+			primarySink = sink
+		}
+	}
+	nextSteps := make([]string, 0, 3)
+	if strings.HasPrefix(sourceKind, "storage.") {
+		nextSteps = append(nextSteps, "instrument browser storage reads first")
+	}
+	if strings.HasPrefix(sourceKind, "network.") {
+		nextSteps = append(nextSteps, "capture response body before key derivation")
+	}
+	if strings.Contains(primarySink, "crypto.subtle.") {
+		nextSteps = append(nextSteps, "hook WebCrypto at the sink boundary")
+	}
+	if strings.HasPrefix(primarySink, "jwt.") || strings.Contains(fmt.Sprint(reverse["crypto_analysis"]), "HMAC") {
+		nextSteps = append(nextSteps, "rebuild canonical signing input before reproducing the sink")
+	}
+	if len(nextSteps) == 0 {
+		nextSteps = append(nextSteps, "trace the chain from source through derivations into the first sink")
+	}
+	return map[string]any{
+		"priority_chain": top,
+		"summary":        fmt.Sprintf("trace `%v` from `%s` into `%s`", top["variable"], sourceKind, primarySink),
+		"next_steps":     nextSteps,
+	}
 }
 
 func buildSiteProfile(url string, html string) map[string]any {
@@ -4804,6 +5601,7 @@ func writeDatasetJSONL(path string, rows []map[string]interface{}) error {
 		}
 		builder.Write(encoded)
 		builder.WriteByte('\n')
+		_ = storage.MirrorDatasetRow(row)
 	}
 	return os.WriteFile(path, []byte(builder.String()), 0644)
 }

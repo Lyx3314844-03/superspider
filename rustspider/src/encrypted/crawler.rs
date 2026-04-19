@@ -248,10 +248,15 @@ impl EncryptedSiteCrawler {
 
         // 加密检测模式
         let encryption_patterns = vec![
-            r"CryptoJS\.(AES|DES|RSA|MD5|SHA|HMAC|RC4|Base64)",
+            r"CryptoJS\.(AES|DES|TripleDES|MD5|SHA(?:1|256|512|3)?|HmacSHA(?:1|256|512)|RC4|Rabbit|PBKDF2|Base64)",
             r"encrypt\(|decrypt\(",
             r"createCipheriv|createDecipheriv",
+            r"createHmac|createHash|pbkdf2|scrypt|bcrypt|hkdf",
             r"publicEncrypt|privateDecrypt",
+            r"JSEncrypt|NodeRSA|jsrsasign|elliptic|secp256k1|ed25519|x25519",
+            r"sm2|sm3|sm4|sm-crypto",
+            r"ChaCha20|XChaCha20|Salsa20|Blowfish|Twofish|XXTEA|XTEA|TEA",
+            r"crypto\.subtle|subtle\.(encrypt|decrypt|digest|sign|verify)",
             r"btoa\(|atob\(",
             r"eval\(function\(p,a,c,k,e,d\)",
             r"\\x[0-9a-fA-F]{2}",
@@ -299,6 +304,17 @@ impl EncryptedSiteCrawler {
             || code.contains("decrypt(")
             || code.contains("atob(")
             || code.contains("btoa(")
+            || code.to_lowercase().contains("createhmac(")
+            || code.to_lowercase().contains("createhash(")
+            || code.to_lowercase().contains("crypto.subtle")
+            || code.to_lowercase().contains("sm4")
+            || code.to_lowercase().contains("sm2")
+            || code.to_lowercase().contains("sm3")
+            || code.to_lowercase().contains("jsencrypt")
+            || code.to_lowercase().contains("nodersa")
+            || code.to_lowercase().contains("chacha20")
+            || code.to_lowercase().contains("pbkdf2")
+            || code.to_lowercase().contains("bcrypt")
     }
 
     /// 模拟浏览器环境

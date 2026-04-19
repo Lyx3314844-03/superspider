@@ -59,7 +59,7 @@ fn classify_media_url(url: &str) -> &'static str {
         "m3u8"
     } else if lower.contains(".mpd") || lower.contains("dash") {
         "dash"
-    } else if [".mp4", ".webm", ".m4v", ".mov"]
+    } else if [".mp4", ".webm", ".m4v", ".mov", ".m4s"]
         .iter()
         .any(|ext| lower.contains(ext))
     {
@@ -135,6 +135,8 @@ fn collect_from_json(
                 "dash_url",
                 "mp4Url",
                 "mp4_url",
+                "baseUrl",
+                "base_url",
             ] {
                 if let Some(candidate) = map
                     .get(key)
@@ -142,6 +144,24 @@ fn collect_from_json(
                     .and_then(|raw| normalize_media_url(page_url, raw))
                 {
                     urls.push(candidate);
+                }
+            }
+
+            if description.is_none() {
+                if let Some(text) = map.get("desc").and_then(Value::as_str).map(clean_text) {
+                    *description = Some(text);
+                }
+            }
+            if cover_url.is_none() {
+                for key in ["cover", "pic", "poster", "dynamic_cover", "originCover"] {
+                    if let Some(candidate) = map
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .and_then(|raw| normalize_media_url(page_url, raw))
+                    {
+                        *cover_url = Some(candidate);
+                        break;
+                    }
                 }
             }
 
@@ -200,9 +220,33 @@ impl UniversalParser {
     fn detect_platform(&self, url: &str) -> Option<&str> {
         if url.contains("youku.com") || url.contains("youku.tv") {
             Some("youku")
-        } else if url.contains("iqiyi.com") {
+        } else if url.contains("iqiyi.com")
+            || self
+                .extract_video_id_from_patterns(
+                    url,
+                    &[
+                        r"/v_([A-Za-z0-9]+)\.html",
+                        r"/play/([A-Za-z0-9]+)",
+                        r"[?&]curid=([^&]+)",
+                    ],
+                )
+                .is_some()
+        {
             Some("iqiyi")
-        } else if url.contains("qq.com") || url.contains("v.qq.com") {
+        } else if url.contains("qq.com")
+            || url.contains("v.qq.com")
+            || self
+                .extract_video_id_from_patterns(
+                    url,
+                    &[
+                        r"/x/cover/[^/]+/([A-Za-z0-9]+)\.html",
+                        r"/x/page/([A-Za-z0-9]+)\.html",
+                        r"/x/([A-Za-z0-9]+)\.html",
+                        r"[?&]vid=([A-Za-z0-9]+)",
+                    ],
+                )
+                .is_some()
+        {
             Some("tencent")
         } else if url.contains("bilibili.com") || url.contains("b23.tv") {
             Some("bilibili")
@@ -263,19 +307,35 @@ impl UniversalParser {
     }
 
     fn parse_iqiyi(&self, url: &str) -> Option<VideoData> {
-        let video_id = self.extract_video_id(url, r"/v_(\w+)\.html")?;
+        let video_id = self.extract_video_id_from_patterns(
+            url,
+            &[
+                r"/v_([A-Za-z0-9]+)\.html",
+                r"/play/([A-Za-z0-9]+)",
+                r"[?&]curid=([^&]+)",
+            ],
+        )?;
 
         let resp = self.client.get(url).send().ok()?;
         let html = resp.text().ok()?;
 
         let title = self.extract_title(&html, &video_id);
-
-        // 查找 M3U8
-        let m3u8_url = Regex::new(r#"(https?://[^"\s]+\.m3u8[^"\s]*)"#)
+        let video_data = self.extract_video_data(&html);
+        let m3u8_url = video_data.get("m3u8_url").cloned();
+        let dash_url = video_data.get("dash_url").cloned();
+        let cover_url = video_data.get("cover_url").cloned();
+        let description = Regex::new(r#""(?:desc|description)"\s*:\s*"([^"]+)""#)
             .ok()
             .and_then(|re| re.captures(&html))
             .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string());
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
+        let duration = Regex::new(r#""duration"\s*:\s*(\d+)"#)
+            .ok()
+            .and_then(|re| re.captures(&html))
+            .and_then(|caps| caps.get(1))
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
 
         Some(VideoData {
             title,
@@ -283,40 +343,58 @@ impl UniversalParser {
             platform: "iqiyi".to_string(),
             m3u8_url,
             mp4_url: None,
-            dash_url: None,
+            dash_url,
             download_url: None,
-            cover_url: None,
-            duration: 0,
-            description: String::new(),
+            cover_url,
+            duration,
+            description,
         })
     }
 
     fn parse_tencent(&self, url: &str) -> Option<VideoData> {
-        let video_id = self.extract_video_id(url, r"/x/(\w+)\.html")?;
+        let video_id = self.extract_video_id_from_patterns(
+            url,
+            &[
+                r"/x/cover/[^/]+/([A-Za-z0-9]+)\.html",
+                r"/x/page/([A-Za-z0-9]+)\.html",
+                r"/x/([A-Za-z0-9]+)\.html",
+                r"[?&]vid=([A-Za-z0-9]+)",
+            ],
+        )?;
 
         let resp = self.client.get(url).send().ok()?;
         let html = resp.text().ok()?;
 
         let title = self.extract_title(&html, &video_id);
-
-        // 查找 MP4
-        let mp4_url = Regex::new(r#""url"\s*:\s*"([^"]+\.mp4[^"]*)""#)
+        let video_data = self.extract_video_data(&html);
+        let mp4_url = video_data.get("mp4_url").cloned();
+        let m3u8_url = video_data.get("m3u8_url").cloned();
+        let dash_url = video_data.get("dash_url").cloned();
+        let cover_url = video_data.get("cover_url").cloned();
+        let description = Regex::new(r#""(?:desc|description)"\s*:\s*"([^"]+)""#)
             .ok()
             .and_then(|re| re.captures(&html))
             .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string());
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
+        let duration = Regex::new(r#""duration"\s*:\s*(\d+)"#)
+            .ok()
+            .and_then(|re| re.captures(&html))
+            .and_then(|caps| caps.get(1))
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
 
         Some(VideoData {
             title,
             video_id,
             platform: "tencent".to_string(),
-            m3u8_url: None,
+            m3u8_url,
             mp4_url,
-            dash_url: None,
+            dash_url,
             download_url: None,
-            cover_url: None,
-            duration: 0,
-            description: String::new(),
+            cover_url,
+            duration,
+            description,
         })
     }
 
@@ -483,8 +561,8 @@ impl UniversalParser {
         }
 
         let url_patterns = [
-            r#"(?is)\b(?:contentUrl|embedUrl|videoUrl|video_url|playAddr|play_url|m3u8Url|m3u8_url|dashUrl|dash_url|mp4Url|mp4_url)\b["']?\s*[:=]\s*["']([^"']+)["']"#,
-            r#"(https?://[^"'\\s<>]+(?:\.m3u8|\.mpd|\.mp4|\.webm|\.m4v|\.mov)[^"'\\s<>]*)"#,
+            r#"(?is)\b(?:contentUrl|embedUrl|videoUrl|video_url|playAddr|play_url|m3u8Url|m3u8_url|dashUrl|dash_url|mp4Url|mp4_url|baseUrl|base_url)\b["']?\s*[:=]\s*["']([^"']+)["']"#,
+            r#"(https?://[^"'\\s<>]+(?:\.m3u8|\.mpd|\.mp4|\.webm|\.m4v|\.mov|\.m4s)[^"'\\s<>]*)"#,
         ];
         for artifact in artifact_texts {
             for pattern in url_patterns {
@@ -543,7 +621,7 @@ impl UniversalParser {
             return None;
         }
 
-        Some(VideoData {
+        let mut video = VideoData {
             title: title.unwrap_or_else(|| "Unknown Video".to_string()),
             video_id: format!("{:x}", Md5::digest(page_url.as_bytes())),
             platform: self
@@ -557,7 +635,17 @@ impl UniversalParser {
             cover_url,
             duration: 0,
             description: description.unwrap_or_default(),
-        })
+        };
+        let mut source_text = String::new();
+        if let Some(body) = html {
+            source_text.push_str(body);
+            source_text.push('\n');
+        }
+        if !artifact_texts.is_empty() {
+            source_text.push_str(&artifact_texts.join("\n"));
+        }
+        self.enrich_generic_video(page_url, &source_text, &mut video);
+        Some(video)
     }
 
     fn universal_parse_html(&self, page_url: &str, html: &str) -> Option<VideoData> {
@@ -674,10 +762,13 @@ impl UniversalParser {
             return None;
         }
 
-        Some(VideoData {
+        let mut video = VideoData {
             title: title.unwrap_or_else(|| "Unknown Video".to_string()),
             video_id: format!("{:x}", Md5::digest(page_url.as_bytes())),
-            platform: "generic".to_string(),
+            platform: self
+                .detect_platform(page_url)
+                .unwrap_or("generic")
+                .to_string(),
             m3u8_url,
             mp4_url,
             dash_url,
@@ -685,7 +776,9 @@ impl UniversalParser {
             cover_url,
             duration: 0,
             description: description.unwrap_or_default(),
-        })
+        };
+        self.enrich_generic_video(page_url, html, &mut video);
+        Some(video)
     }
 
     fn extract_video_id(&self, url: &str, pattern: &str) -> Option<String> {
@@ -694,6 +787,12 @@ impl UniversalParser {
             .and_then(|re| re.captures(url))
             .and_then(|caps| caps.get(1))
             .map(|m| m.as_str().to_string())
+    }
+
+    fn extract_video_id_from_patterns(&self, url: &str, patterns: &[&str]) -> Option<String> {
+        patterns
+            .iter()
+            .find_map(|pattern| self.extract_video_id(url, pattern))
     }
 
     fn extract_title(&self, html: &str, video_id: &str) -> String {
@@ -726,16 +825,95 @@ impl UniversalParser {
             data.insert("m3u8_url".to_string(), m3u8.as_str().to_string());
         }
 
-        // 查找封面
-        if let Some(cover) = Regex::new(r#""poster"\s*:\s*"([^"]+)""#)
+        // 查找 DASH
+        if let Some(dash) = Regex::new(r#"(https?://[^"\s]+(?:\.mpd|/dash[^"\s]*)[^"\s]*)"#)
             .ok()
             .and_then(|re| re.captures(html))
             .and_then(|caps| caps.get(1))
+        {
+            data.insert("dash_url".to_string(), dash.as_str().to_string());
+        }
+
+        // 查找 MP4
+        if let Some(mp4) =
+            Regex::new(r#""(?:url|playAddr|play_api|playUrl)"\s*:\s*"([^"]+\.mp4[^"]*)""#)
+                .ok()
+                .and_then(|re| re.captures(html))
+                .and_then(|caps| caps.get(1))
+        {
+            data.insert(
+                "mp4_url".to_string(),
+                mp4.as_str().replace("\\u002F", "/").replace("\\/", "/"),
+            );
+        }
+
+        // 查找封面
+        if let Some(cover) = Regex::new(
+            r#"(?is)(?:<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["'])|(?:"(?:poster|cover|pic|thumbnailUrl|dynamic_cover|originCover)"\s*:\s*"([^"]+)")"#,
+        )
+            .ok()
+            .and_then(|re| re.captures(html))
+            .and_then(|caps| caps.get(1).or_else(|| caps.get(2)))
         {
             data.insert("cover_url".to_string(), cover.as_str().to_string());
         }
 
         data
+    }
+
+    fn enrich_generic_video(&self, page_url: &str, source_text: &str, video: &mut VideoData) {
+        if let Some(platform) = self.detect_platform(page_url) {
+            if video.platform == "generic" || video.platform == "generic-artifact" {
+                video.platform = platform.to_string();
+            }
+            if let Some(video_id) = self.infer_video_id(page_url, platform) {
+                video.video_id = video_id;
+            }
+        }
+
+        if video.description.trim().is_empty() {
+            video.description = Regex::new(r#""(?:desc|description)"\s*:\s*"([^"]+)""#)
+                .ok()
+                .and_then(|re| re.captures(source_text))
+                .and_then(|caps| caps.get(1))
+                .map(|m| clean_text(m.as_str()))
+                .unwrap_or_default();
+        }
+
+        if video.duration == 0 {
+            video.duration = Regex::new(r#""duration"\s*:\s*(\d+)"#)
+                .ok()
+                .and_then(|re| re.captures(source_text))
+                .and_then(|caps| caps.get(1))
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(0);
+        }
+    }
+
+    fn infer_video_id(&self, page_url: &str, platform: &str) -> Option<String> {
+        match platform {
+            "youku" => self.extract_video_id(page_url, r"id_(?:X)?([a-zA-Z0-9=]+)"),
+            "iqiyi" => self.extract_video_id_from_patterns(
+                page_url,
+                &[
+                    r"/v_([A-Za-z0-9]+)\.html",
+                    r"/play/([A-Za-z0-9]+)",
+                    r"[?&]curid=([^&]+)",
+                ],
+            ),
+            "tencent" => self.extract_video_id_from_patterns(
+                page_url,
+                &[
+                    r"/x/cover/[^/]+/([A-Za-z0-9]+)\.html",
+                    r"/x/page/([A-Za-z0-9]+)\.html",
+                    r"/x/([A-Za-z0-9]+)\.html",
+                    r"[?&]vid=([A-Za-z0-9]+)",
+                ],
+            ),
+            "bilibili" => self.extract_video_id(page_url, r"(BV[A-Za-z0-9]+)"),
+            "douyin" => self.extract_video_id(page_url, r"/video/([0-9]+)"),
+            _ => None,
+        }
     }
 }
 
@@ -871,6 +1049,56 @@ mod tests {
         assert_eq!(
             douyin_video.mp4_url.as_deref(),
             Some("https://media.example.com/douyin.mp4")
+        );
+    }
+
+    #[test]
+    fn video_parser_supports_iqiyi_and_tencent_html() {
+        let iqiyi = start_mock_server(
+            r#"<html><head><title>示例爱奇艺 - 爱奇艺</title><meta property="og:image" content="https://img.example.com/iqiyi-cover.jpg" /></head><body><script>{"duration":88,"desc":"爱奇艺描述","m3u8Url":"https://media.example.com/master.m3u8","dashUrl":"https://media.example.com/manifest.mpd"}</script></body></html>"#,
+        );
+        let tencent = start_mock_server(
+            r#"<html><head><title>示例腾讯视频 - 腾讯视频</title></head><body><script>{"duration":45,"desc":"腾讯描述","pic":"https://img.example.com/tencent-cover.jpg","url":"https://media.example.com/tencent.mp4","dashUrl":"https://media.example.com/tencent.mpd"}</script></body></html>"#,
+        );
+
+        let parser = UniversalParser::new().unwrap();
+
+        let iqiyi_video = parser
+            .parse(&(iqiyi.url.clone() + "/v_19rrdemo.html"))
+            .expect("iqiyi parse should succeed");
+        assert_eq!(iqiyi_video.platform, "iqiyi");
+        assert_eq!(iqiyi_video.video_id, "19rrdemo");
+        assert_eq!(iqiyi_video.duration, 88);
+        assert_eq!(
+            iqiyi_video.m3u8_url.as_deref(),
+            Some("https://media.example.com/master.m3u8")
+        );
+        assert_eq!(
+            iqiyi_video.dash_url.as_deref(),
+            Some("https://media.example.com/manifest.mpd")
+        );
+        assert_eq!(
+            iqiyi_video.cover_url.as_deref(),
+            Some("https://img.example.com/iqiyi-cover.jpg")
+        );
+
+        let tencent_video = parser
+            .parse(&(tencent.url.clone() + "/x/page/demo123.html"))
+            .expect("tencent parse should succeed");
+        assert_eq!(tencent_video.platform, "tencent");
+        assert_eq!(tencent_video.video_id, "demo123");
+        assert_eq!(tencent_video.duration, 45);
+        assert_eq!(
+            tencent_video.mp4_url.as_deref(),
+            Some("https://media.example.com/tencent.mp4")
+        );
+        assert_eq!(
+            tencent_video.dash_url.as_deref(),
+            Some("https://media.example.com/tencent.mpd")
+        );
+        assert_eq!(
+            tencent_video.cover_url.as_deref(),
+            Some("https://img.example.com/tencent-cover.jpg")
         );
     }
 

@@ -16,6 +16,7 @@ import (
 	"gospider/core"
 	"gospider/events"
 	"gospider/graph"
+	"gospider/research"
 	"gospider/storage"
 )
 
@@ -26,6 +27,7 @@ type Server struct {
 	port        string
 	resultStore *storage.FileResultStore
 	eventStore  *storage.FileEventStore
+	research    *ResearchManager
 }
 
 // TaskManager - 任务管理器
@@ -35,6 +37,20 @@ type TaskManager struct {
 	results map[string][]TaskResult
 	logs    map[string][]TaskLog
 	cancels map[string]context.CancelFunc
+}
+
+type ResearchRecord struct {
+	ID        string                 `json:"id"`
+	Mode      string                 `json:"mode"`
+	URLs      []string               `json:"urls"`
+	Status    string                 `json:"status"`
+	CreatedAt time.Time              `json:"created_at"`
+	Result    map[string]interface{} `json:"result,omitempty"`
+}
+
+type ResearchManager struct {
+	mu      sync.RWMutex
+	records []ResearchRecord
 }
 
 // TaskInfo - 任务信息
@@ -103,6 +119,7 @@ func NewServer(port string) *Server {
 		port:        port,
 		resultStore: storage.NewFileResultStore(filepath.Join("artifacts", "control-plane", "results.jsonl")),
 		eventStore:  storage.NewFileEventStore(filepath.Join("artifacts", "control-plane", "events.jsonl")),
+		research:    &ResearchManager{records: []ResearchRecord{}},
 	}
 
 	server.setupRoutes()
@@ -114,6 +131,10 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/api/tasks", s.handleTasks)
 	s.mux.HandleFunc("/api/tasks/", s.handleTaskDetail)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
+	s.mux.HandleFunc("/api/research/run", s.handleResearchRun)
+	s.mux.HandleFunc("/api/research/async", s.handleResearchAsync)
+	s.mux.HandleFunc("/api/research/soak", s.handleResearchSoak)
+	s.mux.HandleFunc("/api/research/history", s.handleResearchHistory)
 
 	// 页面路由
 	s.mux.HandleFunc("/", s.indexPage)
@@ -222,6 +243,130 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) handleResearchRun(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	request, ok := decodeResearchRequest(w, r)
+	if !ok {
+		return
+	}
+	job, content, err := request.single()
+	if err != nil {
+		writeResearchError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	result, err := research.NewResearchRuntime().Run(job, content)
+	if err != nil {
+		writeResearchError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.recordResearch("run", job.SeedURLs, map[string]interface{}{"result": result})
+	writeResearchJSON(w, map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"command": "research run",
+			"runtime": "go",
+			"result":  result,
+		},
+	})
+}
+
+func (s *Server) handleResearchAsync(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	request, ok := decodeResearchRequest(w, r)
+	if !ok {
+		return
+	}
+	jobs, contents, err := request.multiple()
+	if err != nil {
+		writeResearchError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	runtime := research.NewAsyncResearchRuntime(&research.AsyncResearchConfig{
+		MaxConcurrent: maxResearchInt(request.Concurrency, 5),
+	})
+	results := runtime.RunMultiple(jobs, contents)
+	s.recordResearch("async", collectResearchURLs(jobs), map[string]interface{}{
+		"results": results,
+		"metrics": runtime.SnapshotMetrics(),
+	})
+	writeResearchJSON(w, map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"command": "research async",
+			"runtime": "go",
+			"results": results,
+			"metrics": runtime.SnapshotMetrics(),
+		},
+	})
+}
+
+func (s *Server) handleResearchSoak(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	request, ok := decodeResearchRequest(w, r)
+	if !ok {
+		return
+	}
+	jobs, contents, err := request.multiple()
+	if err != nil {
+		writeResearchError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	runtime := research.NewAsyncResearchRuntime(&research.AsyncResearchConfig{
+		MaxConcurrent: maxResearchInt(request.Concurrency, 5),
+	})
+	report := runtime.RunSoak(jobs, contents, maxResearchInt(request.Rounds, 1))
+	s.recordResearch("soak", collectResearchURLs(jobs), map[string]interface{}{"report": report})
+	writeResearchJSON(w, map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"command": "research soak",
+			"runtime": "go",
+			"report":  report,
+		},
+	})
+}
+
+func (s *Server) handleResearchHistory(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	records := s.research.list()
+	writeResearchJSON(w, map[string]interface{}{
+		"success": true,
+		"data":    records,
+	})
 }
 
 // API Handlers
@@ -542,19 +687,138 @@ func (s *Server) indexPage(w http.ResponseWriter, r *http.Request) {
 <head>
     <title>GoSpider Web UI</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        h1 { color: #333; }
-        .api-link { color: #0066cc; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: linear-gradient(135deg, #f4f7fb 0%, #e8eefc 100%); color: #1f2937; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        header { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); margin-bottom: 20px; }
+        h1 { margin: 0 0 8px 0; color: #1d4ed8; }
+        p { color: #475569; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+        .panel { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+        .panel h2 { margin: 0 0 14px 0; font-size: 18px; color: #0f172a; }
+        .field { margin-bottom: 12px; }
+        .field label { display: block; font-size: 13px; color: #475569; margin-bottom: 6px; }
+        .field input, .field textarea, .field select { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; }
+        .field textarea { min-height: 96px; resize: vertical; }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        button { border: none; border-radius: 10px; padding: 11px 16px; cursor: pointer; font-weight: 600; }
+        .primary { background: #2563eb; color: white; }
+        .secondary { background: #e2e8f0; color: #0f172a; }
+        .pill { display: inline-block; padding: 4px 10px; background: #dbeafe; color: #1d4ed8; border-radius: 999px; font-size: 12px; font-weight: 700; margin-bottom: 12px; }
+        pre { background: #0f172a; color: #dbeafe; border-radius: 12px; padding: 14px; overflow: auto; max-height: 420px; font-size: 12px; }
+        .links a { color: #2563eb; text-decoration: none; display: inline-block; margin-right: 12px; margin-top: 6px; }
     </style>
 </head>
 <body>
-    <h1>🕷️ GoSpider Web UI</h1>
-    <p>Welcome to GoSpider Web UI</p>
-    <p>API Endpoints:</p>
-    <ul>
-        <li><a href="/api/tasks" class="api-link">GET /api/tasks</a> - List all tasks</li>
-        <li><a href="/api/stats" class="api-link">GET /api/stats</a> - Get statistics</li>
-    </ul>
+    <div class="container">
+        <header>
+            <h1>🕷️ GoSpider 控制台</h1>
+            <p>基础任务控制和研究运行时已经合并到同一个 Web UI。下面的 research 面板可以直接触发 run / async / soak。</p>
+            <div class="links">
+                <a href="/api/tasks">/api/tasks</a>
+                <a href="/api/stats">/api/stats</a>
+                <a href="/api/research/run">/api/research/run</a>
+            </div>
+        </header>
+        <div class="grid">
+            <section class="panel">
+                <div class="pill">Task Panel</div>
+                <h2>任务面板</h2>
+                <div class="field">
+                    <label>任务名称</label>
+                    <input id="task-name" value="demo-task" />
+                </div>
+                <div class="field">
+                    <label>URL</label>
+                    <input id="task-url" value="https://example.com" />
+                </div>
+                <div class="btn-row">
+                    <button class="primary" onclick="createTask()">创建任务</button>
+                    <button class="secondary" onclick="refreshTasks()">刷新任务</button>
+                </div>
+                <pre id="task-output">等待任务数据...</pre>
+            </section>
+            <section class="panel">
+                <div class="pill">Research Panel</div>
+                <h2>Research 面板</h2>
+                <div class="field">
+                    <label>模式</label>
+                    <select id="research-mode">
+                        <option value="run">run</option>
+                        <option value="async">async</option>
+                        <option value="soak">soak</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>URL 列表（每行一个）</label>
+                    <textarea id="research-urls">https://example.com/article
+https://example.com/list</textarea>
+                </div>
+                <div class="field">
+                    <label>Schema JSON</label>
+                    <textarea id="research-schema">{"properties":{"title":{"type":"string"}}}</textarea>
+                </div>
+                <div class="field">
+                    <label>Inline Content</label>
+                    <textarea id="research-content"><title>Research Demo</title></textarea>
+                </div>
+                <div class="btn-row">
+                    <button class="primary" onclick="runResearch()">执行 research</button>
+                    <button class="secondary" onclick="loadResearchExample()">示例</button>
+                </div>
+                <pre id="research-output">等待 research 结果...</pre>
+                <div class="pill" style="margin-top:16px;">Recent Research</div>
+                <pre id="research-history">等待 research 历史...</pre>
+            </section>
+        </div>
+    </div>
+    <script>
+        async function refreshTasks() {
+            const res = await fetch('/api/tasks');
+            document.getElementById('task-output').textContent = JSON.stringify(await res.json(), null, 2);
+        }
+        async function createTask() {
+            const payload = {
+                name: document.getElementById('task-name').value,
+                url: document.getElementById('task-url').value
+            };
+            const res = await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            document.getElementById('task-output').textContent = JSON.stringify(await res.json(), null, 2);
+        }
+        function loadResearchExample() {
+            document.getElementById('research-schema').value = '{"properties":{"title":{"type":"string"},"price":{"type":"string"}}}';
+            document.getElementById('research-content').value = '<title>Research Demo</title>\nprice: 42';
+        }
+        async function runResearch() {
+            const mode = document.getElementById('research-mode').value;
+            const urls = document.getElementById('research-urls').value.split('\n').map(v => v.trim()).filter(Boolean);
+            const payload = {
+                urls,
+                url: urls[0] || '',
+                content: document.getElementById('research-content').value,
+                schema_json: document.getElementById('research-schema').value,
+                concurrency: 2,
+                rounds: 2
+            };
+            const res = await fetch('/api/research/' + mode, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            document.getElementById('research-output').textContent = JSON.stringify(await res.json(), null, 2);
+            refreshResearchHistory();
+        }
+        async function refreshResearchHistory() {
+            const res = await fetch('/api/research/history');
+            document.getElementById('research-history').textContent = JSON.stringify(await res.json(), null, 2);
+        }
+        refreshTasks();
+        refreshResearchHistory();
+    </script>
 </body>
 </html>`
 	w.Header().Set("Content-Type", "text/html")
@@ -885,6 +1149,189 @@ func enableCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+}
+
+type researchRequest struct {
+	URL         string                 `json:"url"`
+	URLs        []string               `json:"urls"`
+	Content     string                 `json:"content"`
+	Contents    []string               `json:"contents"`
+	Schema      map[string]interface{} `json:"schema"`
+	SchemaJSON  string                 `json:"schema_json"`
+	Output      map[string]interface{} `json:"output"`
+	Concurrency int                    `json:"concurrency"`
+	Rounds      int                    `json:"rounds"`
+	Policy      map[string]interface{} `json:"policy"`
+}
+
+func decodeResearchRequest(w http.ResponseWriter, r *http.Request) (researchRequest, bool) {
+	var request researchRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeResearchError(w, "invalid research request body", http.StatusBadRequest)
+		return researchRequest{}, false
+	}
+	return request, true
+}
+
+func (r researchRequest) single() (research.ResearchJob, string, error) {
+	urls := researchURLs(r)
+	if len(urls) == 0 {
+		return research.ResearchJob{}, "", fmt.Errorf("research request requires url or urls")
+	}
+	schema, err := r.schemaMap()
+	if err != nil {
+		return research.ResearchJob{}, "", err
+	}
+	return research.ResearchJob{
+		SeedURLs:      []string{urls[0]},
+		ExtractSchema: schema,
+		Output:        cloneResearchMap(r.Output),
+		Policy:        cloneResearchMap(r.Policy),
+	}, r.Content, nil
+}
+
+func (r researchRequest) multiple() ([]research.ResearchJob, []string, error) {
+	urls := researchURLs(r)
+	if len(urls) == 0 {
+		return nil, nil, fmt.Errorf("research request requires url or urls")
+	}
+	schema, err := r.schemaMap()
+	if err != nil {
+		return nil, nil, err
+	}
+	jobs := make([]research.ResearchJob, 0, len(urls))
+	contents := make([]string, 0, len(urls))
+	for index, url := range urls {
+		jobs = append(jobs, research.ResearchJob{
+			SeedURLs:      []string{url},
+			ExtractSchema: cloneResearchMap(schema),
+			Output:        cloneResearchMap(r.Output),
+			Policy:        cloneResearchMap(r.Policy),
+		})
+		if index < len(r.Contents) && strings.TrimSpace(r.Contents[index]) != "" {
+			contents = append(contents, r.Contents[index])
+		} else {
+			contents = append(contents, r.Content)
+		}
+	}
+	return jobs, contents, nil
+}
+
+func (r researchRequest) schemaMap() (map[string]interface{}, error) {
+	if len(r.Schema) > 0 {
+		return cloneResearchMap(r.Schema), nil
+	}
+	if strings.TrimSpace(r.SchemaJSON) == "" {
+		return map[string]interface{}{}, nil
+	}
+	schema := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(r.SchemaJSON), &schema); err != nil {
+		return nil, fmt.Errorf("invalid schema_json: %w", err)
+	}
+	return schema, nil
+}
+
+func researchURLs(r researchRequest) []string {
+	urls := make([]string, 0, len(r.URLs)+1)
+	if strings.TrimSpace(r.URL) != "" {
+		urls = append(urls, r.URL)
+	}
+	for _, url := range r.URLs {
+		if strings.TrimSpace(url) != "" {
+			urls = append(urls, url)
+		}
+	}
+	return urls
+}
+
+func writeResearchJSON(w http.ResponseWriter, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeResearchError(w http.ResponseWriter, message string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": false,
+		"error":   message,
+	})
+}
+
+func cloneResearchMap(source map[string]interface{}) map[string]interface{} {
+	if source == nil {
+		return map[string]interface{}{}
+	}
+	clone := make(map[string]interface{}, len(source))
+	for key, value := range source {
+		clone[key] = value
+	}
+	return clone
+}
+
+func maxResearchInt(value int, defaultValue int) int {
+	if value <= 0 {
+		return defaultValue
+	}
+	return value
+}
+
+func collectResearchURLs(jobs []research.ResearchJob) []string {
+	urls := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		if len(job.SeedURLs) > 0 {
+			urls = append(urls, job.SeedURLs[0])
+		}
+	}
+	return urls
+}
+
+func (m *ResearchManager) list() []ResearchRecord {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]ResearchRecord, len(m.records))
+	copy(result, m.records)
+	return result
+}
+
+func (s *Server) recordResearch(mode string, urls []string, payload map[string]interface{}) {
+	record := ResearchRecord{
+		ID:        generateTaskID(),
+		Mode:      mode,
+		URLs:      append([]string{}, urls...),
+		Status:    "completed",
+		CreatedAt: time.Now(),
+		Result:    cloneResearchMap(payload),
+	}
+	s.research.mu.Lock()
+	s.research.records = append([]ResearchRecord{record}, s.research.records...)
+	if len(s.research.records) > 20 {
+		s.research.records = s.research.records[:20]
+	}
+	s.research.mu.Unlock()
+	if err := persistResearchRecord(record); err != nil {
+		// best-effort history persistence should not break runtime responses
+	}
+}
+
+func persistResearchRecord(record ResearchRecord) error {
+	path := filepath.Join("artifacts", "control-plane", "research-history.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	handle, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer handle.Close()
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	if _, err := handle.Write(append(encoded, '\n')); err != nil {
+		return err
+	}
+	return handle.Sync()
 }
 
 // CreateSpider - 根据任务创建爬虫实例

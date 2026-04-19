@@ -213,16 +213,34 @@ fn cli_capabilities_and_help_surface_ultimate_entrypoint() {
     assert!(capabilities_stdout.contains("\"ultimate\""));
     assert!(capabilities_stdout.contains("\"scrapy\""));
     assert!(capabilities_stdout.contains("\"curl\""));
+    assert!(capabilities_stdout.contains("\"run\""));
     assert!(capabilities_stdout.contains("\"jobdir\""));
+    assert!(capabilities_stdout.contains("\"async-job\""));
+    assert!(capabilities_stdout.contains("\"workflow\""));
     assert!(capabilities_stdout.contains("\"http-cache\""));
     assert!(capabilities_stdout.contains("\"console\""));
     assert!(capabilities_stdout.contains("\"audit\""));
+    assert!(capabilities_stdout.contains("\"web\""));
+    assert!(capabilities_stdout.contains("\"preflight\""));
+    assert!(capabilities_stdout.contains("\"research\""));
     assert!(capabilities_stdout.contains("\"node-reverse\""));
     assert!(capabilities_stdout.contains("\"anti-bot\""));
     assert!(capabilities_stdout.contains("\"shared_contracts\""));
     assert!(capabilities_stdout.contains("\"kernel_contracts\""));
     assert!(capabilities_stdout.contains("\"operator_products\""));
+    assert!(capabilities_stdout.contains("\"browser_compatibility\""));
+    assert!(capabilities_stdout.contains("\"queue_backends\""));
+    assert!(capabilities_stdout.contains("\"node_discovery\""));
+    assert!(capabilities_stdout.contains("\"night_mode\""));
+    assert!(capabilities_stdout.contains("\"security\""));
+    assert!(capabilities_stdout.contains("\"event_system\""));
+    assert!(capabilities_stdout.contains("\"storage_backends\""));
     assert!(capabilities_stdout.contains("\"observability\""));
+    assert!(capabilities_stdout.contains("\"research.ResearchRuntime\""));
+    assert!(capabilities_stdout.contains("\"feature_gates\""));
+    assert!(capabilities_stdout.contains("\"crawlee_bridge\""));
+    assert!(capabilities_stdout.contains("\"connectors\""));
+    assert!(capabilities_stdout.contains("\"event_system\""));
 
     let help = prepared_cargo_command(manifest_dir)
         .args(["run", "--quiet", "--", "help"])
@@ -238,10 +256,16 @@ fn cli_capabilities_and_help_surface_ultimate_entrypoint() {
     assert!(help_stdout.contains("ultimate"));
     assert!(help_stdout.contains("scrapy"));
     assert!(help_stdout.contains("curl"));
+    assert!(help_stdout.contains("run"));
     assert!(help_stdout.contains("jobdir"));
+    assert!(help_stdout.contains("async-job"));
+    assert!(help_stdout.contains("workflow"));
     assert!(help_stdout.contains("http-cache"));
     assert!(help_stdout.contains("console"));
     assert!(help_stdout.contains("audit"));
+    assert!(help_stdout.contains("web"));
+    assert!(help_stdout.contains("preflight"));
+    assert!(help_stdout.contains("research"));
     assert!(help_stdout.contains("node-reverse"));
     assert!(help_stdout.contains("anti-bot"));
 }

@@ -189,7 +189,9 @@ class EnhancedSpiderContractTest {
         assertEquals("java", payload.get("runtime"));
         assertTrue(payload.containsKey("shared_contracts"));
         assertTrue(payload.containsKey("kernel_contracts"));
+        assertTrue(payload.containsKey("feature_gates"));
         assertTrue(payload.containsKey("operator_products"));
+        assertTrue(payload.containsKey("browser_compatibility"));
         assertTrue(payload.containsKey("observability"));
         assertTrue(stdout.contains("\"jobdir\""));
         assertTrue(stdout.contains("\"http-cache\""));
@@ -305,6 +307,151 @@ class EnhancedSpiderContractTest {
     }
 
     @Test
+    void nodeReverseCanvasFingerprintCommandUsesFrameworkCliSurface() throws Exception {
+        HttpServer reverseServer = HttpServer.create(new InetSocketAddress(0), 0);
+        reverseServer.createContext("/api/canvas/fingerprint", exchange -> writeJson(exchange, 200,
+            "{\"success\":true,\"hash\":\"mock-canvas\"}",
+            "application/json"));
+        reverseServer.start();
+
+        try {
+            String stdout = captureStdout(() ->
+                EnhancedSpider.main(new String[]{
+                    "node-reverse",
+                    "canvas-fingerprint",
+                    "--base-url",
+                    "http://127.0.0.1:" + reverseServer.getAddress().getPort()
+                })
+            );
+            assertTrue(stdout.contains("mock-canvas"));
+        } finally {
+            reverseServer.stop(0);
+        }
+    }
+
+    @Test
+    void nodeReverseSignatureReverseCommandUsesFrameworkCliSurface() throws Exception {
+        HttpServer reverseServer = HttpServer.create(new InetSocketAddress(0), 0);
+        reverseServer.createContext("/api/signature/reverse", exchange -> writeJson(exchange, 200,
+            "{\"success\":true,\"functionName\":\"sign\"}",
+            "application/json"));
+        reverseServer.start();
+
+        try {
+            Path codeFile = Files.createTempFile("java-node-reverse-signature", ".js");
+            Files.writeString(codeFile, "function sign(v){return v;}");
+            String stdout = captureStdout(() ->
+                EnhancedSpider.main(new String[]{
+                    "node-reverse",
+                    "signature-reverse",
+                    "--base-url",
+                    "http://127.0.0.1:" + reverseServer.getAddress().getPort(),
+                    "--code-file",
+                    codeFile.toString(),
+                    "--input-data",
+                    "left",
+                    "--expected-output",
+                    "left"
+                })
+            );
+            assertTrue(stdout.contains("\"functionName\" : \"sign\""));
+        } finally {
+            reverseServer.stop(0);
+        }
+    }
+
+    @Test
+    void nodeReverseWebpackCommandUsesFrameworkCliSurface() throws Exception {
+        HttpServer reverseServer = HttpServer.create(new InetSocketAddress(0), 0);
+        reverseServer.createContext("/api/webpack/analyze", exchange -> writeJson(exchange, 200,
+            "{\"success\":true,\"entrypoints\":[\"main\"]}",
+            "application/json"));
+        reverseServer.start();
+
+        try {
+            Path codeFile = Files.createTempFile("java-node-reverse-webpack", ".js");
+            Files.writeString(codeFile, "__webpack_require__(1)");
+            String stdout = captureStdout(() ->
+                EnhancedSpider.main(new String[]{
+                    "node-reverse",
+                    "webpack",
+                    "--base-url",
+                    "http://127.0.0.1:" + reverseServer.getAddress().getPort(),
+                    "--code-file",
+                    codeFile.toString()
+                })
+            );
+
+            assertTrue(stdout.contains("\"entrypoints\" : [ \"main\" ]") || stdout.contains("\"entrypoints\" : ["));
+            assertTrue(stdout.contains("main"));
+        } finally {
+            reverseServer.stop(0);
+        }
+    }
+
+    @Test
+    void nodeReverseFunctionCallCommandUsesFrameworkCliSurface() throws Exception {
+        HttpServer reverseServer = HttpServer.create(new InetSocketAddress(0), 0);
+        reverseServer.createContext("/api/function/call", exchange -> writeJson(exchange, 200,
+            "{\"success\":true,\"result\":\"left|right\"}",
+            "application/json"));
+        reverseServer.start();
+
+        try {
+            Path codeFile = Files.createTempFile("java-node-reverse-function", ".js");
+            Files.writeString(codeFile, "function sign(a,b){return a+'|'+b;}");
+            String stdout = captureStdout(() ->
+                EnhancedSpider.main(new String[]{
+                    "node-reverse",
+                    "function-call",
+                    "--base-url",
+                    "http://127.0.0.1:" + reverseServer.getAddress().getPort(),
+                    "--code-file",
+                    codeFile.toString(),
+                    "--function-name",
+                    "sign",
+                    "--arg",
+                    "left",
+                    "--arg",
+                    "right"
+                })
+            );
+
+            assertTrue(stdout.contains("left|right"));
+        } finally {
+            reverseServer.stop(0);
+        }
+    }
+
+    @Test
+    void nodeReverseBrowserSimulateCommandUsesFrameworkCliSurface() throws Exception {
+        HttpServer reverseServer = HttpServer.create(new InetSocketAddress(0), 0);
+        reverseServer.createContext("/api/browser/simulate", exchange -> writeJson(exchange, 200,
+            "{\"success\":true,\"result\":{\"ok\":true},\"cookies\":\"session=1\"}",
+            "application/json"));
+        reverseServer.start();
+
+        try {
+            Path codeFile = Files.createTempFile("java-node-reverse-browser", ".js");
+            Files.writeString(codeFile, "navigator.userAgent");
+            String stdout = captureStdout(() ->
+                EnhancedSpider.main(new String[]{
+                    "node-reverse",
+                    "browser-simulate",
+                    "--base-url",
+                    "http://127.0.0.1:" + reverseServer.getAddress().getPort(),
+                    "--code-file",
+                    codeFile.toString()
+                })
+            );
+
+            assertTrue(stdout.contains("session=1"));
+        } finally {
+            reverseServer.stop(0);
+        }
+    }
+
+    @Test
     void antiBotProfileCommandDetectsBlockedFixture() throws Exception {
         Path htmlFile = Files.createTempFile("java-antibot", ".html");
         Files.writeString(htmlFile, "<html><title>Blocked</title><body>Access denied captcha</body></html>");
@@ -343,6 +490,12 @@ class EnhancedSpiderContractTest {
         reverseServer.createContext("/api/tls/fingerprint", exchange -> writeJson(exchange, 200,
             "{\"success\":true,\"fingerprint\":{\"ja3\":\"mock-ja3\"}}",
             "application/json"));
+        reverseServer.createContext("/api/canvas/fingerprint", exchange -> writeJson(exchange, 200,
+            "{\"success\":true,\"hash\":\"mock-canvas\"}",
+            "application/json"));
+        reverseServer.createContext("/api/crypto/analyze", exchange -> writeJson(exchange, 200,
+            "{\"success\":true,\"cryptoTypes\":[{\"name\":\"AES\"}],\"analysis\":{\"keyFlowChains\":[{\"variable\":\"sessionKey\",\"source\":{\"kind\":\"storage.localStorage\",\"expression\":\"localStorage.getItem('session-key')\"},\"derivations\":[{\"variable\":\"derivedKey\",\"kind\":\"hash\",\"expression\":\"sha256(sessionKey)\"}],\"sinks\":[\"crypto.subtle.encrypt\"],\"confidence\":0.87}]}}",
+            "application/json"));
         reverseServer.start();
 
         try {
@@ -361,6 +514,13 @@ class EnhancedSpiderContractTest {
             assertTrue(stdout.contains("\"framework\" : \"javaspider\""));
             assertTrue(stdout.contains("\"reverse\""));
             assertTrue(stdout.contains("mock-ja3"));
+            assertTrue(stdout.contains("mock-canvas"));
+            assertTrue(stdout.contains("\"canvas_fingerprint\""));
+            assertTrue(stdout.contains("\"crypto_analysis\""));
+            assertTrue(stdout.contains("AES"));
+            assertTrue(stdout.contains("\"reverse_focus\""));
+            assertTrue(stdout.contains("sessionKey"));
+            assertTrue(stdout.contains("crypto.subtle.encrypt"));
         } finally {
             reverseServer.stop(0);
         }
@@ -425,6 +585,7 @@ class EnhancedSpiderContractTest {
         assertTrue(stdout.contains("\"command\" : \"selector-studio\""));
         assertTrue(stdout.contains("\"count\" : 1"));
         assertTrue(stdout.contains("\"framework\" : \"javaspider\""));
+        assertTrue(stdout.contains("\"suggested_xpaths\""));
     }
 
     @Test
@@ -446,6 +607,7 @@ class EnhancedSpiderContractTest {
 
         assertTrue(stdout.contains("\"command\" : \"selector-studio\""));
         assertTrue(stdout.contains("\"count\" : 1"));
+        assertTrue(stdout.contains("\"suggested_xpaths\""));
     }
 
     @Test
@@ -1061,6 +1223,10 @@ class EnhancedSpiderContractTest {
             assertTrue(stdout.contains("\"summary\" : \"passed\""));
             assertTrue(stdout.contains("\"reverse\""));
             assertTrue(stdout.contains("mock-ja3"));
+            assertTrue(stdout.contains("mock-canvas"));
+            assertTrue(stdout.contains("\"canvas_fingerprint\""));
+            assertTrue(stdout.contains("\"crypto_analysis\""));
+            assertTrue(stdout.contains("AES"));
             assertTrue(reverseHits.get() > 0);
         } finally {
             pageServer.stop(0);

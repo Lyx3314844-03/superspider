@@ -44,4 +44,12 @@ class SeleniumWorkflowExecutionContextTest {
             System.clearProperty("javaspider.proxy.group.residential");
         }
     }
+
+    @Test
+    void behaviorDelayAndNightModeHelpersAreActive() {
+        assertTrue(SeleniumWorkflowExecutionContext.isNightModeActiveAt(1, 0, 6));
+        assertFalse(SeleniumWorkflowExecutionContext.isNightModeActiveAt(14, 0, 6));
+        long delay = SeleniumWorkflowExecutionContext.randomizedActionDelayMillis("click", 2);
+        assertTrue(delay > 0);
+    }
 }

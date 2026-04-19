@@ -46,13 +46,13 @@ public class AIExtractor {
     private String getDefaultModel(AIProvider provider) {
         switch (provider) {
             case OPENAI:
-                return "gpt-3.5-turbo";
+                return "gpt-5.2";
             case ANTHROPIC:
-                return "claude-3-haiku-20240307";
+                return "claude-sonnet-4-20250514";
             case AZURE:
-                return "gpt-35-turbo";
+                return "gpt-5.2";
             default:
-                return "gpt-3.5-turbo";
+                return "gpt-5.2";
         }
     }
 

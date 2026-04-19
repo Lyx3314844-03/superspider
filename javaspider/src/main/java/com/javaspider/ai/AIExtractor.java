@@ -20,6 +20,7 @@ public class AIExtractor {
     private final String model;
     private final int maxTokens;
     private final double temperature;
+    private final String provider;
     
     /**
      * 创建 AI 提取器
@@ -32,11 +33,16 @@ public class AIExtractor {
     }
     
     public AIExtractor(String apiKey, String baseUrl, String model, int maxTokens, double temperature) {
+        this(apiKey, baseUrl, model, maxTokens, temperature, inferProvider(baseUrl, model, null));
+    }
+
+    public AIExtractor(String apiKey, String baseUrl, String model, int maxTokens, double temperature, String provider) {
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
         this.model = model;
         this.maxTokens = maxTokens;
         this.temperature = temperature;
+        this.provider = provider == null || provider.isBlank() ? inferProvider(baseUrl, model, null) : provider;
     }
     
     /**
@@ -49,17 +55,28 @@ public class AIExtractor {
     static AIExtractor fromEnvironment(Map<String, String> env) {
         String apiKey = firstNonBlank(
             env.get("OPENAI_API_KEY"),
-            env.get("AI_API_KEY")
+            env.get("AI_API_KEY"),
+            env.get("ANTHROPIC_API_KEY"),
+            env.get("CLAUDE_API_KEY")
+        );
+        String provider = firstNonBlank(
+            env.get("AI_PROVIDER"),
+            inferProvider(env.get("AI_BASE_URL"), env.get("AI_MODEL"), apiKey),
+            inferProvider(env.get("OPENAI_BASE_URL"), env.get("OPENAI_MODEL"), apiKey),
+            inferProvider(env.get("ANTHROPIC_BASE_URL"), env.get("ANTHROPIC_MODEL"), apiKey)
         );
         String baseUrl = firstNonBlank(
             env.get("OPENAI_BASE_URL"),
             env.get("AI_BASE_URL"),
-            "https://api.openai.com/v1"
+            env.get("ANTHROPIC_BASE_URL"),
+            isAnthropicProvider(provider) ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"
         );
         String model = firstNonBlank(
             env.get("OPENAI_MODEL"),
             env.get("AI_MODEL"),
-            "gpt-3.5-turbo"
+            env.get("ANTHROPIC_MODEL"),
+            env.get("CLAUDE_MODEL"),
+            isAnthropicProvider(provider) ? "claude-sonnet-4-20250514" : "gpt-5.2"
         );
         int maxTokens = parseInt(env.get("AI_MAX_TOKENS"), 2000);
         double temperature = parseDouble(env.get("AI_TEMPERATURE"), 0.7);
@@ -68,7 +85,8 @@ public class AIExtractor {
             baseUrl,
             model,
             maxTokens,
-            temperature
+            temperature,
+            provider
         );
     }
     
@@ -116,6 +134,18 @@ public class AIExtractor {
         
         return callLLM(prompt);
     }
+
+    public String understandPageFewShot(
+        String content,
+        String question,
+        List<Map<String, String>> examples
+    ) throws IOException {
+        String prompt = String.format(
+            "请分析以下网页内容并回答问题。\n\n问题：%s\n\n页面内容：\n%s\n\n请详细回答。",
+            question, content
+        );
+        return callLLMWithExamples(prompt, examples);
+    }
     
     /**
      * 生成爬虫配置
@@ -144,14 +174,23 @@ public class AIExtractor {
      * 调用 LLM（包内可见）
      */
     String callLLM(String prompt) throws IOException {
+        return callLLMWithExamples(prompt, List.of());
+    }
+
+    String callLLMWithExamples(String prompt, List<Map<String, String>> examples) throws IOException {
         if (apiKey == null || apiKey.isEmpty()) {
             throw new IOException("API key is required");
         }
-        
-        String requestBody = String.format(
-            "{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}],\"max_tokens\":%d,\"temperature\":%.1f}",
-            model, escapeJson(prompt), maxTokens, temperature
-        );
+        if (isAnthropicProvider(provider)) {
+            return callAnthropic(prompt, examples);
+        }
+
+        String requestBody = OBJECT_MAPPER.writeValueAsString(Map.of(
+            "model", model,
+            "messages", buildMessages(prompt, examples),
+            "max_tokens", maxTokens,
+            "temperature", temperature
+        ));
         
         URL url = new URL(baseUrl + "/chat/completions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -175,6 +214,59 @@ public class AIExtractor {
         String responseBody = readStream(conn.getInputStream());
         return extractContent(responseBody);
     }
+
+    private String callAnthropic(String prompt, List<Map<String, String>> examples) throws IOException {
+        String requestBody = OBJECT_MAPPER.writeValueAsString(Map.of(
+            "model", model,
+            "messages", buildMessages(prompt, examples),
+            "max_tokens", maxTokens,
+            "temperature", temperature
+        ));
+
+        URL url = new URL(buildAnthropicEndpoint(baseUrl));
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("x-api-key", apiKey);
+        conn.setRequestProperty("anthropic-version", "2023-06-01");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setDoOutput(true);
+        conn.setConnectTimeout(60000);
+        conn.setReadTimeout(60000);
+
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(requestBody.getBytes(StandardCharsets.UTF_8));
+        }
+
+        int status = conn.getResponseCode();
+        if (status != 200) {
+            String errorBody = readStream(conn.getErrorStream());
+            throw new IOException("API error: " + status + " - " + errorBody);
+        }
+
+        String responseBody = readStream(conn.getInputStream());
+        return extractContent(responseBody);
+    }
+
+    private List<Map<String, String>> buildMessages(String prompt, List<Map<String, String>> examples) {
+        List<Map<String, String>> messages = new ArrayList<>();
+        if (examples != null) {
+            for (Map<String, String> example : examples) {
+                if (example == null) {
+                    continue;
+                }
+                String user = example.get("user");
+                String assistant = example.get("assistant");
+                if (user != null && !user.isBlank()) {
+                    messages.add(Map.of("role", "user", "content", user));
+                }
+                if (assistant != null && !assistant.isBlank()) {
+                    messages.add(Map.of("role", "assistant", "content", assistant));
+                }
+            }
+        }
+        messages.add(Map.of("role", "user", "content", prompt));
+        return messages;
+    }
     
     /**
      * 从响应中提取内容
@@ -187,6 +279,15 @@ public class AIExtractor {
                 JsonNode content = choices.get(0).path("message").path("content");
                 if (!content.isMissingNode() && !content.isNull()) {
                     return content.asText();
+                }
+            }
+            JsonNode anthropicContent = root.path("content");
+            if (anthropicContent.isArray() && !anthropicContent.isEmpty()) {
+                for (JsonNode block : anthropicContent) {
+                    JsonNode text = block.path("text");
+                    if (!text.isMissingNode() && !text.isNull() && !text.asText().isBlank()) {
+                        return text.asText();
+                    }
                 }
             }
         } catch (Exception e) {
@@ -323,6 +424,10 @@ public class AIExtractor {
         return temperature;
     }
 
+    String provider() {
+        return provider;
+    }
+
     private static String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
@@ -330,6 +435,31 @@ public class AIExtractor {
             }
         }
         return null;
+    }
+
+    private static String inferProvider(String baseUrl, String model, String apiKey) {
+        String base = baseUrl == null ? "" : baseUrl.toLowerCase(Locale.ROOT);
+        String normalizedModel = model == null ? "" : model.toLowerCase(Locale.ROOT);
+        if (base.contains("anthropic") || normalizedModel.contains("claude")) {
+            return "anthropic";
+        }
+        return "openai";
+    }
+
+    private static boolean isAnthropicProvider(String provider) {
+        if (provider == null) {
+            return false;
+        }
+        String normalized = provider.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("anthropic") || normalized.equals("claude");
+    }
+
+    private static String buildAnthropicEndpoint(String baseUrl) {
+        String trimmed = baseUrl == null ? "" : baseUrl.trim();
+        if (trimmed.endsWith("/messages")) {
+            return trimmed;
+        }
+        return trimmed.replaceAll("/+$", "") + "/messages";
     }
 
     private static int parseInt(String raw, int fallback) {

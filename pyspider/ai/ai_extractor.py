@@ -29,7 +29,7 @@ class AIExtractor:
         self,
         api_key: Optional[str] = None,
         base_url: str = "https://api.openai.com/v1",
-        model: str = "gpt-3.5-turbo",
+        model: str = "gpt-5.2",
         max_tokens: int = 2000,
         temperature: float = 0.7,
     ):

@@ -1,46 +1,41 @@
 # RustSpider
 
-RustSpider 是 SuperSpider 中最强调强类型、高性能和可裁剪发布二进制的 Rust 爬虫框架。
+RustSpider is the SuperSpider runtime that emphasizes strong typing, high performance, and feature-gated release control.
 
-## Why RustSpider
+## Core Functions
 
-如果你更关心：
+- Rust release binary
+- feature-gated browser, distributed, API, and web modules
+- typed scrapy-style interface
+- preflight, monitoring, anti-bot, media, and contract-heavy runtime
+- explicit release-boundary control
 
-- 强类型和高性能
-- feature-gated 模块裁剪
-- 生产环境中的边界控制和发布稳定性
+## Concrete Media Coverage
 
-那 RustSpider 会是这四个框架里最适合严格部署的一支。
+- HLS / DASH parsing and download
+- FFmpeg-assisted media processing
+- DRM inspection
+- platform parsing for YouTube, Bilibili, IQIYI, Tencent Video, and Youku
 
-## Standout Capabilities
+## Capability Range
 
-- Rust 发布二进制
-- feature-gated 浏览器、分布式、API 和 Web 模块
-- typed scrapy 风格接口
-- 监控、预检、反爬、媒体和契约测试
-- 更适合高性能和强边界部署
+- from compact release binaries to high-performance production deployments
+- from strongly typed execution to feature-controlled module shipping
+- from preflight validation to monitored release execution
 
-## Install Versions
+## Install Packages
 
-Windows:
+- Windows: `..\scripts\windows\install-rustspider.bat`
+- Linux: `../scripts/linux/install-rustspider.sh`
+- macOS: `../scripts/macos/install-rustspider.sh`
 
-- `..\scripts\windows\install-rustspider.bat`
+## Install Output
 
-Linux:
+- `rustspider/target/release/rustspider`
+- production-oriented release executable
 
-- `../scripts/linux/install-rustspider.sh`
+## Best Fit
 
-macOS:
-
-- `../scripts/macos/install-rustspider.sh`
-
-## Typical Output
-
-- 生成 `rustspider/target/release/rustspider`
-- 适合发布为稳定的 release 二进制
-
-## Quick Start
-
-```bash
-cargo build --release
-```
+- performance-sensitive deployments
+- strongly typed runtime boundaries
+- teams that want feature-gated release control

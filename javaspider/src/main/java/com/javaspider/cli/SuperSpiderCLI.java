@@ -8,11 +8,19 @@ import com.javaspider.audit.AuditTrail;
 import com.javaspider.audit.CompositeAuditTrail;
 import com.javaspider.audit.FileAuditTrail;
 import com.javaspider.audit.InMemoryAuditTrail;
+import com.javaspider.browser.BrowserCompatibility;
 import com.javaspider.connector.FileConnector;
 import com.javaspider.connector.InMemoryConnector;
 import com.javaspider.graph.GraphBuilder;
+import com.javaspider.research.AsyncResearchConfig;
+import com.javaspider.research.AsyncResearchResult;
+import com.javaspider.research.AsyncResearchRuntime;
+import com.javaspider.research.ResearchJob;
+import com.javaspider.research.ResearchRuntime;
+import com.javaspider.scheduler.QueueBackends;
 import com.javaspider.session.SessionProfile;
 import com.javaspider.util.JsonlWriterRegistry;
+import com.javaspider.web.WebServerLauncher;
 import com.javaspider.workflow.ExecutionPolicy;
 import com.javaspider.workflow.FlowJob;
 import com.javaspider.workflow.FlowResult;
@@ -32,6 +40,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 public final class SuperSpiderCLI {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -48,10 +57,15 @@ public final class SuperSpiderCLI {
         String command = args[0];
         String[] rest = slice(args, 1);
         switch (command) {
-            case "config", "crawl", "browser", "ai", "doctor", "export", "curl", "jobdir", "http-cache", "console" -> EnhancedSpider.main(args);
+            case "config", "crawl", "browser", "ai", "doctor", "preflight", "export", "curl", "jobdir", "http-cache", "console", "audit", "node-reverse" -> EnhancedSpider.main(args);
+            case "api" -> handleApi(rest);
+            case "web" -> handleWeb(rest);
+            case "run" -> handleRun(rest);
+            case "research" -> handleResearch(rest);
             case "workflow" -> WorkflowSpiderCLI.main(rest);
             case "media" -> MediaDownloaderCLI.main(rest);
             case "job" -> handleJob(rest);
+            case "async-job" -> handleAsyncJob(rest);
             case "capabilities" -> printCapabilities();
             case "version", "-v", "--version" -> EnhancedSpider.main(new String[]{"version"});
             case "help", "--help", "-h" -> printUsage();
@@ -68,10 +82,71 @@ public final class SuperSpiderCLI {
             return;
         }
 
+        try {
+            Map<String, Object> payload = runJobSpec(MAPPER.readValue(Files.readString(Path.of(args[1])), new TypeReference<Map<String, Object>>() {}));
+            System.out.println(MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(payload));
+            if ("failed".equals(String.valueOf(payload.get("state")))) {
+                throw new RuntimeException(String.valueOf(payload.getOrDefault("error", "job execution failed")));
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("job execution failed", e);
+        }
+    }
+
+    private static void handleAsyncJob(String[] args) {
+        CompletableFuture.runAsync(() -> handleJob(args)).join();
+    }
+
+    private static void handleRun(String[] args) {
+        String url = stringValue(optionValue(args, "--url"), "");
+        if (url.isBlank()) {
+            url = firstPositionalArg(args, List.of("--url", "--runtime", "--name", "--output", "--content"));
+        }
+        if (url.isBlank()) {
+            System.out.println("Usage: SuperSpiderCLI run <url> [--runtime <http|browser|media|ai>] [--output <path>]");
+            return;
+        }
+
+        String runtime = stringValue(optionValue(args, "--runtime"), "http");
+        String jobName = stringValue(optionValue(args, "--name"), "java-inline-" + System.currentTimeMillis());
+        String outputPath = stringValue(
+            optionValue(args, "--output"),
+            Path.of("artifacts", "exports", jobName + ".json").toString()
+        );
+        String content = stringValue(optionValue(args, "--content"), "");
+
+        Map<String, Object> spec = new LinkedHashMap<>();
+        spec.put("name", jobName);
+        spec.put("runtime", runtime);
+        spec.put("target", Map.of("url", url));
+        spec.put("output", Map.of("format", "json", "path", outputPath));
+        if (!content.isBlank()) {
+            spec.put("metadata", Map.of("content", content));
+        }
+
+        Path tempFile = null;
+        try {
+            tempFile = Files.createTempFile("javaspider-run-", ".json");
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(tempFile.toFile(), spec);
+            handleJob(new String[]{"--file", tempFile.toString()});
+        } catch (IOException e) {
+            throw new RuntimeException("failed to create inline run spec", e);
+        } finally {
+            if (tempFile != null) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (IOException ignored) {
+                    // best effort cleanup
+                }
+            }
+        }
+    }
+
+    public static Map<String, Object> runJobSpec(Map<String, Object> rawSpec) throws IOException {
         JobSpec spec = null;
         long startedAt = System.nanoTime();
         try {
-            spec = loadJobSpec(Path.of(args[1]));
+            spec = loadJobSpec(rawSpec);
             enforceJobPolicies(spec);
             String injectedFailure = stringValue(spec.metadata.get("fail_job"), "");
             if (!injectedFailure.isBlank()) {
@@ -93,26 +168,102 @@ public final class SuperSpiderCLI {
                 elapsedMillis(startedAt)
             );
             persistEnvelopeIfRequested(spec, rendered);
-            System.out.println(rendered);
+            return MAPPER.readValue(rendered, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
-            try {
-                String rendered = renderJobPayload(
-                    spec,
-                    "failed",
-                    Map.of(),
-                    List.of(),
-                    stringValue(e.getMessage(), "job execution failed"),
-                    "",
-                    "",
-                    elapsedMillis(startedAt)
-                );
+            String rendered = renderJobPayload(
+                spec,
+                "failed",
+                Map.of(),
+                List.of(),
+                stringValue(e.getMessage(), "job execution failed"),
+                "",
+                "",
+                elapsedMillis(startedAt)
+            );
+            if (spec != null) {
                 persistEnvelopeIfRequested(spec, rendered);
-                System.out.println(rendered);
-            } catch (IOException ignored) {
-                // Best effort: keep the original exception path even if payload rendering fails.
             }
-            throw new RuntimeException("job execution failed", e);
+            return MAPPER.readValue(rendered, new TypeReference<Map<String, Object>>() {});
         }
+    }
+
+    private static void handleWeb(String[] args) {
+        try {
+            WebServerLauncher.main(args);
+        } catch (Exception e) {
+            throw new RuntimeException("web launcher failed", e);
+        }
+    }
+
+    private static void handleApi(String[] args) {
+        try {
+            com.javaspider.api.ApiServerLauncher.main(args);
+        } catch (Exception e) {
+            throw new RuntimeException("api launcher failed", e);
+        }
+    }
+
+    private static void handleResearch(String[] args) {
+        if (args.length == 0) {
+            System.out.println("Usage: SuperSpiderCLI research <run|async|soak> ...");
+            return;
+        }
+        switch (args[0]) {
+            case "run" -> {
+                String url = stringValue(optionValue(args, "--url"), "");
+                if (url.isBlank()) {
+                    url = firstPositionalArg(slice(args, 1), List.of("--url", "--schema-json", "--content", "--output"));
+                }
+                if (url.isBlank()) {
+                    System.out.println("Usage: SuperSpiderCLI research run --url <url>");
+                    return;
+                }
+                ResearchJob job = buildResearchJob(
+                    List.of(url),
+                    stringValue(optionValue(args, "--schema-json"), "{}"),
+                    stringValue(optionValue(args, "--output"), "")
+                );
+                Map<String, Object> result = new ResearchRuntime().run(job, stringValue(optionValue(args, "--content"), ""));
+                printJson(result);
+            }
+            case "async", "soak" -> {
+                List<String> urls = collectOptionValues(args, "--url");
+                if (urls.isEmpty()) {
+                    System.out.println("Usage: SuperSpiderCLI research async --url <url> [--url <url>...]");
+                    return;
+                }
+                String schemaJson = stringValue(optionValue(args, "--schema-json"), "{}");
+                String content = stringValue(optionValue(args, "--content"), "");
+                int rounds = (int) longValue(optionValue(args, "--rounds"), 1L);
+                int concurrency = (int) longValue(optionValue(args, "--concurrency"), 5L);
+                List<ResearchJob> jobs = new ArrayList<>();
+                List<String> contents = new ArrayList<>();
+                for (int index = 0; index < urls.size(); index++) {
+                    jobs.add(buildResearchJob(List.of(urls.get(index)), schemaJson, ""));
+                    contents.add(content.isBlank() ? "<title>Research " + (index + 1) + "</title>" : content);
+                }
+                try (AsyncResearchRuntime runtime = new AsyncResearchRuntime(new AsyncResearchConfig(concurrency, 30.0, false))) {
+                    if ("soak".equals(args[0])) {
+                        printJson(runtime.runSoak(jobs, contents, rounds));
+                    } else {
+                        List<AsyncResearchResult> results = runtime.runMultiple(jobs, contents);
+                        printJson(Map.of(
+                            "command", "research async",
+                            "runtime", "java",
+                            "results", results,
+                            "metrics", runtime.snapshotMetrics()
+                        ));
+                    }
+                }
+            }
+            default -> System.out.println("Usage: SuperSpiderCLI research <run|async|soak> ...");
+        }
+    }
+
+    private static ResearchJob buildResearchJob(List<String> urls, String schemaJson, String outputPath) {
+        Map<String, Object> schema = parseJsonMap(schemaJson, "{}");
+        Map<String, Object> output = outputPath.isBlank() ? Map.of() : Map.of("path", outputPath);
+        return new ResearchJob(urls, Map.of(), schema, List.of(), Map.of(), output);
     }
 
     private static void enforceJobPolicies(JobSpec spec) {
@@ -247,8 +398,11 @@ public final class SuperSpiderCLI {
                     "browser",
                     "ai",
                     "doctor",
+                    "preflight",
                     "export",
                     "curl",
+                    "api",
+                    "run",
                     "ultimate",
                     "sitemap-discover",
                     "plugins",
@@ -260,25 +414,47 @@ public final class SuperSpiderCLI {
                     "workflow",
                     "media",
                     "job",
+                    "async-job",
                     "jobdir",
                     "http-cache",
                     "console",
+                    "audit",
+                    "web",
+                    "research",
                     "capabilities",
                     "version"
                 )),
                 Map.entry("runtimes", List.of("http", "browser", "media", "ai")),
                 Map.entry("modules", List.of(
                     "EnhancedSpider",
+                    "async.AsyncSpiderRuntime",
                     "workflow.WorkflowSpider",
+                    "api.ApiServer",
+                    "api.ApiServerLauncher",
+                    "bridge.CrawleeBridgeClient",
                     "cli.MediaDownloaderCLI",
                     "converter.CurlToJavaConverter",
+                    "research.ResearchJob",
+                    "research.ResearchRuntime",
+                    "research.AsyncResearchRuntime",
+                    "research.ExperimentTracker",
+                    "ai.SentimentAnalyzer",
+                    "ai.ContentSummarizer",
+                    "ai.EntityExtractor",
+                    "events.EventBus",
+                    "scheduler.NodeDiscovery",
+                    "scheduler.QueueBackends",
+                    "selector.SmartXPathSuggester",
                     "contracts.AutoscaledFrontier",
                     "contracts.RuntimeArtifactStore",
                     "audit.InMemoryAuditTrail",
                     "connector.InMemoryConnector",
                     "session.SessionProfile",
                     "nodereverse.NodeReverseClient",
-                    "antibot.AntiBotHandler"
+                    "antibot.AntiBotHandler",
+                    "antibot.NightModePolicy",
+                    "distributed.NodeDiscovery",
+                    "security.SSRFProtection"
                 )),
                 Map.entry("shared_contracts", List.of(
                     "shared-cli",
@@ -291,34 +467,106 @@ public final class SuperSpiderCLI {
                     "scrapy-plugins-manifest",
                     "web-control-plane"
                 )),
-                Map.entry("operator_products", Map.of(
-                    "jobdir", Map.of(
+                Map.entry("feature_gates", Map.of(
+                    "profiles", List.of("lite", "ai", "browser", "distributed", "full"),
+                    "properties", Map.of(
+                        "feature.ai", true,
+                        "feature.browser", true,
+                        "feature.distributed", true,
+                        "feature.media", true,
+                        "feature.antiBot", true
+                    ),
+                    "resource_file", "src/main/resources/spider.properties"
+                )),
+                Map.entry("ai_capabilities", Map.of(
+                    "providers", List.of("openai", "anthropic", "claude"),
+                    "few_shot", true,
+                    "sentiment_analysis", true,
+                    "summarization", true,
+                    "entity_extraction_specialized", true
+                )),
+                Map.entry("operator_products", Map.ofEntries(
+                    Map.entry("jobdir", Map.of(
                         "pause_resume", true,
                         "state_file", "job-state.json"
-                    ),
-                    "http_cache", Map.of(
+                    )),
+                    Map.entry("http_cache", Map.of(
                         "status_seed_clear", true,
                         "backends", List.of("file-json", "memory"),
                         "strategies", List.of("revalidate", "delta-fetch")
-                    ),
-                    "browser_tooling", Map.of(
+                    )),
+                    Map.entry("queue_backends", QueueBackends.support()),
+                    Map.entry("node_discovery", Map.of(
+                        "providers", List.of("env", "file", "dns-srv", "consul-http", "etcd-http")
+                    )),
+                    Map.entry("browser_tooling", Map.of(
                         "trace", true,
                         "har", true,
                         "route_mocking", true,
                         "codegen", true
-                    ),
-                    "autoscaling_pools", Map.of(
+                    )),
+                    Map.entry("antibot", Map.of(
+                        "behavior_randomization", true,
+                        "night_mode", Map.of(
+                            "enabled", true,
+                            "start_hour", 23,
+                            "end_hour", 6,
+                            "delay_multiplier", 1.5,
+                            "rate_limit_factor", 0.5
+                        )
+                    )),
+                    Map.entry("security", Map.of(
+                        "ssrf_guard", true,
+                        "validator", "security.SSRFProtection"
+                    )),
+                    Map.entry("autoscaling_pools", Map.of(
                         "frontier", true,
                         "request_queue", "priority-scheduler",
                         "session_pool", true,
                         "browser_pool", true
-                    ),
-                    "debug_console", Map.of(
+                    )),
+                    Map.entry("debug_console", Map.of(
                         "snapshot", true,
                         "tail", true,
                         "control_plane_jsonl", true
-                    )
+                    )),
+                    Map.entry("event_system", Map.of(
+                        "topics", List.of(
+                            "task:created",
+                            "task:queued",
+                            "task:running",
+                            "task:succeeded",
+                            "task:failed",
+                            "task:cancelled",
+                            "task:deleted",
+                            "task:result",
+                            "workflow.job.started",
+                            "workflow.step.started",
+                            "workflow.step.succeeded",
+                            "workflow.job.completed"
+                        ),
+                        "pubsub", "in-memory",
+                        "jsonl_sink", true
+                    )),
+                    Map.entry("connectors", Map.of(
+                        "native", List.of("memory", "jsonl")
+                    )),
+                    Map.entry("workflow", Map.of(
+                        "step_types", List.of("goto", "wait", "click", "type", "select", "hover", "scroll", "eval", "listen_network", "extract", "download", "screenshot"),
+                        "connectors", true,
+                        "events", true
+                    )),
+                    Map.entry("crawlee_bridge", Map.of(
+                        "client", true,
+                        "endpoint", "/api/crawl"
+                    )),
+                    Map.entry("audit_console", Map.of(
+                        "snapshot", true,
+                        "tail", true,
+                        "job_filter", true
+                    ))
                 )),
+                Map.entry("browser_compatibility", BrowserCompatibility.describe()),
                 Map.entry("control_plane", Map.of(
                     "task_api", true,
                     "result_envelope", true,
@@ -340,6 +588,8 @@ public final class SuperSpiderCLI {
                 )),
                 Map.entry("observability", List.of(
                     "doctor",
+                    "preflight",
+                    "audit",
                     "profile-site",
                     "selector-studio",
                     "scrapy doctor",
@@ -956,6 +1206,10 @@ public final class SuperSpiderCLI {
 
     private static JobSpec loadJobSpec(Path path) throws IOException {
         Map<String, Object> raw = MAPPER.readValue(Files.readString(path), new TypeReference<Map<String, Object>>() {});
+        return loadJobSpec(raw);
+    }
+
+    private static JobSpec loadJobSpec(Map<String, Object> raw) {
         JobSpec spec = new JobSpec();
         spec.name = stringValue(raw.get("name"), "job");
         spec.runtime = stringValue(raw.get("runtime"), "browser");
@@ -1215,6 +1469,59 @@ public final class SuperSpiderCLI {
         return result;
     }
 
+    private static String optionValue(String[] args, String option) {
+        for (int i = 0; i < args.length - 1; i++) {
+            if (option.equals(args[i])) {
+                return args[i + 1];
+            }
+        }
+        return "";
+    }
+
+    private static String firstPositionalArg(String[] args, List<String> optionsWithValues) {
+        for (int i = 0; i < args.length; i++) {
+            String current = args[i];
+            if (optionsWithValues.contains(current)) {
+                i += 1;
+                continue;
+            }
+            if (!current.startsWith("--")) {
+                return current;
+            }
+        }
+        return "";
+    }
+
+    private static List<String> collectOptionValues(String[] args, String option) {
+        List<String> values = new ArrayList<>();
+        for (int i = 0; i < args.length - 1; i++) {
+            if (option.equals(args[i])) {
+                values.add(args[i + 1]);
+                i += 1;
+            }
+        }
+        return values;
+    }
+
+    private static Map<String, Object> parseJsonMap(String raw, String fallback) {
+        String source = raw == null || raw.isBlank() ? fallback : raw;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> parsed = MAPPER.readValue(source, LinkedHashMap.class);
+            return parsed;
+        } catch (IOException e) {
+            throw new RuntimeException("invalid json payload", e);
+        }
+    }
+
+    private static void printJson(Object payload) {
+        try {
+            System.out.println(MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(payload));
+        } catch (IOException e) {
+            throw new RuntimeException("failed to render json", e);
+        }
+    }
+
     private static void printUsage() {
         System.out.println("Usage: SuperSpiderCLI <command> [options]");
         System.out.println();
@@ -1223,17 +1530,24 @@ public final class SuperSpiderCLI {
         System.out.println("  crawl --url <url> [--config <path>]");
         System.out.println("  browser fetch --url <url> [--config <path>] [--screenshot <path>]");
         System.out.println("  doctor [--config <path>] [--json]");
+        System.out.println("  preflight [--config <path>] [--json]");
         System.out.println("  export --input <path> --format <json|csv|md> --output <path>");
         System.out.println("  curl convert --command <curl> [--target <java|http|okhttp|apache>]");
+        System.out.println("  api [--port <port>]");
+        System.out.println("  run <url> [--runtime <http|browser|media|ai>] [--output <path>]");
         System.out.println("  jobdir <init|status|pause|resume|clear> --path <path>");
         System.out.println("  http-cache <status|clear|seed> --path <path>");
         System.out.println("  console <snapshot|tail> --control-plane <dir>");
+        System.out.println("  audit <snapshot|tail> --control-plane <dir> [--job-name <name>]");
+        System.out.println("  web [--port <port>]");
+        System.out.println("  research <run|async|soak> ...");
         System.out.println();
         System.out.println("Extended commands:");
         System.out.println("  workflow ...");
         System.out.println("  media ...");
         System.out.println("  curl convert ...");
         System.out.println("  job --file <job.json>");
+        System.out.println("  async-job --file <job.json>");
         System.out.println("  capabilities");
         System.out.println("  version");
     }

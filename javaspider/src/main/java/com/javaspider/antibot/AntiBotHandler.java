@@ -4,6 +4,7 @@ import java.util.*;
 import java.security.MessageDigest;
 import java.net.*;
 import java.io.*;
+import java.time.LocalTime;
 
 /**
  * 反反爬处理器
@@ -14,6 +15,7 @@ public class AntiBotHandler {
     private final List<String> referers;
     private final List<String> languages;
     private final Random random;
+    private final NightModePolicy nightModePolicy;
     
     /**
      * 创建反反爬处理器
@@ -45,6 +47,7 @@ public class AntiBotHandler {
             "zh-TW,zh;q=0.9",
             "ja-JP,ja;q=0.9"
         );
+        this.nightModePolicy = NightModePolicy.defaultPolicy();
     }
     
     /**
@@ -108,6 +111,10 @@ public class AntiBotHandler {
      * 获取智能延迟
      */
     public long getIntelligentDelay(long baseDelayMs) {
+        return getIntelligentDelay(baseDelayMs, LocalTime.now());
+    }
+
+    public long getIntelligentDelay(long baseDelayMs, LocalTime time) {
         // 基础延迟
         long delay = baseDelayMs + random.nextInt(2000);
         
@@ -115,15 +122,36 @@ public class AntiBotHandler {
         if (random.nextDouble() < 0.3) {
             delay += random.nextInt(3000);
         }
-        
-        // 时间段调整（夜间增加延迟）
-        Calendar now = Calendar.getInstance();
-        int hour = now.get(Calendar.HOUR_OF_DAY);
-        if (hour < 6 || hour > 23) {
-            delay = (long) (delay * 1.5);
+
+        return nightModePolicy.applyDelay(delay, time);
+    }
+
+    public NightModePolicy getNightModePolicy() {
+        return nightModePolicy;
+    }
+
+    public List<MousePoint> randomMouseMovement() {
+        List<MousePoint> points = new ArrayList<>();
+        int totalPoints = 5 + random.nextInt(6);
+        int x = 0;
+        int y = 0;
+        for (int i = 0; i < totalPoints; i++) {
+            int dx = random.nextInt(51) - 25;
+            int dy = random.nextInt(51) - 25;
+            if (dx == 0 && dy == 0) {
+                dx = 1;
+            }
+            x += dx;
+            y += dy;
+            points.add(new MousePoint(x, y));
         }
-        
-        return delay;
+        return points;
+    }
+
+    public ScrollBehavior randomScrollBehavior() {
+        int distance = 100 + random.nextInt(500);
+        long delayMs = 50L + random.nextInt(151);
+        return new ScrollBehavior(distance, delayMs);
     }
     
     /**
@@ -229,6 +257,12 @@ public class AntiBotHandler {
      */
     public AkamaiBypass createAkamaiBypass() {
         return new AkamaiBypass(this);
+    }
+
+    public record MousePoint(int x, int y) {
+    }
+
+    public record ScrollBehavior(int distance, long delayMs) {
     }
     
     /**
