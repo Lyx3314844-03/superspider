@@ -1,55 +1,83 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 320" role="img" aria-labelledby="title desc">
-  <title id="title">SuperSpider Wordmark</title>
-  <desc id="desc">The word SuperSpider in eleven different colors with a small spider and web motif.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 280" role="img" aria-label="SuperSpider Wordmark">
   <defs>
-    <linearGradient id="web" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a" stop-opacity="0.20"/>
-      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.04"/>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f0c29"/>
+      <stop offset="100%" stop-color="#0d1b2a"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-30%" width="160%" height="180%">
-      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.18"/>
+    <linearGradient id="textgrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#f472b6"/>
+      <stop offset="18%"  stop-color="#c084fc"/>
+      <stop offset="36%"  stop-color="#818cf8"/>
+      <stop offset="54%"  stop-color="#38bdf8"/>
+      <stop offset="72%"  stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#facc15"/>
+    </linearGradient>
+    <linearGradient id="subgrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#a855f7"/>
+      <stop offset="50%"  stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <filter id="glow">
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#a855f7" flood-opacity="0.5"/>
     </filter>
   </defs>
 
-  <rect width="1400" height="320" rx="48" fill="#f8fafc"/>
+  <!-- Background -->
+  <rect width="1200" height="280" rx="40" fill="url(#bg)"/>
 
-  <g fill="none" stroke="url(#web)" stroke-linecap="round">
-    <path d="M88 74c126 44 250 66 376 66s250-22 376-66" stroke-width="5"/>
-    <path d="M564 36v84" stroke-width="4"/>
-    <path d="M564 36l-72 52" stroke-width="3"/>
-    <path d="M564 36l72 52" stroke-width="3"/>
-    <path d="M564 68l-104 72" stroke-width="3"/>
-    <path d="M564 68l104 72" stroke-width="3"/>
+  <!-- Subtle web lines top-left -->
+  <g stroke="#c084fc" stroke-width="1" opacity="0.08" fill="none">
+    <circle cx="60" cy="60" r="80"/>
+    <circle cx="60" cy="60" r="50"/>
+    <line x1="60" y1="0" x2="60" y2="120"/>
+    <line x1="0" y1="60" x2="120" y2="60"/>
+    <line x1="17" y1="17" x2="103" y2="103"/>
+    <line x1="103" y1="17" x2="17" y2="103"/>
   </g>
 
-  <g filter="url(#shadow)" font-family="Segoe UI, Trebuchet MS, Arial, sans-serif" font-size="148" font-weight="800">
-    <text x="88" y="198" fill="#ff5f57" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">s</text>
-    <text x="172" y="198" fill="#ff8c42" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">u</text>
-    <text x="270" y="198" fill="#ffbe0b" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">p</text>
-    <text x="366" y="198" fill="#84cc16" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">e</text>
-    <text x="454" y="198" fill="#22c55e" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">r</text>
-    <text x="532" y="198" fill="#14b8a6" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">s</text>
-    <text x="616" y="198" fill="#06b6d4" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">p</text>
-    <text x="714" y="198" fill="#0ea5e9" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">i</text>
-    <text x="776" y="198" fill="#3b82f6" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">d</text>
-    <text x="880" y="198" fill="#8b5cf6" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">e</text>
-    <text x="968" y="198" fill="#ec4899" stroke="#0f172a" stroke-opacity="0.10" stroke-width="6">r</text>
+  <!-- Spider icon (small, left) -->
+  <g transform="translate(52, 100)" filter="url(#glow)">
+    <!-- Legs -->
+    <g stroke="#c084fc" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.9">
+      <path d="M28 28 L10 14 L0 8"/>
+      <path d="M26 36 L8 36 L0 32"/>
+      <path d="M27 44 L10 52 L0 58"/>
+      <path d="M52 28 L70 14 L80 8"/>
+      <path d="M54 36 L72 36 L80 32"/>
+      <path d="M53 44 L70 52 L80 58"/>
+    </g>
+    <!-- Body -->
+    <ellipse cx="40" cy="52" rx="16" ry="20" fill="#a855f7"/>
+    <!-- Head -->
+    <circle cx="40" cy="30" r="14" fill="#a855f7"/>
+    <!-- Eyes -->
+    <circle cx="35" cy="27" r="4" fill="white"/>
+    <circle cx="45" cy="27" r="4" fill="white"/>
+    <circle cx="36" cy="28" r="2" fill="#1a0030"/>
+    <circle cx="46" cy="28" r="2" fill="#1a0030"/>
+    <!-- Thread -->
+    <line x1="40" y1="0" x2="40" y2="16" stroke="#c084fc" stroke-width="2" opacity="0.7"/>
   </g>
 
-  <g transform="translate(738 60)">
-    <path d="M0 0v34" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round"/>
-    <ellipse cx="0" cy="46" rx="12" ry="10" fill="#111827"/>
-    <circle cx="0" cy="31" r="7" fill="#111827"/>
-    <path d="M-10 39l-16-8M10 39l16-8M-11 47l-18 0M11 47l18 0M-10 54l-16 8M10 54l16 8" fill="none" stroke="#111827" stroke-width="3" stroke-linecap="round"/>
-  </g>
+  <!-- Main text: SuperSpider -->
+  <text
+    x="160" y="178"
+    font-family="'Segoe UI', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+    font-size="148"
+    font-weight="900"
+    letter-spacing="-4"
+    fill="url(#textgrad)"
+    filter="url(#glow)"
+  >SuperSpider</text>
 
-  <g font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="600" fill="#475569">
-    <text x="92" y="258">pyspider</text>
-    <text x="236" y="258">|</text>
-    <text x="268" y="258">gospider</text>
-    <text x="448" y="258">|</text>
-    <text x="480" y="258">rustspider</text>
-    <text x="710" y="258">|</text>
-    <text x="742" y="258">javaspider</text>
-  </g>
+  <!-- Subtitle: four runtimes -->
+  <text
+    x="162" y="228"
+    font-family="'Segoe UI', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+    font-size="26"
+    font-weight="500"
+    letter-spacing="3"
+    fill="url(#subgrad)"
+    opacity="0.85"
+  >pyspider · gospider · rustspider · javaspider</text>
 </svg>
