@@ -1,127 +1,185 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SuperSpider Icon">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1a0533"/>
-      <stop offset="50%" stop-color="#0d1b3e"/>
-      <stop offset="100%" stop-color="#0a2a1a"/>
-    </linearGradient>
-    <linearGradient id="spider-body" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#e040fb"/>
-      <stop offset="50%" stop-color="#7c4dff"/>
-      <stop offset="100%" stop-color="#00e5ff"/>
-    </linearGradient>
-    <linearGradient id="leg-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#e040fb"/>
-      <stop offset="100%" stop-color="#00e5ff"/>
-    </linearGradient>
-    <radialGradient id="glow-center" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#e040fb" stop-opacity="0.4"/>
-      <stop offset="100%" stop-color="#7c4dff" stop-opacity="0"/>
+    <!-- Background gradient: deep space -->
+    <radialGradient id="bg-radial" cx="35%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#2d1b69"/>
+      <stop offset="40%" stop-color="#11103a"/>
+      <stop offset="100%" stop-color="#060618"/>
     </radialGradient>
-    <filter id="glow-strong">
-      <feGaussianBlur stdDeviation="8" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+
+    <!-- Spider body gradient -->
+    <linearGradient id="body-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6ef7"/>
+      <stop offset="35%" stop-color="#a855f7"/>
+      <stop offset="70%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+
+    <!-- Leg gradient -->
+    <linearGradient id="leg-l" x1="100%" y1="0%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="leg-r" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0.6"/>
+    </linearGradient>
+
+    <!-- Web ring gradient -->
+    <linearGradient id="web-ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0.2"/>
+    </linearGradient>
+
+    <!-- Glow filters -->
+    <filter id="body-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="glow-soft">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    <filter id="eye-glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="shadow">
-      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#7c4dff" flood-opacity="0.6"/>
+    <filter id="leg-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
+    <filter id="outer-glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Stars pattern -->
+    <radialGradient id="star" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
   </defs>
 
   <!-- Background -->
-  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="100" fill="url(#bg-radial)"/>
 
-  <!-- Subtle grid lines -->
-  <g stroke="#7c4dff" stroke-width="0.5" opacity="0.08">
-    <line x1="0" y1="128" x2="512" y2="128"/>
-    <line x1="0" y1="256" x2="512" y2="256"/>
-    <line x1="0" y1="384" x2="512" y2="384"/>
-    <line x1="128" y1="0" x2="128" y2="512"/>
-    <line x1="256" y1="0" x2="256" y2="512"/>
-    <line x1="384" y1="0" x2="384" y2="512"/>
-  </g>
+  <!-- Stars -->
+  <circle cx="60" cy="50" r="1.5" fill="white" opacity="0.7"/>
+  <circle cx="140" cy="30" r="1" fill="white" opacity="0.5"/>
+  <circle cx="420" cy="60" r="1.5" fill="white" opacity="0.6"/>
+  <circle cx="470" cy="120" r="1" fill="white" opacity="0.4"/>
+  <circle cx="80" cy="400" r="1.5" fill="white" opacity="0.5"/>
+  <circle cx="450" cy="380" r="1" fill="white" opacity="0.6"/>
+  <circle cx="380" cy="460" r="1.5" fill="white" opacity="0.4"/>
+  <circle cx="100" cy="460" r="1" fill="white" opacity="0.5"/>
+  <circle cx="30" cy="200" r="1" fill="white" opacity="0.4"/>
+  <circle cx="490" cy="250" r="1.5" fill="white" opacity="0.5"/>
 
-  <!-- Web rings -->
-  <g fill="none" opacity="0.15">
-    <circle cx="256" cy="256" r="200" stroke="url(#leg-grad)" stroke-width="1"/>
-    <circle cx="256" cy="256" r="150" stroke="url(#leg-grad)" stroke-width="1"/>
-    <circle cx="256" cy="256" r="100" stroke="url(#leg-grad)" stroke-width="1"/>
-    <circle cx="256" cy="256" r="50" stroke="url(#leg-grad)" stroke-width="1"/>
+  <!-- Web rings (concentric, subtle) -->
+  <g fill="none">
+    <circle cx="256" cy="256" r="210" stroke="url(#web-ring)" stroke-width="0.8"/>
+    <circle cx="256" cy="256" r="168" stroke="url(#web-ring)" stroke-width="0.8"/>
+    <circle cx="256" cy="256" r="126" stroke="url(#web-ring)" stroke-width="0.8"/>
+    <circle cx="256" cy="256" r="84" stroke="url(#web-ring)" stroke-width="0.8"/>
   </g>
 
   <!-- Web radial lines -->
-  <g stroke="#c084fc" stroke-width="1" opacity="0.12" fill="none">
-    <line x1="256" y1="56" x2="256" y2="456"/>
-    <line x1="56" y1="256" x2="456" y2="256"/>
-    <line x1="114" y1="114" x2="398" y2="398"/>
-    <line x1="398" y1="114" x2="114" y2="398"/>
-    <line x1="56" y1="186" x2="456" y2="326"/>
-    <line x1="186" y1="56" x2="326" y2="456"/>
+  <g stroke="#a855f7" stroke-width="0.6" opacity="0.18" fill="none">
+    <line x1="256" y1="46" x2="256" y2="466"/>
+    <line x1="46" y1="256" x2="466" y2="256"/>
+    <line x1="108" y1="108" x2="404" y2="404"/>
+    <line x1="404" y1="108" x2="108" y2="404"/>
+    <line x1="46" y1="176" x2="466" y2="336"/>
+    <line x1="176" y1="46" x2="336" y2="466"/>
+    <line x1="46" y1="336" x2="466" y2="176"/>
+    <line x1="336" y1="46" x2="176" y2="466"/>
   </g>
 
-  <!-- Glow center -->
-  <circle cx="256" cy="256" r="120" fill="url(#glow-center)"/>
+  <!-- Outer glow halo -->
+  <circle cx="256" cy="256" r="130" fill="#a855f7" opacity="0.06" filter="url(#outer-glow)"/>
 
-  <!-- Spider legs - left -->
-  <g stroke="url(#leg-grad)" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#glow-soft)">
-    <path d="M210 230 Q170 200 130 170 Q110 155 90 140"/>
-    <path d="M205 255 Q160 250 120 245 Q100 242 76 238"/>
-    <path d="M208 278 Q168 290 132 308 Q112 318 88 332"/>
-    <path d="M215 300 Q185 325 158 355 Q144 372 128 392"/>
+  <!-- ===== SPIDER LEGS ===== -->
+  <!-- Left legs (4) -->
+  <g filter="url(#leg-glow)">
+    <!-- L1: upper-upper -->
+    <path d="M208 218 C185 200 162 182 132 162 C118 154 102 148 84 142" stroke="url(#leg-l)" stroke-width="6.5" stroke-linecap="round" fill="none"/>
+    <!-- L2: upper -->
+    <path d="M203 244 C178 240 152 236 124 232 C108 230 90 228 70 226" stroke="url(#leg-l)" stroke-width="6.5" stroke-linecap="round" fill="none"/>
+    <!-- L3: lower -->
+    <path d="M206 270 C182 278 158 290 132 306 C116 316 98 328 78 342" stroke="url(#leg-l)" stroke-width="6.5" stroke-linecap="round" fill="none"/>
+    <!-- L4: lower-lower -->
+    <path d="M214 294 C198 316 180 340 160 366 C148 382 134 398 118 416" stroke="url(#leg-l)" stroke-width="6.5" stroke-linecap="round" fill="none"/>
   </g>
 
-  <!-- Spider legs - right -->
-  <g stroke="url(#leg-grad)" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#glow-soft)">
-    <path d="M302 230 Q342 200 382 170 Q402 155 422 140"/>
-    <path d="M307 255 Q352 250 392 245 Q412 242 436 238"/>
-    <path d="M304 278 Q344 290 380 308 Q400 318 424 332"/>
-    <path d="M297 300 Q327 325 354 355 Q368 372 384 392"/>
+  <!-- Right legs (4) -->
+  <g filter="url(#leg-glow)">
+    <!-- R1 -->
+    <path d="M304 218 C327 200 350 182 380 162 C394 154 410 148 428 142" stroke="url(#leg-r)" stroke-width="6.5" stroke-linecap="round" fill="none"/>
+    <!-- R2 -->
+    <path d="M309 244 C334 240 360 236 388 232 C404 230 422 228 442 226" stroke="url(#leg-r)" stroke-width="6.5" stroke-linecap="round" fill="none"/>
+    <!-- R3 -->
+    <path d="M306 270 C330 278 354 290 380 306 C396 316 414 328 434 342" stroke="url(#leg-r)" stroke-width="6.5" stroke-linecap="round" fill="none"/>
+    <!-- R4 -->
+    <path d="M298 294 C314 316 332 340 352 366 C364 382 378 398 394 416" stroke="url(#leg-r)" stroke-width="6.5" stroke-linecap="round" fill="none"/>
   </g>
 
-  <!-- Spider silk thread from top -->
-  <line x1="256" y1="56" x2="256" y2="168" stroke="#e040fb" stroke-width="3" stroke-linecap="round" opacity="0.7" filter="url(#glow-soft)"/>
+  <!-- Silk thread from top -->
+  <line x1="256" y1="46" x2="256" y2="172" stroke="#e879f9" stroke-width="3" stroke-linecap="round" opacity="0.8" filter="url(#leg-glow)"/>
 
-  <!-- Spider abdomen (lower body) -->
-  <ellipse cx="256" cy="310" rx="52" ry="64" fill="url(#spider-body)" filter="url(#shadow)"/>
+  <!-- ===== SPIDER BODY ===== -->
+  <!-- Abdomen glow -->
+  <ellipse cx="256" cy="318" rx="58" ry="70" fill="#a855f7" opacity="0.25" filter="url(#outer-glow)"/>
 
-  <!-- Abdomen pattern -->
-  <ellipse cx="256" cy="300" rx="20" ry="26" fill="#ffffff" opacity="0.12"/>
-  <path d="M244 330 Q256 345 268 330" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+  <!-- Abdomen -->
+  <ellipse cx="256" cy="318" rx="54" ry="66" fill="url(#body-grad)" filter="url(#body-glow)"/>
 
-  <!-- Spider head (cephalothorax) -->
-  <circle cx="256" cy="228" r="46" fill="url(#spider-body)" filter="url(#shadow)"/>
+  <!-- Abdomen sheen -->
+  <ellipse cx="244" cy="296" rx="22" ry="28" fill="white" opacity="0.08"/>
 
-  <!-- Head highlight -->
-  <circle cx="244" cy="218" r="16" fill="#ffffff" opacity="0.08"/>
+  <!-- Abdomen pattern lines -->
+  <path d="M240 310 Q256 322 272 310" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  <path d="M238 328 Q256 342 274 328" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.2"/>
 
-  <!-- Eyes - outer glow -->
-  <circle cx="238" cy="222" r="13" fill="#ffffff" opacity="0.15"/>
-  <circle cx="274" cy="222" r="13" fill="#ffffff" opacity="0.15"/>
+  <!-- Head glow -->
+  <circle cx="256" cy="228" r="52" fill="#a855f7" opacity="0.2" filter="url(#outer-glow)"/>
 
-  <!-- Eyes - main -->
-  <circle cx="238" cy="222" r="10" fill="#ffffff"/>
-  <circle cx="274" cy="222" r="10" fill="#ffffff"/>
+  <!-- Head (cephalothorax) -->
+  <circle cx="256" cy="228" r="48" fill="url(#body-grad)" filter="url(#body-glow)"/>
 
-  <!-- Eyes - iris -->
-  <circle cx="238" cy="222" r="6" fill="#1a0533"/>
-  <circle cx="274" cy="222" r="6" fill="#1a0533"/>
+  <!-- Head sheen -->
+  <ellipse cx="244" cy="214" rx="20" ry="16" fill="white" opacity="0.1"/>
 
-  <!-- Eyes - pupil glow -->
-  <circle cx="238" cy="222" r="3" fill="#e040fb"/>
-  <circle cx="274" cy="222" r="3" fill="#e040fb"/>
+  <!-- ===== EYES ===== -->
+  <!-- Eye glow halos -->
+  <circle cx="236" cy="222" r="16" fill="#e879f9" opacity="0.2" filter="url(#eye-glow)"/>
+  <circle cx="276" cy="222" r="16" fill="#e879f9" opacity="0.2" filter="url(#eye-glow)"/>
 
-  <!-- Eyes - shine -->
-  <circle cx="240" cy="219" r="2" fill="#ffffff" opacity="0.9"/>
-  <circle cx="276" cy="219" r="2" fill="#ffffff" opacity="0.9"/>
+  <!-- Eye whites -->
+  <circle cx="236" cy="222" r="12" fill="white"/>
+  <circle cx="276" cy="222" r="12" fill="white"/>
 
-  <!-- Fangs -->
-  <path d="M246 268 Q242 280 246 290" fill="none" stroke="#e040fb" stroke-width="4" stroke-linecap="round" filter="url(#glow-soft)"/>
-  <path d="M266 268 Q270 280 266 290" fill="none" stroke="#e040fb" stroke-width="4" stroke-linecap="round" filter="url(#glow-soft)"/>
+  <!-- Eye iris (deep purple) -->
+  <circle cx="236" cy="222" r="7.5" fill="#1e0a3c"/>
+  <circle cx="276" cy="222" r="7.5" fill="#1e0a3c"/>
 
-  <!-- Code brackets decoration -->
-  <text x="68" y="290" font-family="monospace" font-size="28" fill="#00e5ff" opacity="0.35" font-weight="bold">&lt;/&gt;</text>
-  <text x="390" y="290" font-family="monospace" font-size="28" fill="#e040fb" opacity="0.35" font-weight="bold">{}</text>
+  <!-- Eye pupil glow -->
+  <circle cx="236" cy="222" r="4" fill="#e879f9" filter="url(#eye-glow)"/>
+  <circle cx="276" cy="222" r="4" fill="#e879f9" filter="url(#eye-glow)"/>
+
+  <!-- Eye shine -->
+  <circle cx="239" cy="218" r="2.5" fill="white" opacity="0.95"/>
+  <circle cx="279" cy="218" r="2.5" fill="white" opacity="0.95"/>
+  <circle cx="233" cy="225" r="1.2" fill="white" opacity="0.5"/>
+  <circle cx="273" cy="225" r="1.2" fill="white" opacity="0.5"/>
+
+  <!-- ===== FANGS ===== -->
+  <path d="M244 272 Q239 286 243 298" fill="none" stroke="#e879f9" stroke-width="4.5" stroke-linecap="round" filter="url(#leg-glow)"/>
+  <path d="M268 272 Q273 286 269 298" fill="none" stroke="#e879f9" stroke-width="4.5" stroke-linecap="round" filter="url(#leg-glow)"/>
+
+  <!-- ===== CODE DECORATION ===== -->
+  <!-- Bottom-left: code tag -->
+  <text x="52" y="448" font-family="'Courier New', monospace" font-size="26" fill="#22d3ee" opacity="0.4" font-weight="bold">&lt;/&gt;</text>
+  <!-- Bottom-right: curly braces -->
+  <text x="400" y="448" font-family="'Courier New', monospace" font-size="26" fill="#a855f7" opacity="0.4" font-weight="bold">{  }</text>
+
+  <!-- Top-right: small dots (decorative) -->
+  <circle cx="420" cy="88" r="3" fill="#22d3ee" opacity="0.5"/>
+  <circle cx="434" cy="88" r="3" fill="#a855f7" opacity="0.5"/>
+  <circle cx="448" cy="88" r="3" fill="#e879f9" opacity="0.5"/>
 </svg>

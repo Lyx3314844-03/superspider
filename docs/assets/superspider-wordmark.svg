@@ -1,103 +1,133 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-label="SuperSpider Wordmark">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" role="img" aria-label="SuperSpider Wordmark">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1a0533"/>
-      <stop offset="50%" stop-color="#0d1b3e"/>
-      <stop offset="100%" stop-color="#0a2a1a"/>
+    <radialGradient id="bg" cx="30%" cy="40%" r="90%">
+      <stop offset="0%" stop-color="#2d1b69"/>
+      <stop offset="50%" stop-color="#11103a"/>
+      <stop offset="100%" stop-color="#060618"/>
+    </radialGradient>
+
+    <!-- Main title gradient -->
+    <linearGradient id="title" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#f472b6"/>
+      <stop offset="14%"  stop-color="#e879f9"/>
+      <stop offset="28%"  stop-color="#a855f7"/>
+      <stop offset="42%"  stop-color="#818cf8"/>
+      <stop offset="56%"  stop-color="#38bdf8"/>
+      <stop offset="70%"  stop-color="#34d399"/>
+      <stop offset="85%"  stop-color="#a3e635"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
     </linearGradient>
-    <linearGradient id="title-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%"   stop-color="#f72585"/>
-      <stop offset="16%"  stop-color="#e040fb"/>
-      <stop offset="32%"  stop-color="#7c4dff"/>
-      <stop offset="48%"  stop-color="#00b0ff"/>
-      <stop offset="64%"  stop-color="#00e5ff"/>
-      <stop offset="80%"  stop-color="#00e676"/>
-      <stop offset="100%" stop-color="#ffea00"/>
+
+    <!-- Subtitle gradient -->
+    <linearGradient id="sub" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#e879f9" stop-opacity="0.85"/>
+      <stop offset="33%"  stop-color="#818cf8" stop-opacity="0.85"/>
+      <stop offset="66%"  stop-color="#38bdf8" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#34d399" stop-opacity="0.85"/>
     </linearGradient>
-    <linearGradient id="sub-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%"   stop-color="#e040fb" stop-opacity="0.9"/>
-      <stop offset="33%"  stop-color="#7c4dff" stop-opacity="0.9"/>
-      <stop offset="66%"  stop-color="#00b0ff" stop-opacity="0.9"/>
-      <stop offset="100%" stop-color="#00e5ff" stop-opacity="0.9"/>
+
+    <!-- Badge fill -->
+    <linearGradient id="badge" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#a855f7" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.08"/>
     </linearGradient>
-    <linearGradient id="badge-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#e040fb" stop-opacity="0.2"/>
-      <stop offset="100%" stop-color="#7c4dff" stop-opacity="0.1"/>
-    </linearGradient>
-    <filter id="title-glow">
-      <feGaussianBlur stdDeviation="6" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+
+    <!-- Glow filter for title -->
+    <filter id="title-glow" x="-5%" y="-30%" width="110%" height="160%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="icon-glow">
-      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#e040fb" flood-opacity="0.6"/>
+
+    <!-- Spider icon glow -->
+    <filter id="icon-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
 
   <!-- Background -->
-  <rect width="1200" height="300" rx="32" fill="url(#bg)"/>
+  <rect width="1280" height="320" rx="28" fill="url(#bg)"/>
 
-  <!-- Subtle grid -->
-  <g stroke="#7c4dff" stroke-width="0.5" opacity="0.06">
-    <line x1="0" y1="75" x2="1200" y2="75"/>
-    <line x1="0" y1="150" x2="1200" y2="150"/>
-    <line x1="0" y1="225" x2="1200" y2="225"/>
-    <line x1="300" y1="0" x2="300" y2="300"/>
-    <line x1="600" y1="0" x2="600" y2="300"/>
-    <line x1="900" y1="0" x2="900" y2="300"/>
+  <!-- Stars -->
+  <circle cx="30" cy="30" r="1.5" fill="white" opacity="0.6"/>
+  <circle cx="80" cy="15" r="1" fill="white" opacity="0.4"/>
+  <circle cx="1240" cy="25" r="1.5" fill="white" opacity="0.5"/>
+  <circle cx="1260" cy="80" r="1" fill="white" opacity="0.4"/>
+  <circle cx="40" cy="290" r="1.5" fill="white" opacity="0.4"/>
+  <circle cx="1250" cy="280" r="1" fill="white" opacity="0.5"/>
+
+  <!-- Subtle web lines (top-left corner) -->
+  <g stroke="#a855f7" stroke-width="0.5" opacity="0.1" fill="none">
+    <circle cx="80" cy="80" r="60"/>
+    <circle cx="80" cy="80" r="40"/>
+    <circle cx="80" cy="80" r="20"/>
+    <line x1="80" y1="20" x2="80" y2="140"/>
+    <line x1="20" y1="80" x2="140" y2="80"/>
+    <line x1="38" y1="38" x2="122" y2="122"/>
+    <line x1="122" y1="38" x2="38" y2="122"/>
   </g>
 
-  <!-- Left spider icon -->
-  <g transform="translate(44, 60)" filter="url(#icon-glow)">
-    <!-- Web rings -->
-    <circle cx="80" cy="80" r="72" fill="none" stroke="#7c4dff" stroke-width="0.8" opacity="0.3"/>
-    <circle cx="80" cy="80" r="50" fill="none" stroke="#7c4dff" stroke-width="0.8" opacity="0.3"/>
-    <circle cx="80" cy="80" r="28" fill="none" stroke="#7c4dff" stroke-width="0.8" opacity="0.3"/>
+  <!-- ===== SPIDER ICON (left) ===== -->
+  <g transform="translate(36, 52)" filter="url(#icon-glow)">
     <!-- Legs left -->
-    <path d="M58 72 Q40 58 22 44" stroke="#e040fb" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-    <path d="M55 82 Q34 80 14 78" stroke="#e040fb" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-    <path d="M57 93 Q40 104 22 116" stroke="#e040fb" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+    <path d="M56 68 Q38 54 20 40" stroke="#e879f9" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M52 82 Q30 80 10 78" stroke="#a855f7" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M54 96 Q36 108 18 122" stroke="#818cf8" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M60 110 Q50 128 38 148" stroke="#38bdf8" stroke-width="5" stroke-linecap="round" fill="none"/>
     <!-- Legs right -->
-    <path d="M102 72 Q120 58 138 44" stroke="#00e5ff" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-    <path d="M105 82 Q126 80 146 78" stroke="#00e5ff" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-    <path d="M103 93 Q120 104 138 116" stroke="#00e5ff" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+    <path d="M104 68 Q122 54 140 40" stroke="#e879f9" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M108 82 Q130 80 150 78" stroke="#a855f7" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M106 96 Q124 108 142 122" stroke="#818cf8" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M100 110 Q110 128 122 148" stroke="#38bdf8" stroke-width="5" stroke-linecap="round" fill="none"/>
     <!-- Silk thread -->
-    <line x1="80" y1="0" x2="80" y2="42" stroke="#e040fb" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+    <line x1="80" y1="0" x2="80" y2="40" stroke="#e879f9" stroke-width="2.5" stroke-linecap="round" opacity="0.9"/>
     <!-- Abdomen -->
-    <ellipse cx="80" cy="108" rx="22" ry="28" fill="url(#title-grad)"/>
+    <ellipse cx="80" cy="118" rx="24" ry="30">
+      <animate attributeName="opacity" values="0.9;1;0.9" dur="3s" repeatCount="indefinite"/>
+      <animate attributeName="ry" values="30;31;30" dur="3s" repeatCount="indefinite"/>
+    </ellipse>
+    <ellipse cx="80" cy="118" rx="24" ry="30" fill="url(#title)"/>
     <!-- Head -->
-    <circle cx="80" cy="72" r="22" fill="url(#title-grad)"/>
+    <circle cx="80" cy="76" r="26" fill="url(#title)"/>
+    <!-- Eyes glow -->
+    <circle cx="72" cy="72" r="9" fill="#e879f9" opacity="0.3"/>
+    <circle cx="88" cy="72" r="9" fill="#e879f9" opacity="0.3"/>
     <!-- Eyes -->
-    <circle cx="73" cy="68" r="5" fill="white"/>
-    <circle cx="87" cy="68" r="5" fill="white"/>
-    <circle cx="73" cy="68" r="2.5" fill="#1a0533"/>
-    <circle cx="87" cy="68" r="2.5" fill="#1a0533"/>
-    <circle cx="74" cy="67" r="1.2" fill="white" opacity="0.9"/>
-    <circle cx="88" cy="67" r="1.2" fill="white" opacity="0.9"/>
+    <circle cx="72" cy="72" r="7" fill="white"/>
+    <circle cx="88" cy="72" r="7" fill="white"/>
+    <circle cx="72" cy="72" r="4" fill="#1e0a3c"/>
+    <circle cx="88" cy="72" r="4" fill="#1e0a3c"/>
+    <circle cx="72" cy="72" r="2" fill="#e879f9"/>
+    <circle cx="88" cy="72" r="2" fill="#e879f9"/>
+    <circle cx="74" cy="70" r="1.5" fill="white" opacity="0.9"/>
+    <circle cx="90" cy="70" r="1.5" fill="white" opacity="0.9"/>
   </g>
 
-  <!-- Main title: SuperSpider -->
+  <!-- ===== MAIN TITLE ===== -->
   <text
-    x="210" y="178"
+    x="218" y="188"
     font-family="'Segoe UI', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
-    font-size="130"
+    font-size="148"
     font-weight="900"
-    letter-spacing="-3"
-    fill="url(#title-grad)"
+    letter-spacing="-4"
+    fill="url(#title)"
     filter="url(#title-glow)"
   >SuperSpider</text>
 
-  <!-- Subtitle badge background -->
-  <rect x="210" y="200" width="760" height="38" rx="8" fill="url(#badge-grad)" stroke="#7c4dff" stroke-width="0.5" stroke-opacity="0.4"/>
+  <!-- ===== LANGUAGE BADGE ===== -->
+  <rect x="218" y="208" width="820" height="44" rx="10" fill="url(#badge)" stroke="#a855f7" stroke-width="0.6" stroke-opacity="0.5"/>
 
-  <!-- Subtitle: language tags -->
-  <text x="226" y="225" font-family="'Segoe UI', monospace, Arial, sans-serif" font-size="18" font-weight="600" letter-spacing="1" fill="url(#sub-grad)">🐍 pyspider</text>
-  <text x="370" y="225" font-family="'Segoe UI', monospace, Arial, sans-serif" font-size="18" fill="#7c4dff" opacity="0.6">·</text>
-  <text x="388" y="225" font-family="'Segoe UI', monospace, Arial, sans-serif" font-size="18" font-weight="600" letter-spacing="1" fill="url(#sub-grad)">🐹 gospider</text>
-  <text x="540" y="225" font-family="'Segoe UI', monospace, Arial, sans-serif" font-size="18" fill="#7c4dff" opacity="0.6">·</text>
-  <text x="558" y="225" font-family="'Segoe UI', monospace, Arial, sans-serif" font-size="18" font-weight="600" letter-spacing="1" fill="url(#sub-grad)">🦀 rustspider</text>
-  <text x="730" y="225" font-family="'Segoe UI', monospace, Arial, sans-serif" font-size="18" fill="#7c4dff" opacity="0.6">·</text>
-  <text x="748" y="225" font-family="'Segoe UI', monospace, Arial, sans-serif" font-size="18" font-weight="600" letter-spacing="1" fill="url(#sub-grad)">☕ javaspider</text>
+  <!-- Language tags with emoji -->
+  <text x="234" y="237" font-family="'Segoe UI', Arial, sans-serif" font-size="19" font-weight="700" fill="url(#sub)">🐍 Python</text>
+  <text x="348" y="237" font-family="'Segoe UI', Arial, sans-serif" font-size="16" fill="#a855f7" opacity="0.5">  ·  </text>
+  <text x="374" y="237" font-family="'Segoe UI', Arial, sans-serif" font-size="19" font-weight="700" fill="url(#sub)">🐹 Go</text>
+  <text x="440" y="237" font-family="'Segoe UI', Arial, sans-serif" font-size="16" fill="#a855f7" opacity="0.5">  ·  </text>
+  <text x="466" y="237" font-family="'Segoe UI', Arial, sans-serif" font-size="19" font-weight="700" fill="url(#sub)">🦀 Rust</text>
+  <text x="556" y="237" font-family="'Segoe UI', Arial, sans-serif" font-size="16" fill="#a855f7" opacity="0.5">  ·  </text>
+  <text x="582" y="237" font-family="'Segoe UI', Arial, sans-serif" font-size="19" font-weight="700" fill="url(#sub)">☕ Java</text>
+  <text x="672" y="237" font-family="'Segoe UI', Arial, sans-serif" font-size="16" fill="#a855f7" opacity="0.5">  ·  </text>
+  <text x="698" y="237" font-family="'Segoe UI', Arial, sans-serif" font-size="19" font-weight="700" fill="url(#sub)">🕷️ Web Crawler Framework</text>
 
-  <!-- Tagline -->
-  <text x="210" y="268" font-family="'Segoe UI', Arial, sans-serif" font-size="15" fill="#7c4dff" opacity="0.7" letter-spacing="2">Multi-Language Web Crawler Framework  ·  AI · Media · Distributed · Anti-Bot</text>
+  <!-- ===== TAGLINE ===== -->
+  <text x="220" y="282" font-family="'Segoe UI', Arial, sans-serif" font-size="15" fill="#818cf8" opacity="0.75" letter-spacing="2.5">AI Extraction  ·  Media Download  ·  Anti-Bot  ·  Distributed  ·  Node-Reverse  ·  Browser Automation</text>
 </svg>
