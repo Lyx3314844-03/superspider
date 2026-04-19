@@ -1,79 +1,127 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SuperSpider Icon">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f0c29"/>
-      <stop offset="50%" stop-color="#1a1040"/>
-      <stop offset="100%" stop-color="#0d1b2a"/>
+      <stop offset="0%" stop-color="#1a0533"/>
+      <stop offset="50%" stop-color="#0d1b3e"/>
+      <stop offset="100%" stop-color="#0a2a1a"/>
     </linearGradient>
-    <linearGradient id="body" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#a855f7"/>
-      <stop offset="100%" stop-color="#6366f1"/>
+    <linearGradient id="spider-body" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e040fb"/>
+      <stop offset="50%" stop-color="#7c4dff"/>
+      <stop offset="100%" stop-color="#00e5ff"/>
     </linearGradient>
-    <linearGradient id="web" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#c084fc"/>
-      <stop offset="100%" stop-color="#818cf8"/>
+    <linearGradient id="leg-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e040fb"/>
+      <stop offset="100%" stop-color="#00e5ff"/>
     </linearGradient>
-    <filter id="glow">
-      <feDropShadow dx="0" dy="0" stdDeviation="12" flood-color="#a855f7" flood-opacity="0.7"/>
+    <radialGradient id="glow-center" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e040fb" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#7c4dff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow-strong">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
     </filter>
-    <filter id="softglow">
-      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#c084fc" flood-opacity="0.5"/>
+    <filter id="glow-soft">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#7c4dff" flood-opacity="0.6"/>
     </filter>
   </defs>
 
   <!-- Background -->
-  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
 
-  <!-- Web rings (concentric arcs) -->
-  <g fill="none" stroke="url(#web)" stroke-linecap="round" opacity="0.25">
-    <circle cx="256" cy="256" r="180" stroke-width="1.5"/>
-    <circle cx="256" cy="256" r="130" stroke-width="1.5"/>
-    <circle cx="256" cy="256" r="80" stroke-width="1.5"/>
+  <!-- Subtle grid lines -->
+  <g stroke="#7c4dff" stroke-width="0.5" opacity="0.08">
+    <line x1="0" y1="128" x2="512" y2="128"/>
+    <line x1="0" y1="256" x2="512" y2="256"/>
+    <line x1="0" y1="384" x2="512" y2="384"/>
+    <line x1="128" y1="0" x2="128" y2="512"/>
+    <line x1="256" y1="0" x2="256" y2="512"/>
+    <line x1="384" y1="0" x2="384" y2="512"/>
+  </g>
+
+  <!-- Web rings -->
+  <g fill="none" opacity="0.15">
+    <circle cx="256" cy="256" r="200" stroke="url(#leg-grad)" stroke-width="1"/>
+    <circle cx="256" cy="256" r="150" stroke="url(#leg-grad)" stroke-width="1"/>
+    <circle cx="256" cy="256" r="100" stroke="url(#leg-grad)" stroke-width="1"/>
+    <circle cx="256" cy="256" r="50" stroke="url(#leg-grad)" stroke-width="1"/>
   </g>
 
   <!-- Web radial lines -->
-  <g stroke="#c084fc" stroke-width="1.5" stroke-linecap="round" opacity="0.2">
-    <line x1="256" y1="76" x2="256" y2="436"/>
-    <line x1="76" y1="256" x2="436" y2="256"/>
-    <line x1="129" y1="129" x2="383" y2="383"/>
-    <line x1="383" y1="129" x2="129" y2="383"/>
+  <g stroke="#c084fc" stroke-width="1" opacity="0.12" fill="none">
+    <line x1="256" y1="56" x2="256" y2="456"/>
+    <line x1="56" y1="256" x2="456" y2="256"/>
+    <line x1="114" y1="114" x2="398" y2="398"/>
+    <line x1="398" y1="114" x2="114" y2="398"/>
+    <line x1="56" y1="186" x2="456" y2="326"/>
+    <line x1="186" y1="56" x2="326" y2="456"/>
   </g>
 
-  <!-- Spider legs - left side -->
-  <g stroke="url(#web)" stroke-width="10" stroke-linecap="round" fill="none" filter="url(#softglow)">
-    <!-- Upper left legs -->
-    <path d="M210 220 L148 168 L96 148"/>
-    <path d="M205 245 L136 240 L80 224"/>
-    <path d="M208 272 L144 288 L88 308"/>
-    <!-- Upper right legs -->
-    <path d="M302 220 L364 168 L416 148"/>
-    <path d="M307 245 L376 240 L432 224"/>
-    <path d="M304 272 L368 288 L424 308"/>
+  <!-- Glow center -->
+  <circle cx="256" cy="256" r="120" fill="url(#glow-center)"/>
+
+  <!-- Spider legs - left -->
+  <g stroke="url(#leg-grad)" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#glow-soft)">
+    <path d="M210 230 Q170 200 130 170 Q110 155 90 140"/>
+    <path d="M205 255 Q160 250 120 245 Q100 242 76 238"/>
+    <path d="M208 278 Q168 290 132 308 Q112 318 88 332"/>
+    <path d="M215 300 Q185 325 158 355 Q144 372 128 392"/>
   </g>
 
-  <!-- Spider body (abdomen) -->
-  <ellipse cx="256" cy="300" rx="58" ry="72" fill="url(#body)" filter="url(#glow)"/>
+  <!-- Spider legs - right -->
+  <g stroke="url(#leg-grad)" stroke-width="7" stroke-linecap="round" fill="none" filter="url(#glow-soft)">
+    <path d="M302 230 Q342 200 382 170 Q402 155 422 140"/>
+    <path d="M307 255 Q352 250 392 245 Q412 242 436 238"/>
+    <path d="M304 278 Q344 290 380 308 Q400 318 424 332"/>
+    <path d="M297 300 Q327 325 354 355 Q368 372 384 392"/>
+  </g>
 
-  <!-- Spider head -->
-  <circle cx="256" cy="218" r="44" fill="url(#body)" filter="url(#glow)"/>
+  <!-- Spider silk thread from top -->
+  <line x1="256" y1="56" x2="256" y2="168" stroke="#e040fb" stroke-width="3" stroke-linecap="round" opacity="0.7" filter="url(#glow-soft)"/>
 
-  <!-- Eyes -->
-  <circle cx="240" cy="210" r="9" fill="#ffffff"/>
-  <circle cx="272" cy="210" r="9" fill="#ffffff"/>
-  <circle cx="242" cy="212" r="4" fill="#1a0030"/>
-  <circle cx="274" cy="212" r="4" fill="#1a0030"/>
-  <!-- Eye shine -->
-  <circle cx="244" cy="209" r="2" fill="#ffffff" opacity="0.8"/>
-  <circle cx="276" cy="209" r="2" fill="#ffffff" opacity="0.8"/>
+  <!-- Spider abdomen (lower body) -->
+  <ellipse cx="256" cy="310" rx="52" ry="64" fill="url(#spider-body)" filter="url(#shadow)"/>
 
   <!-- Abdomen pattern -->
-  <ellipse cx="256" cy="290" rx="22" ry="28" fill="#c084fc" opacity="0.35"/>
-  <path d="M244 318 Q256 330 268 318" fill="none" stroke="#e9d5ff" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+  <ellipse cx="256" cy="300" rx="20" ry="26" fill="#ffffff" opacity="0.12"/>
+  <path d="M244 330 Q256 345 268 330" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+
+  <!-- Spider head (cephalothorax) -->
+  <circle cx="256" cy="228" r="46" fill="url(#spider-body)" filter="url(#shadow)"/>
+
+  <!-- Head highlight -->
+  <circle cx="244" cy="218" r="16" fill="#ffffff" opacity="0.08"/>
+
+  <!-- Eyes - outer glow -->
+  <circle cx="238" cy="222" r="13" fill="#ffffff" opacity="0.15"/>
+  <circle cx="274" cy="222" r="13" fill="#ffffff" opacity="0.15"/>
+
+  <!-- Eyes - main -->
+  <circle cx="238" cy="222" r="10" fill="#ffffff"/>
+  <circle cx="274" cy="222" r="10" fill="#ffffff"/>
+
+  <!-- Eyes - iris -->
+  <circle cx="238" cy="222" r="6" fill="#1a0533"/>
+  <circle cx="274" cy="222" r="6" fill="#1a0533"/>
+
+  <!-- Eyes - pupil glow -->
+  <circle cx="238" cy="222" r="3" fill="#e040fb"/>
+  <circle cx="274" cy="222" r="3" fill="#e040fb"/>
+
+  <!-- Eyes - shine -->
+  <circle cx="240" cy="219" r="2" fill="#ffffff" opacity="0.9"/>
+  <circle cx="276" cy="219" r="2" fill="#ffffff" opacity="0.9"/>
 
   <!-- Fangs -->
-  <path d="M244 258 Q238 272 242 280" fill="none" stroke="#e9d5ff" stroke-width="5" stroke-linecap="round"/>
-  <path d="M268 258 Q274 272 270 280" fill="none" stroke="#e9d5ff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M246 268 Q242 280 246 290" fill="none" stroke="#e040fb" stroke-width="4" stroke-linecap="round" filter="url(#glow-soft)"/>
+  <path d="M266 268 Q270 280 266 290" fill="none" stroke="#e040fb" stroke-width="4" stroke-linecap="round" filter="url(#glow-soft)"/>
 
-  <!-- Silk thread from top -->
-  <line x1="256" y1="76" x2="256" y2="174" stroke="#c084fc" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+  <!-- Code brackets decoration -->
+  <text x="68" y="290" font-family="monospace" font-size="28" fill="#00e5ff" opacity="0.35" font-weight="bold">&lt;/&gt;</text>
+  <text x="390" y="290" font-family="monospace" font-size="28" fill="#e040fb" opacity="0.35" font-weight="bold">{}</text>
 </svg>
