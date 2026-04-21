@@ -15,7 +15,6 @@ Validated runtimes:
 
 Companion runtime also documented:
 
-- `omnicrawl`
 
 ## Checked Commands
 

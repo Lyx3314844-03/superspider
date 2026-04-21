@@ -1,4 +1,4 @@
-# 四个爬虫框架 + OmniCrawl 隐藏能力与真实边界报告
+# 四个爬虫框架隐藏能力与真实边界报告
 
 更新时间：2026-04-21
 
@@ -20,7 +20,7 @@
 
 ## 总体结论
 
-四个框架加上 Node.js companion runtime `OmniCrawl` 的隐藏能力还在继续增多，但同时存在明显的“能力边界”：
+四个框架的隐藏能力还在继续增多，但同时存在明显的“能力边界”：
 
 - 很多 AI 能力在没有 API Key 时会自动退化为 heuristic fallback
 - 多个“browser simulate”能力本质上是 HTTP 获取页面后调用 NodeReverse，不是真实浏览器会话
@@ -192,42 +192,6 @@ PySpider 是四个里作者工作流最强的一套：
 
 ---
 
-## 5. OmniCrawl
-
-### 5.1 新增确认的隐藏能力
-
-| 能力域 | 隐藏能力 | 代码位置 |
-| --- | --- | --- |
-| 预设面 | 不止 `HttpCrawler / BrowserCrawler`，还包括 `JSDOMCrawler`、`ApiJsonCrawler`、`FeedCrawler`、`SitemapCrawler`、`GraphQLCrawler`、`WebSocketCrawler`、`MediaCrawler`，以及显式浏览器后端预设 | `src/api/crawler-presets.js`, `src/index.js` |
-| 统一执行链 | `FeedCrawler` / `SitemapCrawler` 现在会把发现到的 URL 继续推进统一 job queue；`WebSocketCrawler.run()` 也能走统一 pipeline | `src/runtime/job-runner.js`, `src/runtime/job-attempt.js`, `src/fetchers/ws-fetcher.js` |
-| 控制面 | `dashboard`、`/capabilities`、`/reverse/capabilities`、`/runtime/integrations`、`integration-probe`、`workflow templates`、`field picker` | `src/server.js`, `src/cli.js`, `src/runtime/workflow-templates.js`, `src/runtime/field-picker.js` |
-| replay / repair | replay recipe、replay workflow template、workflow patch、workflow repair、login recorder | `src/runtime/replay-workflow.js`, `src/runtime/workflow-repair.js`, `src/routes/recorder-and-repair.js` |
-| reverse 调试 | reverse-lab、CDP、脚本/请求/SourceMap/Hook/WebSocket 取证面 | `src/routes/reverse-lab.js`, `src/reverse/reverse-lab-manager.js` |
-| 数据与诊断 | dataset/key-value programmatic surface、change tracking、baseline/trend、reverse diagnostics、integration registry | `src/api/omnicrawler.js`, `src/runtime/reverse-diagnostics.js`, `src/runtime/integration-registry.js` |
-
-### 5.2 真实边界与缺陷
-
-| 类型 | 问题 | 证据 |
-| --- | --- | --- |
-| 成熟度边界 | `reverse-lab`、挑战处理、签名推断、WAF 对抗更接近专家工具箱，不应写成零配置稳定能力 | `README.md`, `docs/PROJECT_GAPS_ANALYSIS.md`, `src/reverse/*.js` |
-| 观测边界 | 当前 observability 是可工作的内置 runtime surface，不等于完整外部 Prometheus / OTEL 平台接入层 | `docs/PROJECT_GAPS_ANALYSIS.md`, `src/runtime/observability.js` |
-| 表达风险 | 如果只写“支持 WebSocket / Feed / Sitemap / GraphQL”，但不写它们各自的运行方式与成熟度，用户会误以为所有协议面都具有同样成熟度 | `README.md`, `src/api/crawler-presets.js`, `src/server.js` |
-
-### 5.3 结论
-
-OmniCrawl 的隐藏能力主要集中在：
-
-- Node.js 程序化 preset surface
-- reverse-lab / replay / login-recorder / repair
-- dataset / key-value / change-tracking / integration-probe 这些运行时能力
-
-但最重要的发布口径仍然是：
-
-- 核心 crawl/runtime/control plane 能力可直接宣传
-- 高级 reverse / anti-bot / lab 面应继续保留成熟度分层
-
----
-
 ## 6. 需要从旧文档中删除或降权的说法
 
 以下说法应视为过时或不够准确：
@@ -259,7 +223,6 @@ OmniCrawl 的隐藏能力主要集中在：
 继续深挖后，可以确认：
 
 - 四个框架的隐藏能力确实还很多
-- `OmniCrawl` 这个 Node.js companion runtime 也已经具备大量隐藏运行面
 - 但当前最需要修正的不是“再堆新能力描述”，而是把文档从“能力宣传”修回“能力分层说明”
 
 本轮代码补齐后，额外确认：

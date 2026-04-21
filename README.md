@@ -30,23 +30,6 @@ SuperSpider is a **multi-language web crawler framework** that ships four produc
 
 ---
 
-## 🧩 Companion Runtime
-
-In addition to the four SuperSpider runtimes, this workspace also maintains a **Node.js companion runtime** named **OmniCrawl** as a sibling project.
-
-OmniCrawl is not counted as one of the four SuperSpider language runtimes, but it is relevant when documenting the overall crawler surface because it already implements:
-
-- programmatic presets for `Http / Cheerio / Browser / Hybrid / JSDOM / ApiJson / Feed / Sitemap / GraphQL / WebSocket / Media`
-- dashboard, `/capabilities`, `/reverse/capabilities`, integration probe, replay workflow, login recorder, workflow repair
-- reverse-lab, browser-debug artifacts, replay recipe, baseline/trend diagnostics, change tracking
-- dataset / key-value runtime stores and SQLite / distributed control-plane surfaces
-
-The important boundary is the same one we apply to the four SuperSpider runtimes:
-
-- advanced reverse / challenge / lab surfaces are powerful, but should be documented as layered tooling rather than zero-config stable product features
-
----
-
 ## 🕷️ What Can SuperSpider Do?
 
 ### 🌐 Web Crawling
@@ -372,7 +355,6 @@ bash scripts/macos/install-javaspider.sh
 | Distributed worker cluster | 🐹 GoSpider or 🦀 RustSpider |
 | Rapid prototyping and research | 🐍 PySpider |
 | REST API to control crawlers | 🐍 PySpider (Flask) or ☕ JavaSpider |
-| Node.js package + dashboard + replay/control plane | 🧩 OmniCrawl |
 | Browser fingerprint management | 🐍 PySpider (Canvas, WebGL, fonts) |
 | Circuit breaker + retry strategies | 🐍 PySpider (4 strategies + circuit breaker) |
 | Cloudflare / Akamai bypass | 🐍 PySpider or 🐹 GoSpider |
@@ -384,7 +366,6 @@ bash scripts/macos/install-javaspider.sh
 | Graph crawling + relationship extraction | 🐍 PySpider |
 | Session pool management | 🐍 PySpider (32 sessions with fingerprint affinity) |
 | Autoscaled concurrency | 🐍 PySpider (frontier-based auto-scaling) |
-| Feed / Sitemap / GraphQL / WebSocket preset crawling in Node.js | 🧩 OmniCrawl |
 
 ---
 
