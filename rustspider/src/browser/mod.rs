@@ -39,6 +39,12 @@ pub fn browser_compatibility_matrix() -> serde_json::Value {
             "trace": true,
             "pdf": false
         },
+        "interaction": {
+            "file_upload": true,
+            "iframe_switching": "webdriver-frame-switch",
+            "shadow_dom": "open-shadow-root-helper",
+            "realtime_stream_capture": "in-page-websocket-eventsource-hook"
+        },
         "constraints": [
             "playwright support is provided through a native node/playwright helper process; webdriver remains the embedded Rust browser engine"
         ]
@@ -271,6 +277,50 @@ impl BrowserManager {
             .map_err(|e| BrowserError::InteractionFailed(e.to_string()))
     }
 
+    /// 上传文件到 <input type="file">
+    pub async fn upload_file(&self, selector: &str, file_path: &str) -> Result<(), BrowserError> {
+        use fantoccini::Locator;
+
+        let absolute = std::fs::canonicalize(file_path)
+            .map_err(|e| BrowserError::FileOperationFailed(e.to_string()))?;
+        let element = self
+            .webdriver
+            .wait()
+            .for_element(Locator::Css(selector))
+            .await
+            .map_err(|e| BrowserError::ElementNotFound(selector.to_string(), e.to_string()))?;
+
+        element
+            .send_keys(&absolute.to_string_lossy())
+            .await
+            .map_err(|e| BrowserError::InteractionFailed(e.to_string()))
+    }
+
+    /// 切换到 iframe
+    pub async fn enter_frame(&self, selector: &str) -> Result<(), BrowserError> {
+        use fantoccini::Locator;
+
+        let frame = self
+            .webdriver
+            .wait()
+            .for_element(Locator::Css(selector))
+            .await
+            .map_err(|e| BrowserError::ElementNotFound(selector.to_string(), e.to_string()))?;
+
+        frame
+            .enter_frame()
+            .await
+            .map_err(|e| BrowserError::WindowOperationFailed(e.to_string()))
+    }
+
+    /// 返回父 frame
+    pub async fn enter_parent_frame(&self) -> Result<(), BrowserError> {
+        self.webdriver
+            .enter_parent_frame()
+            .await
+            .map_err(|e| BrowserError::WindowOperationFailed(e.to_string()))
+    }
+
     /// 清空输入框并输入
     pub async fn fill_clear(&self, selector: &str, text: &str) -> Result<(), BrowserError> {
         use fantoccini::Locator;
@@ -425,6 +475,50 @@ impl BrowserManager {
             .execute(script, vec![])
             .await
             .map_err(|e| BrowserError::ScriptExecutionFailed(e.to_string()))
+    }
+
+    /// 在 open Shadow DOM selector path 上执行表达式。
+    pub async fn execute_shadow_dom(
+        &self,
+        selector_path: &[&str],
+        expression: &str,
+    ) -> Result<serde_json::Value, BrowserError> {
+        let script = build_shadow_traversal_script(selector_path, expression)?;
+        self.execute_script_value(&script).await
+    }
+
+    /// 获取 open Shadow DOM path 目标元素文本。
+    pub async fn get_shadow_text(&self, selector_path: &[&str]) -> Result<String, BrowserError> {
+        let value = self
+            .execute_shadow_dom(selector_path, "target.textContent || ''")
+            .await?;
+        Ok(value.as_str().unwrap_or_default().to_string())
+    }
+
+    /// 获取 open Shadow DOM path 目标元素 HTML。
+    pub async fn get_shadow_html(&self, selector_path: &[&str]) -> Result<String, BrowserError> {
+        let value = self
+            .execute_shadow_dom(
+                selector_path,
+                "target.outerHTML || target.textContent || ''",
+            )
+            .await?;
+        Ok(value.as_str().unwrap_or_default().to_string())
+    }
+
+    /// 安装页面内 WebSocket/EventSource collector，适合捕获安装后的实时流消息。
+    pub async fn install_realtime_capture(&self) -> Result<(), BrowserError> {
+        self.execute_script(REALTIME_CAPTURE_SCRIPT).await
+    }
+
+    /// 读取页面内 WebSocket/EventSource collector 的消息。
+    pub async fn get_realtime_messages(&self) -> Result<Vec<serde_json::Value>, BrowserError> {
+        let value = self
+            .execute_script_value(
+                "return window.__rustspiderRealtime ? window.__rustspiderRealtime.slice() : [];",
+            )
+            .await?;
+        Ok(value.as_array().cloned().unwrap_or_default())
     }
 
     /// 滚动到页面底部
@@ -944,6 +1038,117 @@ impl SeleniumBrowser {
     pub async fn close(self) -> Result<(), BrowserError> {
         self.inner.close().await
     }
+
+    pub async fn upload_file(&self, selector: &str, file_path: &str) -> Result<(), BrowserError> {
+        self.inner.upload_file(selector, file_path).await
+    }
+
+    pub async fn enter_frame(&self, selector: &str) -> Result<(), BrowserError> {
+        self.inner.enter_frame(selector).await
+    }
+
+    pub async fn enter_parent_frame(&self) -> Result<(), BrowserError> {
+        self.inner.enter_parent_frame().await
+    }
+}
+
+#[cfg(feature = "browser")]
+const REALTIME_CAPTURE_SCRIPT: &str = r#"
+if (!window.__rustspiderRealtimeInstalled) {
+    window.__rustspiderRealtimeInstalled = true;
+    window.__rustspiderRealtime = window.__rustspiderRealtime || [];
+    const push = (entry) => {
+        try {
+            window.__rustspiderRealtime.push(Object.assign({ts: Date.now()}, entry));
+        } catch (_) {}
+    };
+    const NativeWebSocket = window.WebSocket;
+    if (NativeWebSocket) {
+        window.WebSocket = function(url, protocols) {
+            const socket = protocols === undefined ? new NativeWebSocket(url) : new NativeWebSocket(url, protocols);
+            push({protocol: "websocket", direction: "open", url: String(url)});
+            const nativeSend = socket.send;
+            socket.send = function(data) {
+                push({protocol: "websocket", direction: "sent", url: String(url), data: String(data)});
+                return nativeSend.call(this, data);
+            };
+            socket.addEventListener("message", (event) => {
+                push({protocol: "websocket", direction: "received", url: String(url), data: String(event.data)});
+            });
+            socket.addEventListener("error", () => {
+                push({protocol: "websocket", direction: "error", url: String(url)});
+            });
+            return socket;
+        };
+        window.WebSocket.prototype = NativeWebSocket.prototype;
+        Object.assign(window.WebSocket, NativeWebSocket);
+    }
+    const NativeEventSource = window.EventSource;
+    if (NativeEventSource) {
+        window.EventSource = function(url, config) {
+            const source = new NativeEventSource(url, config);
+            push({protocol: "sse", direction: "open", url: String(url)});
+            source.addEventListener("message", (event) => {
+                push({protocol: "sse", direction: "received", url: String(url), event_id: event.lastEventId || "", data: String(event.data)});
+            });
+            source.addEventListener("error", () => {
+                push({protocol: "sse", direction: "error", url: String(url)});
+            });
+            return source;
+        };
+        window.EventSource.prototype = NativeEventSource.prototype;
+    }
+}
+"#;
+
+#[cfg(feature = "browser")]
+fn normalize_shadow_path<'a>(selector_path: &'a [&'a str]) -> Result<Vec<&'a str>, BrowserError> {
+    let path: Vec<&str> = selector_path
+        .iter()
+        .map(|selector| selector.trim())
+        .filter(|selector| !selector.is_empty())
+        .collect();
+    if path.is_empty() {
+        return Err(BrowserError::ScriptExecutionFailed(
+            "shadow selector path cannot be empty".to_string(),
+        ));
+    }
+    Ok(path)
+}
+
+#[cfg(feature = "browser")]
+fn build_shadow_traversal_script(
+    selector_path: &[&str],
+    expression: &str,
+) -> Result<String, BrowserError> {
+    let expression = expression.trim();
+    if expression.is_empty() {
+        return Err(BrowserError::ScriptExecutionFailed(
+            "shadow expression cannot be empty".to_string(),
+        ));
+    }
+    let path = normalize_shadow_path(selector_path)?;
+    let path_json = serde_json::to_string(&path)
+        .map_err(|err| BrowserError::ScriptExecutionFailed(err.to_string()))?;
+    Ok(format!(
+        r#"const selectors = {path_json};
+let root = document;
+let target = null;
+for (let index = 0; index < selectors.length; index++) {{
+    const selector = selectors[index];
+    target = root.querySelector(selector);
+    if (!target) {{
+        throw new Error("shadow selector not found: " + selector);
+    }}
+    if (index < selectors.length - 1) {{
+        if (!target.shadowRoot) {{
+            throw new Error("open shadowRoot not found: " + selector);
+        }}
+        root = target.shadowRoot;
+    }}
+}}
+return ({expression});"#
+    ))
 }
 
 /// 浏览器错误

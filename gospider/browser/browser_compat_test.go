@@ -48,6 +48,23 @@ func TestCompatibilityBridgeReportsAdapterEngine(t *testing.T) {
 	}
 }
 
+func TestBrowserCompatibilitySupportReportsUploadAndIframeSupport(t *testing.T) {
+	matrix := BrowserCompatibilitySupport()
+
+	if matrix.Interaction["file_upload"] != "native-upload-input" {
+		t.Fatalf("unexpected file upload support: %s", matrix.Interaction["file_upload"])
+	}
+	if matrix.Interaction["iframe_support"] != "same-origin-helpers" {
+		t.Fatalf("unexpected iframe support: %s", matrix.Interaction["iframe_support"])
+	}
+	if matrix.Interaction["shadow_dom"] != "open-shadow-root-helpers" {
+		t.Fatalf("unexpected shadow dom support: %s", matrix.Interaction["shadow_dom"])
+	}
+	if matrix.Interaction["realtime_stream_capture"] != "cdp-websocket-sse-events" {
+		t.Fatalf("unexpected realtime support: %s", matrix.Interaction["realtime_stream_capture"])
+	}
+}
+
 func TestBrowserPoolShouldRecycleWhenAgeIdleOrRequestLimitExceeded(t *testing.T) {
 	now := time.Now()
 

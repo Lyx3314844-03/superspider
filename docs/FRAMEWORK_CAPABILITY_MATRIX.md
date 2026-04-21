@@ -1,181 +1,129 @@
 # SuperSpider Framework Capability Matrix
 
-Updated: 2026-04-19
+Updated: 2026-04-21
 
-## Core Capability Overview
+Legend:
 
-| Dimension | PySpider | GoSpider | RustSpider | JavaSpider |
+- `I` = Implemented
+- `C` = Conditional
+- `F` = Fallback-prone
+- `B` = Implemented, but with important boundary/caveat
+
+## Core Runtime Matrix
+
+| Capability | PySpider | GoSpider | RustSpider | JavaSpider |
 | --- | --- | --- | --- | --- |
-| Primary language | Python | Go | Rust | Java |
-| Delivery form | virtualenv / editable package | compiled binary | release binary | Maven package / JAR |
-| Primary strength | AI orchestration, project workflows, rapid iteration | concurrency, binary deployment, distributed workers | strong typing, performance, feature-gated release control | browser workflow, enterprise integration, audit trails |
-| Browser support | ✅ strong (Playwright native) | ✅ strong (Playwright + Selenium) | ✅ strong (node+playwright process + Selenium facade) | ✅ strong (Selenium + Playwright helper) |
-| Hybrid HTTP + browser crawling | ✅ | ✅ | ✅ | ✅ |
-| Distributed runtime | ✅ strong | ✅ strong | ✅ strong | ✅ medium-high |
-| Media tooling | ✅ strong | ✅ strong | ✅ strong | ✅ strong |
-| AI extraction | ✅ strongest (LLM + smart parser) | ✅ medium | ✅ medium | ✅ medium |
-| Anti-bot / captcha | ✅ strong | ✅ strong | ✅ strong (2captcha / anticaptcha) | ✅ strong |
-| Node-reverse / JS encryption | ✅ | ✅ | ✅ | ✅ |
-| Scrapy-style interface | ✅ | ✅ | ✅ | ✅ |
-| Audit trail | ✅ baseline + JSONL | ✅ explicit audit module | ✅ explicit audit module | ✅ strongest / dedicated |
-| Independent REST API server | ✅ | ✅ | ✅ | ✅ |
-| Install output | `.venv-pyspider` | `gospider` binary | `rustspider` release binary | Maven `target` / JAR |
-| Best fit | experimentation, AI pipelines, orchestration | services, binaries, worker-based execution | performance-sensitive, boundary-conscious deployments | Java enterprise workflows, browser automation |
+| Unified CLI runtime surface | I | I | I | I |
+| Browser tooling subcommands | I | I | I | I |
+| Scrapy/project-style authoring | I | I | I | I |
+| Web/API control plane | I | I | I | I |
+| Audit / console / control-plane tools | I | I | I | I |
+| Media parsing/downloading | I | I | I | I |
+| NodeReverse integration | C | C | C | C |
+| Distributed execution paths | I | I | I | I |
+| Artifact store / artifact refs | I | I | I | I |
+| Graph extraction | I | I | I | I |
+| Research runtime | I | I | I | I |
 
----
+## AI Matrix
 
-## Media Platform Coverage
-
-All four runtimes share the same media capability surface.
-
-| Platform / Format | PySpider | GoSpider | RustSpider | JavaSpider |
+| Capability | PySpider | GoSpider | RustSpider | JavaSpider |
 | --- | --- | --- | --- | --- |
-| HLS (`m3u8`) | ✅ | ✅ | ✅ | ✅ |
-| DASH (`mpd`) | ✅ | ✅ | ✅ | ✅ |
-| FFmpeg merge / convert | ✅ | ✅ | ✅ | ✅ |
-| DRM detection | ✅ | ✅ | ✅ | ✅ |
-| YouTube | ✅ | ✅ | ✅ | ✅ |
-| Bilibili | ✅ | ✅ | ✅ | ✅ |
-| IQIYI | ✅ | ✅ | ✅ | ✅ (generic fallback) |
-| Tencent Video | ✅ | ✅ | ✅ | ✅ (generic fallback) |
-| Youku | ✅ | ✅ | ✅ | ✅ (generic fallback) |
-| Douyin | ✅ | ✅ | ✅ | ✅ (generic fallback) |
+| Heuristic extraction mode | I | I | I | I |
+| LLM-backed extraction | C | C | C | C |
+| Structured/schema extraction | I | C | C | C |
+| Few-shot prompting support | C | C | C | C |
+| AI CLI can silently degrade | F | F | F | C |
 
----
+Notes:
 
-## AI Extraction Capabilities
+- `gospider`, `rustspider`, and `pyspider` have explicit heuristic-fallback AI CLI behavior.
+- JavaSpider supports real AI integration, but media, solver, and parser fallback behavior still means users should not assume every path is strongly constrained.
 
-| Feature | PySpider | GoSpider | RustSpider | JavaSpider |
+## Browser and Simulation Matrix
+
+| Capability | PySpider | GoSpider | RustSpider | JavaSpider |
 | --- | --- | --- | --- | --- |
-| Entity extraction | ✅ | ✅ | ✅ | ✅ |
-| Content summarization | ✅ | ✅ | ✅ | ✅ |
-| Sentiment analysis | ✅ | ✅ | ✅ | ✅ |
-| LLM extraction (OpenAI) | ✅ | ✅ | ✅ | ✅ |
-| LLM extraction (Anthropic/Claude) | ✅ | ✅ | ✅ | ✅ |
-| Few-shot examples | ✅ | ✅ | ✅ | ✅ |
-| Smart parser (auto-detect page type) | ✅ | — | — | — |
-| Schema-driven structured output | ✅ | — | — | — |
-| XPath suggestion studio | ✅ | ✅ | ✅ | ✅ |
+| Real browser runtime | I | I | I | I |
+| Screenshot / DOM / network artifacts | I | I | I | I |
+| HAR capture | C | I | C | C |
+| Browser pool / session reuse | I | I | I | I |
+| Upload-input browser automation | I | I | I | I |
+| Reverse-assisted browser simulation | B | B | B | B |
 
----
+Notes:
 
-## Anti-Bot and Captcha
+- In all four runtimes, some `simulate browser` paths are not equivalent to opening a real browser session.
+- These are better described as reverse-assisted browser emulation or fingerprint simulation.
 
-| Feature | PySpider | GoSpider | RustSpider | JavaSpider |
+## Anti-Bot Matrix
+
+| Capability | PySpider | GoSpider | RustSpider | JavaSpider |
 | --- | --- | --- | --- | --- |
-| TLS fingerprint rotation | ✅ | ✅ | ✅ | ✅ |
-| Browser behavior simulation | ✅ | ✅ | ✅ | ✅ |
-| WAF bypass | ✅ | ✅ | ✅ | ✅ |
-| Night mode (reduced activity) | ✅ | ✅ | ✅ | ✅ |
-| 2captcha integration | ✅ | ✅ | ✅ | ✅ |
-| Anti-Captcha integration | ✅ | ✅ | ✅ | ✅ |
-| reCAPTCHA solving | ✅ | ✅ | ✅ | ✅ |
-| hCaptcha solving | ✅ | ✅ | ✅ | ✅ |
-| Image captcha solving | ✅ | ✅ | ✅ | ✅ |
-| SSRF protection | ✅ | ✅ | ✅ | ✅ |
+| UA / header rotation | I | I | I | I |
+| Night mode / quiet hours | I | I | I | I |
+| Captcha helper surfaces | I | I | I | I |
+| External captcha provider integration | C | C | C | C |
+| TLS / fingerprint helper logic | I | I | I | I |
+| Anti-bot vendor profiling | C | I | I | C |
+| Cloudflare / Akamai handling | I | I | I | I |
 
----
+## Storage / Queue / Control Matrix
 
-## Distributed and Queue Backends
-
-| Backend | PySpider | GoSpider | RustSpider | JavaSpider |
+| Capability | PySpider | GoSpider | RustSpider | JavaSpider |
 | --- | --- | --- | --- | --- |
-| Redis (native) | ✅ | ✅ | ✅ | ✅ |
-| RabbitMQ | ✅ | ✅ broker-native | ✅ bridge | ✅ broker-native |
-| Kafka | ✅ | ✅ broker-native | ✅ bridge | ✅ broker-native |
-| In-process queue | ✅ | ✅ | ✅ | ✅ |
+| Checkpoint manager | I | I | I | I |
+| Incremental crawling | I | I | I | I |
+| Session pool contract | I | I | I | I |
+| Autoscaled/frontier contract | I | I | I | I |
+| Redis-backed queue/runtime | I | I | I | I |
+| RabbitMQ/Kafka paths | C | C | C | C |
+| Storage backends beyond local file | C | C | C | C |
 
----
+## Hard Scenario Gaps
 
-## Node Discovery
-
-| Method | PySpider | GoSpider | RustSpider | JavaSpider |
+| Scenario | PySpider | GoSpider | RustSpider | JavaSpider |
 | --- | --- | --- | --- | --- |
-| Environment variables | ✅ | ✅ | ✅ | ✅ |
-| File-based | ✅ | ✅ | ✅ | ✅ |
-| DNS-SRV | ✅ | ✅ | ✅ | ✅ |
-| Consul | ✅ | ✅ | ✅ | ✅ |
-| etcd | ✅ | ✅ | ✅ | ✅ |
+| Shadow DOM traversal | Gap | Partial | Partial | Gap |
+| First-class WebSocket capture | Gap | Partial | Partial | Gap |
+| First-class SSE capture | Gap | Partial | Partial | Gap |
+| iframe scenario normalization | Partial | Partial | Partial | Partial |
+| WebAuthn / passkey login automation | Gap | Gap | Gap | Gap |
 
----
+## Repo Hygiene / Maturity Signals
 
-## Database / Storage Backends
-
-| Backend | PySpider | GoSpider | RustSpider | JavaSpider |
+| Signal | PySpider | GoSpider | RustSpider | JavaSpider |
 | --- | --- | --- | --- | --- |
-| SQLite | ✅ | ✅ | ✅ | ✅ |
-| PostgreSQL | ✅ | ✅ process adapter | ✅ driver + process adapter | ✅ |
-| MySQL | ✅ | ✅ process adapter | ✅ driver + process adapter | ✅ |
-| MongoDB | ✅ | ✅ process adapter | ✅ driver + process adapter | ✅ |
-| Dataset mirror to DB | ✅ | ✅ | ✅ | ✅ |
+| Contract/scorecard-heavy testing | C | C | I | C |
+| Compatibility fallback layers in runtime code | I | I | I | I |
+| Known stale or misleading repo files | C | B | C | C |
+| Failure semantics consistent across major modules | C | C | C | B |
 
----
+Notes:
 
-## Browser Automation
+- GoSpider currently has the clearest repo-hygiene issue because `monitor.go.corrupted` and `monitor.go.original` remain in-tree.
+- JavaSpider has a notable consistency issue in `CaptchaSolver`, where failure paths mix `null` returns and exceptions.
 
-| Feature | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| Playwright (native) | ✅ | ✅ | ✅ node+playwright process | ✅ Java helper |
-| Selenium / WebDriver | ✅ | ✅ native client | ✅ fantoccini facade | ✅ native |
-| Browser pool | ✅ | ✅ | ✅ | ✅ |
-| Session / cookie management | ✅ | ✅ | ✅ | ✅ |
-| Browser artifact capture | ✅ | ✅ | ✅ | ✅ |
+## Best-Fit Matrix
 
----
-
-## Node-Reverse / JS Encryption
-
-| Feature | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| Node-reverse client | ✅ | ✅ | ✅ | ✅ |
-| Encrypted site crawler | ✅ | ✅ | ✅ | ✅ |
-| JS signature execution | ✅ | ✅ | ✅ | ✅ |
-
----
-
-## Observability and Audit
-
-| Feature | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| Audit trail (in-memory) | ✅ | ✅ | ✅ | ✅ |
-| Audit trail (file / JSONL) | ✅ | ✅ | ✅ | ✅ |
-| Composite audit trail | ✅ | ✅ | ✅ | ✅ |
-| Monitoring / metrics | ✅ | ✅ | ✅ | ✅ |
-| Preflight validation | ✅ | ✅ | ✅ | ✅ |
-| Checkpoint / resume | ✅ | ✅ | ✅ | ✅ |
-| Incremental crawl | ✅ | ✅ | ✅ | ✅ |
-
----
-
-## Additional Capabilities
-
-| Feature | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| Graph crawler | ✅ | ✅ | ✅ | — |
-| Research / async runtime | ✅ | ✅ | ✅ | ✅ |
-| Notebook output | ✅ | ✅ | ✅ | — |
-| curl-to-code converter | ✅ | ✅ | ✅ | ✅ |
-| Robots.txt compliance | ✅ | ✅ | ✅ | ✅ |
-| Rate limiting / circuit breaker | ✅ | ✅ | ✅ | ✅ |
-| Proxy pool | ✅ | ✅ | ✅ | ✅ |
-| Workflow engine | ✅ | ✅ | ✅ | ✅ |
-| Event bus | ✅ | ✅ | ✅ | ✅ |
-| Feature gates | ✅ | ✅ | ✅ | ✅ |
-| Web UI / console | ✅ | ✅ | ✅ | ✅ |
-| REST API server | ✅ | ✅ | ✅ | ✅ |
-| Docker support | ✅ | ✅ | ✅ | ✅ |
-
----
-
-## Quick Selection Guide
-
-| Use case | Recommended runtime |
+| Need | Recommended Runtime |
 | --- | --- |
-| Rapid prototyping and AI-assisted extraction | **PySpider** |
-| High-concurrency binary deployment | **GoSpider** |
-| Performance-sensitive production with strict boundaries | **RustSpider** |
-| Enterprise Java / Maven / browser-heavy automation | **JavaSpider** |
-| Distributed worker cluster | **GoSpider** or **RustSpider** |
-| LLM-powered structured extraction | **PySpider** |
-| Encrypted site / JS reverse engineering | any (all four support node-reverse) |
-| Media download (YouTube, Bilibili, etc.) | any (all four have full media coverage) |
+| AI-assisted project generation and Python-side flexibility | PySpider |
+| Binary deployment, concurrency, and artifact-rich operations | GoSpider |
+| Feature-gated production delivery and typed control surfaces | RustSpider |
+| Selenium workflows, audit-conscious JVM delivery, enterprise Java integration | JavaSpider |
+
+## Verification Snapshot
+
+| Runtime | Checked command(s) | Result |
+| --- | --- | --- |
+| PySpider | `pytest -q tests/test_smoke.py tests/test_dependencies.py tests/test_cli.py -x` | Pass |
+| GoSpider | `go test ./...` | Pass |
+| RustSpider | `cargo test --quiet --lib`; `cargo test --quiet --test readme_scorecard`; `cargo test --quiet --test preflight_scorecard` | Pass on targeted slices |
+| JavaSpider | `mvn -q -DskipTests package`; `mvn -q "-Dtest=SpiderRuntimeContractsTest,HtmlParserXPathContractTest,ReadmeContractTest" test` | Pass |
+
+For detailed caveats, use the docs together:
+
+- [`FRAMEWORK_CAPABILITIES.md`](FRAMEWORK_CAPABILITIES.md)
+- [`../HIDDEN_CAPABILITIES_REPORT.md`](../HIDDEN_CAPABILITIES_REPORT.md)
+- [`../FRAMEWORK_DEFECT_AUDIT.md`](../FRAMEWORK_DEFECT_AUDIT.md)

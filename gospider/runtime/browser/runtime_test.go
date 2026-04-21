@@ -240,3 +240,49 @@ func TestBrowserRuntimeSupportsMockBrowserReplay(t *testing.T) {
 		t.Fatal("expected har artifact ref")
 	}
 }
+
+func TestBrowserRuntimeMockPersistsRealtimeCapture(t *testing.T) {
+	tmpdir := t.TempDir()
+	runtime := NewRuntime(nil)
+	job := core.JobSpec{
+		Name:    "browser-realtime",
+		Runtime: core.RuntimeBrowser,
+		Target:  core.TargetSpec{URL: "https://example.com"},
+		Output:  core.OutputSpec{Directory: tmpdir},
+		Browser: core.BrowserSpec{
+			Actions: []core.ActionSpec{
+				{Type: "capture_realtime"},
+				{Type: "shadow_text", Selector: "app-shell >>> user-card"},
+			},
+			Capture: []string{"realtime"},
+		},
+		Metadata: map[string]interface{}{
+			"mock_browser": map[string]interface{}{
+				"html_content": "<html><body>stream</body></html>",
+				"realtime_entries": []map[string]interface{}{
+					{"protocol": "websocket", "direction": "received", "data": "tick"},
+				},
+			},
+		},
+	}
+
+	result, err := runtime.Execute(context.Background(), job)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ref, ok := result.ArtifactRefs["realtime"]
+	if !ok {
+		t.Fatal("expected realtime artifact ref")
+	}
+	data, err := os.ReadFile(ref.Path)
+	if err != nil {
+		t.Fatalf("read realtime artifact: %v", err)
+	}
+	if !strings.Contains(string(data), "tick") {
+		t.Fatalf("expected realtime payload, got %s", string(data))
+	}
+	actions, ok := result.Metadata["browser_actions"].([]string)
+	if !ok || len(actions) != 2 {
+		t.Fatalf("expected browser action log, got %#v", result.Metadata["browser_actions"])
+	}
+}

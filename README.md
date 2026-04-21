@@ -30,6 +30,23 @@ SuperSpider is a **multi-language web crawler framework** that ships four produc
 
 ---
 
+## 🧩 Companion Runtime
+
+In addition to the four SuperSpider runtimes, this workspace also maintains a **Node.js companion runtime** named **OmniCrawl** as a sibling project.
+
+OmniCrawl is not counted as one of the four SuperSpider language runtimes, but it is relevant when documenting the overall crawler surface because it already implements:
+
+- programmatic presets for `Http / Cheerio / Browser / Hybrid / JSDOM / ApiJson / Feed / Sitemap / GraphQL / WebSocket / Media`
+- dashboard, `/capabilities`, `/reverse/capabilities`, integration probe, replay workflow, login recorder, workflow repair
+- reverse-lab, browser-debug artifacts, replay recipe, baseline/trend diagnostics, change tracking
+- dataset / key-value runtime stores and SQLite / distributed control-plane surfaces
+
+The important boundary is the same one we apply to the four SuperSpider runtimes:
+
+- advanced reverse / challenge / lab surfaces are powerful, but should be documented as layered tooling rather than zero-config stable product features
+
+---
+
 ## 🕷️ What Can SuperSpider Do?
 
 ### 🌐 Web Crawling
@@ -41,6 +58,16 @@ SuperSpider is a **multi-language web crawler framework** that ships four produc
 - Robots.txt compliance
 - Session and cookie management
 - Checkpoint and incremental crawl (resume interrupted crawls)
+- **Priority-based crawling** — request priority queue with SQLite persistence
+- **Multi-threaded execution** — thread pool, concurrent executor, async executor, rate-limited executor
+- **Incremental crawling with ETag/Last-Modified** — content hash comparison, min-change interval enforcement, delta token generation
+- **Cookie management** — per-domain cookie jar with SameSite, Secure, HttpOnly, auto-expiry, Netscape export/import
+- **Persistent priority queue** — SQLite-backed with URL deduplication, priority sorting, visited tracking
+- **Worker pool** — configurable thread pool with shutdown, wait, and statistics
+- **Concurrent executor** — semaphore-controlled ThreadPoolExecutor with execute-many
+- **Async executor** — asyncio.Semaphore-controlled async task execution
+- **Rate-limited executor** — token bucket algorithm with wait and execute
+- **Priority task queue** — heapq-based priority queue for task scheduling
 
 ### 🎬 Media Download — 10 Platforms
 All four runtimes can download from:
@@ -67,6 +94,10 @@ All four runtimes can download from:
 - **Schema-driven output** — strongly typed structured extraction (PySpider only)
 - **Few-shot examples** — guide the LLM with examples
 - **XPath suggestion studio** — AI-suggested XPath selectors
+- **Keyword extraction** — AI-powered keyword extraction from page content
+- **Content classification** — AI categorization into predefined categories
+- **Translation** — AI-powered content translation to target languages
+- **Q&A over content** — ask questions about crawled page content with context
 
 ### 🛡️ Anti-Bot
 - TLS fingerprint rotation (JA3/JA4 mimicry)
@@ -74,7 +105,24 @@ All four runtimes can download from:
 - WAF bypass techniques
 - Night mode (reduced crawl rate during off-hours)
 - **Captcha solving**: 2captcha, Anti-Captcha, reCAPTCHA v2/v3, hCaptcha, image captcha
-- SSRF protection (blocks internal network access)
+- **Cloudflare bypass**: challenge solving, stealth headers, Sec-CH-UA rotation
+- **Akamai bypass**: specialized header profiles for Akamai-protected sites
+- **Browser fingerprint management**: Canvas, WebGL, font fingerprint generation with session persistence
+- **Smart delay strategy**: adaptive frequency-based delay adjustment with human-like jitter
+- **Cookie management**: per-domain cookie jar with automatic rotation
+- SSRF protection (blocks internal network access, cloud metadata endpoints)
+- **Input sanitization**: XSS prevention, HTML cleaning, dangerous character filtering
+- **Block detection**: keyword-based block/ban detection with automatic proxy switching
+
+### 🔒 Security & Reliability
+- **SSRF protection**: blocks requests to private IPs, cloud metadata (169.254.169.254), loopback, multicast
+- **URL validation**: protocol whitelisting, domain allowlist/blocklist, port restrictions, length limits
+- **Input sanitization**: script tag removal, event handler stripping, HTML entity decoding, filename sanitization
+- **Circuit breaker**: configurable failure threshold, half-open state recovery, prevents cascade failures
+- **Retry strategies**: fixed, linear, exponential, exponential+jitter backoff with configurable status code handling
+- **Failure classification**: automatic categorization (blocked, throttled, anti_bot, timeout, server, proxy)
+- **Request fingerprinting**: SHA-256 fingerprints based on URL + method + headers + cookies + body
+- **Content deduplication**: SHA-256 content hashing to avoid re-processing identical pages
 
 ### 🔐 JS Encryption / Node-Reverse
 Many modern sites protect their APIs with JavaScript-generated signatures. SuperSpider handles this via a Node.js bridge:
@@ -90,6 +138,13 @@ Many modern sites protect their APIs with JavaScript-generated signatures. Super
 - Distributed workers with state machine
 - Node discovery: environment variables, file, DNS-SRV, Consul, etcd
 - Dataset mirror to database backends
+- **Autoscaled frontier**: auto-adjusts concurrency based on latency and failure rate
+- **Session pool**: reusable session slots with fingerprint profile + proxy affinity
+- **Dead-letter queue**: failed requests after max retries are quarantined for inspection
+- **Lease-based request dispatching**: TTL-gated leases with heartbeat renewal and domain inflight limits
+- **Checkpoint persistence**: SQLite-backed checkpoint manager with auto-save intervals
+- **Proxy scoring**: success/failure ratio-based proxy selection with automatic degradation
+- **Middleware chain**: composable request/response processing pipeline
 
 ### 🗄️ Storage Backends
 | Backend | PySpider | GoSpider | RustSpider | JavaSpider |
@@ -106,6 +161,14 @@ Many modern sites protect their APIs with JavaScript-generated signatures. Super
 - Preflight validation (check config before crawling)
 - Checkpoint and resume (SQLite-backed)
 - Incremental crawl (only crawl new/changed pages)
+- **Structured event logging**: trace-id correlated events with Prometheus text and OpenTelemetry export
+- **Observability collector**: request latency tracking, failure classification, outcome histograms
+- **Artifact store**: filesystem-based artifact storage for screenshots, traces, JSON snapshots, HTML
+- **Graph artifact persistence**: per-page DOM graph (nodes, edges, stats) saved automatically during crawl
+- **Frontier state snapshot**: pending, known, leases, domain-inflight, dead-letters all exportable as JSON
+- **Dashboard API**: `/api/v1/monitors/<name>/dashboard` provides real-time crawl stats, performance metrics, resource usage
+- **REST API server**: full spider lifecycle management via HTTP (start/stop/stats/queues/tasks)
+- **API authentication**: Bearer token / X-API-Token support for production API security
 
 ---
 
@@ -116,10 +179,26 @@ Many modern sites protect their APIs with JavaScript-generated signatures. Super
 ### Unique Capabilities
 - **Smart parser** — automatically detects page type (article, product, listing, etc.) and extracts relevant fields without writing selectors
 - **Schema-driven LLM extraction** — define a JSON schema, get structured output from any page
-- **Graph crawler** — crawl relationship graphs, extract nodes and edges
+- **Graph crawler** — crawl relationship graphs, extract nodes and edges; REST API `/api/v1/graph/extract`
 - **Research runtime** — Jupyter-style notebook output for data analysis
 - **Plugin injection** — extend any part of the pipeline with Python plugins
 - **Async runtime** — full async/await support with aiohttp
+- **REST API server** — Flask-based server with spider start/stop, task management, queue control, monitoring dashboards, and metrics
+- **Advanced anti-bot** — browser fingerprint generation (Canvas, WebGL, fonts), TLS profile management, captcha detection/handling, human behavior simulation (mouse trajectories, scroll, reading time), smart delay strategy
+- **Cloudflare & Akamai bypass** — specialized header profiles for major WAFs
+- **Security suite** — SSRF protection (blocks private IPs, cloud metadata), URL validation (protocol/domain/port whitelisting), input sanitization (XSS prevention, HTML cleaning)
+- **Circuit breaker** — configurable failure threshold with half-open recovery, prevents cascade failures
+- **Retry strategies** — fixed, linear, exponential, exponential+jitter backoff with async support
+- **Failure classification** — automatic categorization: blocked, throttled, anti_bot, timeout, server, proxy, runtime
+- **Autoscaled frontier** — auto-adjusts concurrency based on latency and failure rate with dead-letter queue
+- **Session pool** — reusable session slots with fingerprint profile + proxy affinity, max 32 sessions
+- **Middleware chain** — composable request/response processing pipeline
+- **Request fingerprinting** — SHA-256 fingerprints from URL + method + headers + cookies + body + meta
+- **Artifact store** — filesystem storage for screenshots, traces, JSON, HTML with metadata
+- **Prometheus + OTel export** — metrics export in Prometheus text format and OpenTelemetry payload
+- **Robots.txt compliance** — crawl-delay respect and disallow enforcement
+- **Curl converter** — convert curl commands to spider requests
+- **Production config** — multi-environment configuration with validation
 
 ### Install
 ```bash
@@ -146,6 +225,21 @@ bash scripts/macos/install-pyspider.sh
 - **Dedicated platform extractors** — separate packages for Bilibili, IQIYI, Tencent, Youku, Douyin
 - **Process + driver DB adapters** — flexible database backend selection
 - **Audit trail module** — structured audit logging with composite writers
+- **Browser automation** — Chrome browser pool with lifecycle management, auto-restart on failure, graceful shutdown
+- **WAF bypass suite** — Cloudflare, Akamai, Alibaba Cloud, Tencent Cloud specialized bypass strategies
+- **Anti-detection** — stealth mode, WebDriver property removal, Chrome automation flag masking
+- **TLS fingerprint rotation** — JA3/JA4 mimicry profiles for different browsers
+- **Behavior simulation** — mouse movement, reading pace, scroll patterns
+- **DASH media downloader** — HTTP range-based segment download with parallel workers, FFmpeg merge, retry logic
+- **Distributed node reverse** — Node.js bridge with managed subprocess lifecycle
+- **Task engine** — task creation, execution, status tracking, result storage
+- **Scheduler** — Cron-based scheduling, one-time tasks, interval tasks, concurrent management
+- **Event system** — structured events, priority queue, dispatcher, subscriber model
+- **Monitor suite** — performance monitoring, resource tracking, health checks, alerting
+- **Extractor framework** — XPath, CSS selector, regex, JSONPath extraction with validation
+- **Proxy rotation** — proxy pool with health checking, automatic failover
+- **Rate limiting** — token bucket, sliding window, adaptive rate control
+- **Config-driven crawling** — JSON-based spider configuration, template-driven execution
 
 ### Install
 ```bash
@@ -173,6 +267,18 @@ bash scripts/macos/install-gospider.sh
 - **Driver-level DB adapters** — native Rust drivers for Postgres, MySQL, MongoDB
 - **Benchmark suite** — built-in performance benchmarks
 - **Preflight validation** — validate all config and dependencies before starting
+- **Encrypted site crawler** — HMAC-SHA256, AES-encrypted params, timestamp token generation
+- **Media downloader** — HLS/DASH with FFmpeg integration, segment tracking, progress reporting
+- **Async runtime** — tokio-based async execution with cancellation support
+- **Distributed worker** — Redis-based task distribution with worker heartbeat
+- **Proxy rotation** — proxy pool with success rate scoring, automatic failover
+- **Task scheduler** — cron-based scheduling with execution history
+- **Performance monitor** — resource usage tracking, latency histograms, throughput metrics
+- **Transformer pipeline** — composable data transformation stages
+- **Node reverse** — Node.js subprocess management for JS signature execution
+- **FFI bindings** — C-compatible interface for embedding in other languages
+- **API server** — HTTP API for spider control and status querying
+- **Artifact storage** — file-based artifact persistence with metadata
 
 ### Install
 ```bash
@@ -200,6 +306,15 @@ bash scripts/macos/install-rustspider.sh
 - **Async spider runtime** — `AsyncSpiderRuntime` for non-blocking execution
 - **Workflow replay** — record and replay browser workflows
 - **Generic-parser fallback** — media parsing never fails silently; falls back to generic extraction
+- **Adaptive rate limiter** — AI-guided rate control with latency-based backpressure
+- **Batch media downloader** — concurrent download with progress tracking, retry, merge
+- **User-agent rotator** — browser-specific UA pools with header consistency
+- **Connector framework** — pluggable database connectors (SQLite, PostgreSQL, MySQL, MongoDB)
+- **CLI interface** — command-line spider execution with config loading
+- **Bridge module** — cross-runtime communication bridge
+- **Session management** — cookie jar, session persistence across requests
+- **Media pipeline** — YouTube, Bilibili, IQIYI, Tencent, Youku, Douyin with format detection
+- **Workflow engine** — DAG-based workflow execution with conditional branching
 
 ### Maven Profiles
 ```bash
@@ -256,6 +371,20 @@ bash scripts/macos/install-javaspider.sh
 | Crawl JS-encrypted sites | any (all four support node-reverse) |
 | Distributed worker cluster | 🐹 GoSpider or 🦀 RustSpider |
 | Rapid prototyping and research | 🐍 PySpider |
+| REST API to control crawlers | 🐍 PySpider (Flask) or ☕ JavaSpider |
+| Node.js package + dashboard + replay/control plane | 🧩 OmniCrawl |
+| Browser fingerprint management | 🐍 PySpider (Canvas, WebGL, fonts) |
+| Circuit breaker + retry strategies | 🐍 PySpider (4 strategies + circuit breaker) |
+| Cloudflare / Akamai bypass | 🐍 PySpider or 🐹 GoSpider |
+| SSRF protection + input sanitization | 🐍 PySpider |
+| Workflow automation (DAG) | ☕ JavaSpider |
+| Feature-gated compilation | 🦀 RustSpider |
+| Single binary deployment | 🐹 GoSpider |
+| Prometheus / OTel metrics export | 🐍 PySpider |
+| Graph crawling + relationship extraction | 🐍 PySpider |
+| Session pool management | 🐍 PySpider (32 sessions with fingerprint affinity) |
+| Autoscaled concurrency | 🐍 PySpider (frontier-based auto-scaling) |
+| Feed / Sitemap / GraphQL / WebSocket preset crawling in Node.js | 🧩 OmniCrawl |
 
 ---
 
@@ -265,15 +394,37 @@ bash scripts/macos/install-javaspider.sh
 | --- | --- |
 | [`docs/FRAMEWORK_CAPABILITIES.md`](docs/FRAMEWORK_CAPABILITIES.md) | Detailed per-framework capability descriptions |
 | [`docs/FRAMEWORK_CAPABILITY_MATRIX.md`](docs/FRAMEWORK_CAPABILITY_MATRIX.md) | Full capability comparison tables |
+| [`docs/CRAWL_SCENARIO_GAP_MATRIX.md`](docs/CRAWL_SCENARIO_GAP_MATRIX.md) | Real crawling scenarios that are still partial or missing across the four runtimes |
+| [`docs/LATEST_SCENARIO_CASES.md`](docs/LATEST_SCENARIO_CASES.md) | Latest practical scenario playbooks and recommended runtime choices |
 | [`docs/SUPERSPIDER_INSTALLS.md`](docs/SUPERSPIDER_INSTALLS.md) | Install instructions for all three OS |
-| [`LATEST_FRAMEWORK_COMPLETION_REPORT.md`](LATEST_FRAMEWORK_COMPLETION_REPORT.md) | Latest completion status and verification evidence |
+| [`HIDDEN_CAPABILITIES_REPORT.md`](HIDDEN_CAPABILITIES_REPORT.md) | Hidden capabilities, real boundaries, and source-verified caveats |
+| [`FRAMEWORK_DEFECT_AUDIT.md`](FRAMEWORK_DEFECT_AUDIT.md) | Current defect audit and implementation gaps across the four runtimes |
 | [`MEDIA_PARITY_REPORT.md`](MEDIA_PARITY_REPORT.md) | Media platform coverage evidence |
 | [`ADVANCED_USAGE_GUIDE.md`](ADVANCED_USAGE_GUIDE.md) | Advanced crawling scenarios |
 | [`ENCRYPTED_SITE_CRAWLING_GUIDE.md`](ENCRYPTED_SITE_CRAWLING_GUIDE.md) | JS-encrypted site crawling |
 | [`NODE_REVERSE_INTEGRATION_GUIDE.md`](NODE_REVERSE_INTEGRATION_GUIDE.md) | Node.js reverse engineering bridge |
 | [`ULTIMATE_ENHANCEMENT_GUIDE.md`](ULTIMATE_ENHANCEMENT_GUIDE.md) | Full capability enhancement reference |
+| [`PUBLISH_RELEASE_STATUS.md`](PUBLISH_RELEASE_STATUS.md) | Publish-time verification status and release notes |
 | [`CHANGELOG.md`](CHANGELOG.md) | Version history |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution guide |
+
+---
+
+## ✅ Verification Snapshot
+
+Checked against the current workspace on **2026-04-21**:
+
+| Runtime | Verified command(s) | Current result |
+| --- | --- | --- |
+| 🐍 PySpider | `pytest -q tests/test_smoke.py tests/test_dependencies.py tests/test_cli.py -x` | Pass |
+| 🐹 GoSpider | `go test ./...` | Pass |
+| 🦀 RustSpider | `cargo test --quiet --lib`, `cargo test --quiet --test readme_scorecard`, `cargo test --quiet --test preflight_scorecard` | Pass on checked slices; full suite is heavy and should be run in CI with a longer timeout window |
+| ☕ JavaSpider | `mvn -q -DskipTests package`, `mvn -q "-Dtest=SpiderRuntimeContractsTest,HtmlParserXPathContractTest,ReadmeContractTest" test` | Pass |
+
+Notes:
+
+- Rust had a real XPath-helper failure and an Anthropic mock-server race during this review; both were fixed in the current workspace.
+- PySpider had a real `scrapy run --project` export-path regression and a dependency-list drift (`requirements.txt` missing parser deps); both were fixed in the current workspace.
 
 ---
 

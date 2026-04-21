@@ -30,3 +30,22 @@ fn browser_compatibility_reports_native_webdriver_surface() {
     assert_eq!(selenium["mode"], "native");
     assert_eq!(selenium["adapter_engine"], "fantoccini-webdriver");
 }
+
+#[test]
+fn browser_compatibility_reports_upload_and_iframe_support() {
+    let payload = browser_compatibility_matrix();
+
+    assert_eq!(payload["interaction"]["file_upload"], true);
+    assert_eq!(
+        payload["interaction"]["iframe_switching"],
+        "webdriver-frame-switch"
+    );
+    assert_eq!(
+        payload["interaction"]["shadow_dom"],
+        "open-shadow-root-helper"
+    );
+    assert_eq!(
+        payload["interaction"]["realtime_stream_capture"],
+        "in-page-websocket-eventsource-hook"
+    );
+}

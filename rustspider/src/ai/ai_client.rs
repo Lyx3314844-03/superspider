@@ -274,9 +274,40 @@ mod tests {
             while !flag.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
-                        let mut buffer = [0_u8; 8192];
-                        let size = stream.read(&mut buffer).unwrap_or(0);
-                        let request = String::from_utf8_lossy(&buffer[..size]).to_string();
+                        let mut request_bytes = Vec::new();
+                        let mut buffer = [0_u8; 4096];
+                        let mut expected_total = None;
+
+                        loop {
+                            let size = stream.read(&mut buffer).unwrap_or(0);
+                            if size == 0 {
+                                break;
+                            }
+                            request_bytes.extend_from_slice(&buffer[..size]);
+
+                            if expected_total.is_none() {
+                                let request = String::from_utf8_lossy(&request_bytes);
+                                if let Some(header_end) = request.find("\r\n\r\n") {
+                                    let content_length = request
+                                        .lines()
+                                        .find_map(|line| {
+                                            line.strip_prefix("Content-Length:")
+                                                .or_else(|| line.strip_prefix("content-length:"))
+                                                .map(|value| value.trim().parse::<usize>().unwrap_or(0))
+                                        })
+                                        .unwrap_or(0);
+                                    expected_total = Some(header_end + 4 + content_length);
+                                }
+                            }
+
+                            if let Some(expected) = expected_total {
+                                if request_bytes.len() >= expected {
+                                    break;
+                                }
+                            }
+                        }
+
+                        let request = String::from_utf8_lossy(&request_bytes).to_string();
                         let body = if request.starts_with("POST /messages") {
                             r#"{"content":[{"type":"text","text":"anthropic-response"}]}"#
                         } else {

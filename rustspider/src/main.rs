@@ -411,6 +411,8 @@ struct RuntimeBrowserAction {
     timeout_ms: Option<u64>,
     #[serde(default)]
     save_as: Option<String>,
+    #[serde(default)]
+    extra: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -3727,7 +3729,10 @@ fn combined_warnings(job: &RuntimeJobSpec, browser_runtime_active: bool) -> serd
             .iter()
             .filter(|item| {
                 if browser_runtime_active {
-                    !matches!(item.as_str(), "html" | "dom" | "screenshot")
+                    !matches!(
+                        item.as_str(),
+                        "html" | "dom" | "screenshot" | "realtime" | "websocket" | "sse"
+                    )
                 } else {
                     !matches!(item.as_str(), "html" | "dom")
                 }
@@ -4085,6 +4090,67 @@ async fn apply_browser_cookies(
 }
 
 #[cfg(feature = "browser")]
+fn action_extra_string(action: &RuntimeBrowserAction, key: &str) -> Option<String> {
+    action
+        .extra
+        .as_ref()
+        .and_then(|extra| extra.get(key))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+#[cfg(feature = "browser")]
+fn action_shadow_path(action: &RuntimeBrowserAction) -> Result<Vec<String>, String> {
+    if let Some(extra) = action
+        .extra
+        .as_ref()
+        .and_then(|extra| extra.get("shadow_path"))
+    {
+        if let Some(path) = extra.as_array() {
+            let selectors: Vec<String> = path
+                .iter()
+                .filter_map(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect();
+            if selectors.len() == path.len() && !selectors.is_empty() {
+                return Ok(selectors);
+            }
+            return Err("extra.shadow_path must be a non-empty string array".to_string());
+        }
+        if let Some(path) = extra.as_str() {
+            let selectors = split_shadow_path(path);
+            if !selectors.is_empty() {
+                return Ok(selectors);
+            }
+        }
+        return Err("extra.shadow_path must be a string or string array".to_string());
+    }
+
+    let selector = action
+        .selector
+        .as_deref()
+        .ok_or_else(|| "shadow action requires selector or extra.shadow_path".to_string())?;
+    let selectors = split_shadow_path(selector);
+    if selectors.is_empty() {
+        return Err("shadow action selector path cannot be empty".to_string());
+    }
+    Ok(selectors)
+}
+
+#[cfg(feature = "browser")]
+fn split_shadow_path(path: &str) -> Vec<String> {
+    path.split(">>>")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+#[cfg(feature = "browser")]
 async fn run_browser_actions(
     browser: &rustspider::browser::BrowserManager,
     job: &RuntimeJobSpec,
@@ -4135,10 +4201,24 @@ async fn run_browser_actions(
                     .selector
                     .as_deref()
                     .ok_or_else(|| "browser click requires selector".to_string())?;
-                browser
+                let frame_selector = action_extra_string(action, "frame_selector");
+                if let Some(frame) = frame_selector.as_deref() {
+                    browser
+                        .enter_frame(frame)
+                        .await
+                        .map_err(|err| format!("browser enter frame failed: {err}"))?;
+                }
+                let click_result = browser
                     .click(selector)
                     .await
-                    .map_err(|err| format!("browser click failed: {err}"))?;
+                    .map_err(|err| format!("browser click failed: {err}"));
+                if frame_selector.is_some() {
+                    browser
+                        .enter_parent_frame()
+                        .await
+                        .map_err(|err| format!("browser leave frame failed: {err}"))?;
+                }
+                click_result?;
             }
             "type" => {
                 let selector = action
@@ -4146,10 +4226,68 @@ async fn run_browser_actions(
                     .as_deref()
                     .ok_or_else(|| "browser type requires selector".to_string())?;
                 let value = action.value.as_deref().unwrap_or("");
-                browser
+                let frame_selector = action_extra_string(action, "frame_selector");
+                if let Some(frame) = frame_selector.as_deref() {
+                    browser
+                        .enter_frame(frame)
+                        .await
+                        .map_err(|err| format!("browser enter frame failed: {err}"))?;
+                }
+                let type_result = browser
                     .fill_clear(selector, value)
                     .await
-                    .map_err(|err| format!("browser type failed: {err}"))?;
+                    .map_err(|err| format!("browser type failed: {err}"));
+                if frame_selector.is_some() {
+                    browser
+                        .enter_parent_frame()
+                        .await
+                        .map_err(|err| format!("browser leave frame failed: {err}"))?;
+                }
+                type_result?;
+            }
+            "upload" => {
+                let selector = action
+                    .selector
+                    .as_deref()
+                    .ok_or_else(|| "browser upload requires selector".to_string())?;
+                let value = action
+                    .value
+                    .as_deref()
+                    .ok_or_else(|| "browser upload requires value file path".to_string())?;
+                let frame_selector = action_extra_string(action, "frame_selector");
+                if let Some(frame) = frame_selector.as_deref() {
+                    browser
+                        .enter_frame(frame)
+                        .await
+                        .map_err(|err| format!("browser enter frame failed: {err}"))?;
+                }
+                let upload_result = browser
+                    .upload_file(selector, value)
+                    .await
+                    .map_err(|err| format!("browser upload failed: {err}"));
+                if frame_selector.is_some() {
+                    browser
+                        .enter_parent_frame()
+                        .await
+                        .map_err(|err| format!("browser leave frame failed: {err}"))?;
+                }
+                upload_result?;
+            }
+            "enter_frame" => {
+                let selector = action
+                    .selector
+                    .as_deref()
+                    .ok_or_else(|| "browser enter_frame requires selector".to_string())?;
+                browser
+                    .enter_frame(selector)
+                    .await
+                    .map_err(|err| format!("browser enter_frame failed: {err}"))?;
+            }
+            "enter_parent_frame" | "leave_frame" => {
+                browser
+                    .enter_parent_frame()
+                    .await
+                    .map_err(|err| format!("browser enter_parent_frame failed: {err}"))?;
             }
             "select" => {
                 let selector = action
@@ -4199,6 +4337,47 @@ async fn run_browser_actions(
                 if let Some(field) = action.save_as.as_deref() {
                     extracted.insert(field.to_string(), value);
                 }
+            }
+            "shadow_text" | "shadow_html" | "shadow_extract" => {
+                let selector_path = action_shadow_path(action)?;
+                let selector_refs: Vec<&str> = selector_path.iter().map(String::as_str).collect();
+                let expression = action.value.as_deref().unwrap_or_else(|| {
+                    if action.action_type == "shadow_html" {
+                        "target.outerHTML || target.textContent || ''"
+                    } else {
+                        "target.textContent || ''"
+                    }
+                });
+                let value = browser
+                    .execute_shadow_dom(&selector_refs, expression)
+                    .await
+                    .map_err(|err| format!("browser shadow dom action failed: {err}"))?;
+                if let Some(field) = action.save_as.as_deref() {
+                    extracted.insert(field.to_string(), value);
+                }
+            }
+            "install_realtime_capture" => {
+                browser
+                    .install_realtime_capture()
+                    .await
+                    .map_err(|err| format!("browser realtime capture install failed: {err}"))?;
+            }
+            "listen_realtime" | "capture_realtime" => {
+                if let Some(delay) = action.timeout_ms {
+                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                }
+                let entries = browser
+                    .get_realtime_messages()
+                    .await
+                    .map_err(|err| format!("browser realtime capture failed: {err}"))?;
+                extracted.insert(
+                    action
+                        .save_as
+                        .as_deref()
+                        .unwrap_or("realtime_messages")
+                        .to_string(),
+                    serde_json::Value::Array(entries),
+                );
             }
             "listen_network" => {
                 browser
@@ -4415,6 +4594,13 @@ async fn execute_browser_job(
                             .await
                             .map_err(|err| format!("browser capture screenshot failed: {err}"))?;
                         artifacts.push(path.to_string_lossy().to_string());
+                    }
+                    "realtime" | "websocket" | "sse" => {
+                        let entries = browser
+                            .get_realtime_messages()
+                            .await
+                            .map_err(|err| format!("browser realtime capture failed: {err}"))?;
+                        extracted.insert(capture.to_string(), serde_json::Value::Array(entries));
                     }
                     "console" | "har" => warnings.push(format!(
                         "unsupported browser.capture value in rust browser runtime: {capture}"

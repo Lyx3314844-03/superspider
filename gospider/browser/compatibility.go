@@ -23,6 +23,7 @@ type BrowserCompatibilityMatrix struct {
 	BridgeStyle string                           `json:"bridge_style"`
 	Surfaces    map[string]BrowserAdapterSupport `json:"surfaces"`
 	Artifacts   map[string]bool                  `json:"artifacts"`
+	Interaction map[string]string                `json:"interaction,omitempty"`
 	Constraints []string                         `json:"constraints,omitempty"`
 }
 
@@ -108,6 +109,12 @@ func BrowserCompatibilitySupport() BrowserCompatibilityMatrix {
 			"har":        true,
 			"trace":      true,
 			"pdf":        false,
+		},
+		Interaction: map[string]string{
+			"file_upload":             "native-upload-input",
+			"iframe_support":          "same-origin-helpers",
+			"shadow_dom":              "open-shadow-root-helpers",
+			"realtime_stream_capture": "cdp-websocket-sse-events",
 		},
 		Constraints: []string{
 			"playwright remains bridged to the chromedp runtime; selenium/webdriver is now available as a native remote protocol surface",

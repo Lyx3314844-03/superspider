@@ -3707,16 +3707,22 @@ def cmd_scrapy(args: argparse.Namespace) -> int:
             and default_output.endswith("items.json")
         ):
             default_output = f"artifacts/exports/{selected_spider}.json"
-        output_path = args.output or str(project_root / default_output)
+        output_path = (
+            Path(args.output)
+            if args.output
+            else Path(project_root / default_output)
+        )
+        if not output_path.is_absolute():
+            output_path = project_root / output_path
     else:
         plugins = []
         url = args.url
         url_source = "cli"
         html_file = args.html_file
-        output_path = args.output
+        output_path = Path(args.output or "artifacts/exports/items.json")
 
     from pyspider.core.models import Page, Request, Response
-    from pyspider.spider.spider import CrawlerProcess, FeedExporter, Item
+    from pyspider.spider.spider import CrawlerProcess, FeedExporter, Item, _item_to_dict
 
     effective_settings = merge_contract_config(
         project_cfg if command == "run" else default_contract_config(),
@@ -3838,9 +3844,20 @@ def cmd_scrapy(args: argparse.Namespace) -> int:
             plugins=plugins,
         ).start()
 
-    exporter = FeedExporter.json(output_path)
+    output_path = Path(output_path)
+    exporter = FeedExporter.json(str(output_path))
     exporter.export_items(items)
-    output = exporter.close()
+    output = Path(exporter.close())
+    if not output.exists():
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(
+                [_item_to_dict(item) for item in items],
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
     reverse_summary = None
     if command == "run":
         reverse_base_url = str(

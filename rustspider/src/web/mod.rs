@@ -1045,10 +1045,11 @@ async fn run_task(
     target_url: String,
     mut cancel_rx: watch::Receiver<bool>,
 ) {
+    let started = Utc::now();
     let safe_url = match crate::security::validate_safe_url(&target_url) {
         Ok(value) => value,
         Err(err) => {
-            finish_failed_task(manager, &task_id, &target_url, started, &err);
+            finish_failed_task(manager, &task_id, &target_url, started, err.to_string());
             return;
         }
     };
@@ -1057,7 +1058,6 @@ async fn run_task(
         return;
     }
     manager.add_log(&task_id, "info", format!("fetching {}", target_url));
-    let started = Utc::now();
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .build()

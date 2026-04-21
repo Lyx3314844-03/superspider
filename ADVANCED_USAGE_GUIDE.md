@@ -1,336 +1,210 @@
 # Advanced Usage Guide
 
-This guide covers advanced crawling scenarios supported across all four SuperSpider runtimes.
+Updated: 2026-04-21
 
-## WAF Bypass and Behavioral Anti-Bot
+This guide documents advanced usage patterns that are actually visible in the current repository state.
 
-All four runtimes include WAF bypass and behavioral simulation modules.
+Two rules matter here:
 
-### Behavioral Simulation
-
-The anti-bot modules simulate human-like browser behavior:
-
-- mouse movement patterns
-- scroll behavior
-- reading pace simulation
-- randomized timing between actions
-
-### WAF Bypass Techniques
-
-- TLS fingerprint rotation
-- HTTP/2 fingerprint normalization
-- Header order randomization
-- Cookie jar management
-- Referer chain simulation
-
-### PySpider
-
-```python
-from pyspider.antibot import AntiBotEnhancer
-
-enhancer = AntiBotEnhancer()
-enhancer.enable_behavioral_simulation()
-enhancer.enable_waf_bypass()
-```
-
-### GoSpider
-
-```go
-import "github.com/superspider/gospider/antibot"
-
-enhancer := antibot.NewEnhancer()
-enhancer.EnableBehavioralSimulation()
-enhancer.EnableWAFBypass()
-```
-
-### RustSpider
-
-```rust
-use rustspider::antibot::AntiBotEnhancer;
-
-let enhancer = AntiBotEnhancer::new()
-    .with_behavioral_simulation()
-    .with_waf_bypass();
-```
-
-### JavaSpider
-
-```java
-AntiBotEnhancer enhancer = new AntiBotEnhancer();
-enhancer.enableBehavioralSimulation();
-enhancer.enableWAFBypass();
-```
+- Prefer the framework CLIs and normalized job/control-plane surfaces first.
+- Treat AI, reverse, and browser-simulation features as conditional capabilities unless your environment is fully configured.
 
 ---
 
-## Client Certificate Authentication
+## 1. Control-Plane First
 
-For sites that require mutual TLS (mTLS) authentication.
+All four runtimes now expose more than a plain crawl entrypoint. The practical advanced surfaces are:
 
-### PySpider
+- `job` / `async-job`
+- `workflow`
+- `research`
+- `console` / `audit`
+- `jobdir` / `http-cache`
+- `capabilities`
 
-```python
-from pyspider.core.config import SpiderConfig
+Examples:
 
-config = SpiderConfig(
-    client_cert="/path/to/client.crt",
-    client_key="/path/to/client.key",
-    ca_cert="/path/to/ca.crt"
-)
+```bash
+# PySpider
+python -m pyspider capabilities
+python -m pyspider workflow run --file workflow.json
+
+# GoSpider
+gospider capabilities
+gospider workflow run --file workflow.json
+
+# RustSpider
+rustspider capabilities
+rustspider workflow run --file workflow.json
+
+# JavaSpider
+java com.javaspider.EnhancedSpider capabilities
+java com.javaspider.EnhancedSpider workflow run --file workflow.json
 ```
 
-### GoSpider
-
-```go
-config := core.NewConfig()
-config.SetClientCert("/path/to/client.crt", "/path/to/client.key")
-config.SetCACert("/path/to/ca.crt")
-```
-
-### RustSpider
-
-```rust
-let config = SpiderConfig::new()
-    .client_cert("/path/to/client.crt", "/path/to/client.key")
-    .ca_cert("/path/to/ca.crt");
-```
-
-### JavaSpider
-
-```java
-SpiderConfig config = new SpiderConfig()
-    .clientCert("/path/to/client.crt", "/path/to/client.key")
-    .caCert("/path/to/ca.crt");
-```
+Use these surfaces when you need reproducible runs, artifacts, and inspectable output instead of ad hoc spider code.
 
 ---
 
-## API Key Management
+## 2. Browser Artifacts as a Primary Input
 
-For crawling APIs that require key rotation or rate-limited key pools.
+An important shared advanced pattern is:
 
-### PySpider
+1. Fetch or instrument with the browser runtime
+2. Persist artifacts
+3. Feed those artifacts into media, graph, replay, or analysis flows
 
-```python
-from pyspider.core.config import SpiderConfig
+Common artifact types across the repo:
 
-config = SpiderConfig(
-    api_keys=["key1", "key2", "key3"],
-    api_key_rotation="round_robin"  # or "random"
-)
-```
+- HTML
+- DOM snapshots
+- screenshots
+- console logs
+- network JSON
+- HAR
+- graph artifacts
 
-### GoSpider
+This pattern is especially strong in:
 
-```go
-config := core.NewConfig()
-config.SetAPIKeys([]string{"key1", "key2", "key3"})
-config.SetAPIKeyRotation("round_robin")
-```
+- `gospider`
+- `pyspider`
+- `rustspider`
+- Java workflow/replay flows
 
-### RustSpider
+Important caveat:
 
-```rust
-let config = SpiderConfig::new()
-    .api_keys(vec!["key1", "key2", "key3"])
-    .api_key_rotation(RotationMode::RoundRobin);
-```
-
-### JavaSpider
-
-```java
-SpiderConfig config = new SpiderConfig()
-    .apiKeys(List.of("key1", "key2", "key3"))
-    .apiKeyRotation(RotationMode.ROUND_ROBIN);
-```
+- Browser artifact capture is real.
+- Some `simulate browser` paths are not real browser sessions; they are reverse-assisted simulations.
 
 ---
 
-## Proxy Configuration
+## 3. AI Workflows
 
-### Proxy Pool Setup
+Advanced AI usage in the current repo falls into three buckets:
 
-All four runtimes support proxy pools with health checking and automatic rotation.
+- heuristic extraction
+- LLM-backed extraction
+- AI project/scaffold generation
 
-### PySpider
+Recommended usage:
 
-```python
-from pyspider.core.proxy_pool import ProxyPool
+```bash
+# PySpider
+python -m pyspider ai --url https://example.com --instructions "提取标题和价格"
 
-pool = ProxyPool(
-    proxies=["http://proxy1:8080", "http://proxy2:8080"],
-    rotation="round_robin",
-    health_check=True
-)
+# GoSpider
+gospider ai --url https://example.com --instructions "提取标题和价格"
+
+# RustSpider
+rustspider ai --url https://example.com --instructions "提取标题和价格"
+
+# JavaSpider
+java com.javaspider.EnhancedSpider ai --url https://example.com --instructions "提取标题和价格"
 ```
 
-### GoSpider
+Caveat:
 
-```go
-import "github.com/superspider/gospider/core"
-
-pool := core.NewProxyPool(
-    []string{"http://proxy1:8080", "http://proxy2:8080"},
-    core.WithRotation("round_robin"),
-    core.WithHealthCheck(true),
-)
-```
-
-### RustSpider
-
-```rust
-use rustspider::proxy::ProxyPool;
-
-let pool = ProxyPool::new()
-    .proxies(vec!["http://proxy1:8080", "http://proxy2:8080"])
-    .rotation(RotationMode::RoundRobin)
-    .health_check(true);
-```
-
-### JavaSpider
-
-```java
-ProxyPool pool = new ProxyPool()
-    .proxies(List.of("http://proxy1:8080", "http://proxy2:8080"))
-    .rotation(RotationMode.ROUND_ROBIN)
-    .healthCheck(true);
-```
+- `pyspider`, `gospider`, and `rustspider` explicitly fall back to heuristic extraction when no AI key is configured.
+- Do not assume every successful `ai` command used a real LLM backend.
 
 ---
 
-## Distributed Crawling
+## 4. NodeReverse Workflows
 
-All four runtimes support distributed execution with Redis-backed queues.
+NodeReverse is one of the most useful advanced surfaces in the repository. The CLI entrypoint shape is aligned across runtimes:
 
-### Queue Backends
+- `health`
+- `profile`
+- `detect`
+- `fingerprint-spoof`
+- `tls-fingerprint`
+- `canvas-fingerprint`
+- `analyze-crypto`
+- `signature-reverse`
+- `ast`
+- `webpack`
+- `function-call`
+- `browser-simulate`
 
-| Backend | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| Redis | ✅ | ✅ | ✅ | ✅ |
-| RabbitMQ | ✅ | ✅ | ✅ | ✅ |
-| Kafka | ✅ | ✅ | ✅ | ✅ |
+Examples:
 
-### PySpider Distributed Setup
-
-```python
-from pyspider.distributed import RedisDistributed
-
-dist = RedisDistributed(redis_url="redis://localhost:6379")
-dist.start_worker(worker_id="worker-1")
+```bash
+python -m pyspider node-reverse health --base-url http://localhost:3000
+gospider node-reverse profile --url https://example.com --base-url http://localhost:3000
+rustspider node-reverse tls-fingerprint --browser chrome --version 120 --base-url http://localhost:3000
+java com.javaspider.EnhancedSpider node-reverse analyze-crypto --code-file sample.js --base-url http://localhost:3000
 ```
 
-### GoSpider Distributed Setup
+Use this surface when the site depends on:
 
-```go
-import "github.com/superspider/gospider/distributed"
-
-service := distributed.NewService(
-    distributed.WithRedis("redis://localhost:6379"),
-)
-service.StartWorker("worker-1")
-```
-
-### RustSpider Distributed Setup
-
-```rust
-use rustspider::distributed::DistributedService;
-
-let service = DistributedService::new()
-    .redis("redis://localhost:6379")
-    .start_worker("worker-1");
-```
-
-### JavaSpider Distributed Setup
-
-```java
-DistributedService service = new DistributedService()
-    .redis("redis://localhost:6379")
-    .startWorker("worker-1");
-```
+- JS-generated signatures
+- crypto helpers
+- anti-bot profiling
+- browser fingerprint spoofing
 
 ---
 
-## Checkpoint and Incremental Crawling
+## 5. Encrypted / Reverse-Dependent Crawling
 
-All four runtimes support checkpointing to resume interrupted crawls.
+The encrypted modules across the four runtimes all follow roughly the same advanced pattern:
 
-### PySpider
+1. Fetch page or API response
+2. Detect crypto / anti-bot signals
+3. Call NodeReverse or local heuristics
+4. Rebuild request parameters or classify the protected flow
 
-```python
-from pyspider.core.checkpoint import CheckpointManager
+What you should assume today:
 
-manager = CheckpointManager(checkpoint_dir="./checkpoints")
-spider = Spider(checkpoint=manager)
-spider.resume()  # resumes from last checkpoint
-```
-
-### GoSpider
-
-```go
-import "github.com/superspider/gospider/core"
-
-checkpoint := core.NewCheckpointManager("./checkpoints")
-spider := core.NewSpider(core.WithCheckpoint(checkpoint))
-spider.Resume()
-```
-
-### RustSpider
-
-```rust
-use rustspider::checkpoint::CheckpointManager;
-
-let checkpoint = CheckpointManager::new("./checkpoints");
-let spider = Spider::new().checkpoint(checkpoint).resume();
-```
-
-### JavaSpider
-
-```java
-CheckpointManager checkpoint = new CheckpointManager("./checkpoints");
-Spider spider = new Spider().checkpoint(checkpoint).resume();
-```
+- Encrypted crawling support is real.
+- Some flows are still strongly dependent on the reverse service.
+- “Browser simulation” inside encrypted or ultimate paths is often reverse-assisted, not equivalent to opening Chromium/Playwright/Selenium and reproducing the site session.
 
 ---
 
-## AI-Assisted Extraction
+## 6. Distributed and Queue-Backed Work
 
-### PySpider (strongest AI support)
+Advanced distributed usage is present in all four runtimes, but depth differs.
 
-```python
-from pyspider.ai.ai_extractor import AIExtractor
-from pyspider.ai_extractor.llm_extractor import LLMExtractor
+Practical guidance:
 
-extractor = AIExtractor()
-result = extractor.extract(html, schema={"title": "str", "price": "float"})
-
-# LLM-based extraction
-llm = LLMExtractor(model="gpt-4o")
-result = llm.extract(html, prompt="Extract product name and price")
-```
-
-### GoSpider
-
-```go
-import "github.com/superspider/gospider/ai"
-
-extractor := ai.NewAIExtractor()
-result := extractor.Extract(html, map[string]string{"title": "str", "price": "float"})
-```
-
-### RustSpider
-
-```rust
-use rustspider::ai::AIExtractor;
-
-let extractor = AIExtractor::new();
-let result = extractor.extract(&html, &schema);
-```
+- Use Redis-backed flows first if you want the most source-verified shared path.
+- Treat RabbitMQ/Kafka support as conditional on broker/bridge setup and runtime-specific implementation depth.
+- Prefer the queue/control-plane/docs surfaces over custom direct integration until your exact backend is verified in your environment.
 
 ---
 
-## Related Docs
+## 7. Research and Graph Analysis
 
-- `ENCRYPTED_SITE_CRAWLING_GUIDE.md` — handling JavaScript-encrypted sites
-- `NODE_REVERSE_INTEGRATION_GUIDE.md` — Node.js reverse engineering integration
-- `ULTIMATE_ENHANCEMENT_GUIDE.md` — full capability enhancement reference
-- `docs/FRAMEWORK_CAPABILITY_MATRIX.md` — capability comparison across all four runtimes
+Advanced non-crawl usage is now a real part of the codebase:
+
+- `research run`
+- `research async`
+- `research soak`
+- graph extraction
+- notebook-style output in some runtimes
+
+Use these when the goal is:
+
+- site profiling
+- field discovery
+- schema prototyping
+- repeatable extraction experiments
+
+This is especially useful before building a production spider.
+
+---
+
+## 8. What Not to Over-Assume
+
+Avoid these common mistakes:
+
+- Do not assume every AI run is LLM-backed.
+- Do not assume every browser-simulation path is a real browser runtime.
+- Do not assume every code snippet from older docs corresponds to a current public API.
+- Do not assume cross-runtime parity means identical maturity.
+
+For current caveats and defects, read:
+
+- [`HIDDEN_CAPABILITIES_REPORT.md`](HIDDEN_CAPABILITIES_REPORT.md)
+- [`FRAMEWORK_DEFECT_AUDIT.md`](FRAMEWORK_DEFECT_AUDIT.md)
+- [`docs/FRAMEWORK_CAPABILITIES.md`](docs/FRAMEWORK_CAPABILITIES.md)

@@ -75,15 +75,67 @@ func defaultExecutor(ctx context.Context, job core.JobSpec) (string, error) {
 			time.Sleep(waitFor)
 		case "click":
 			if action.Selector != "" {
-				if err := browser.Click(action.Selector); err != nil && !action.Optional {
+				if frameSelector := extraString(action.Extra, "frame_selector"); frameSelector != "" {
+					if err := browser.ClickInFrame(frameSelector, action.Selector); err != nil && !action.Optional {
+						return "", err
+					}
+				} else if err := browser.Click(action.Selector); err != nil && !action.Optional {
 					return "", err
 				}
 			}
 		case "type":
 			if action.Selector != "" {
-				if err := browser.Fill(action.Selector, action.Value); err != nil && !action.Optional {
+				if frameSelector := extraString(action.Extra, "frame_selector"); frameSelector != "" {
+					if err := browser.FillInFrame(frameSelector, action.Selector, action.Value); err != nil && !action.Optional {
+						return "", err
+					}
+				} else if err := browser.Fill(action.Selector, action.Value); err != nil && !action.Optional {
 					return "", err
 				}
+			}
+		case "upload":
+			if action.Selector != "" && action.Value != "" {
+				if err := browser.UploadFile(action.Selector, action.Value); err != nil && !action.Optional {
+					return "", err
+				}
+			}
+		case "shadow_text", "shadow_html", "shadow_extract":
+			selectorPath, err := actionShadowPath(action)
+			if err != nil {
+				if !action.Optional {
+					return "", err
+				}
+				break
+			}
+			expression := action.Value
+			if expression == "" {
+				if action.Type == "shadow_html" {
+					expression = "target.outerHTML || target.textContent || ''"
+				} else {
+					expression = "target.textContent || ''"
+				}
+			}
+			value, err := browser.ExecuteShadowDOM(expression, selectorPath...)
+			if err != nil && !action.Optional {
+				return "", err
+			}
+			if err == nil && action.SaveAs != "" {
+				if writeErr := writeArtifact(action.SaveAs, []byte(fmt.Sprint(value))); writeErr != nil && !action.Optional {
+					return "", writeErr
+				}
+			}
+		case "listen_realtime", "capture_realtime":
+			waitFor := 500 * time.Millisecond
+			if action.Timeout > 0 {
+				waitFor = action.Timeout
+			}
+			time.Sleep(waitFor)
+			target := action.SaveAs
+			if target == "" {
+				target = realtimeArtifactPath(job)
+			}
+			if err := browser.SaveRealtimeToFile(target); err != nil && !action.Optional {
+				return "", err
 			}
 		case "scroll":
 			if _, err := browser.ExecuteJS("window.scrollTo(0, document.body.scrollHeight)"); err != nil && !action.Optional {
@@ -97,7 +149,11 @@ func defaultExecutor(ctx context.Context, job core.JobSpec) (string, error) {
 			}
 		case "eval":
 			if action.Value != "" {
-				if _, err := browser.ExecuteJS(action.Value); err != nil && !action.Optional {
+				if frameSelector := extraString(action.Extra, "frame_selector"); frameSelector != "" {
+					if _, err := browser.ExecuteInFrame(frameSelector, action.Value); err != nil && !action.Optional {
+						return "", err
+					}
+				} else if _, err := browser.ExecuteJS(action.Value); err != nil && !action.Optional {
 					return "", err
 				}
 			}
@@ -132,7 +188,52 @@ func defaultExecutor(ctx context.Context, job core.JobSpec) (string, error) {
 	if wantsCapture(job, "har") {
 		_ = browser.SaveHARToFile(harArtifactPath(job))
 	}
+	if wantsRealtimeCapture(job) {
+		_ = browser.SaveRealtimeToFile(realtimeArtifactPath(job))
+	}
 	return content, nil
+}
+
+func extraString(extra map[string]interface{}, key string) string {
+	if extra == nil {
+		return ""
+	}
+	value, ok := extra[key]
+	if !ok {
+		return ""
+	}
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return text
+}
+
+func actionShadowPath(action core.ActionSpec) ([]string, error) {
+	if value, ok := action.Extra["shadow_path"]; ok {
+		switch typed := value.(type) {
+		case []string:
+			return typed, nil
+		case []interface{}:
+			path := make([]string, 0, len(typed))
+			for _, item := range typed {
+				text, ok := item.(string)
+				if !ok {
+					return nil, fmt.Errorf("extra.shadow_path must contain only strings")
+				}
+				path = append(path, text)
+			}
+			return path, nil
+		case string:
+			return browserpkg.SplitShadowPathForRuntime(typed), nil
+		default:
+			return nil, fmt.Errorf("extra.shadow_path must be a string or string array")
+		}
+	}
+	if action.Selector == "" {
+		return nil, fmt.Errorf("shadow action requires selector or extra.shadow_path")
+	}
+	return browserpkg.SplitShadowPathForRuntime(action.Selector), nil
 }
 
 // Execute runs a browser job through the configured executor.
@@ -226,6 +327,14 @@ func (r *Runtime) Execute(ctx context.Context, job core.JobSpec) (*core.JobResul
 			result.AddWarning("expected har artifact was not created")
 		}
 	}
+	if wantsRealtimeCapture(job) {
+		path := realtimeArtifactPath(job)
+		if _, statErr := os.Stat(path); statErr == nil {
+			result.SetArtifact("realtime", core.ArtifactRef{Kind: "realtime", Path: path})
+		} else {
+			result.AddWarning("expected realtime artifact was not created")
+		}
+	}
 	result.Finalize()
 	if err != nil {
 		return result, err
@@ -240,6 +349,10 @@ func wantsCapture(job core.JobSpec, capture string) bool {
 		}
 	}
 	return false
+}
+
+func wantsRealtimeCapture(job core.JobSpec) bool {
+	return wantsCapture(job, "realtime") || wantsCapture(job, "websocket") || wantsCapture(job, "sse")
 }
 
 func artifactBaseName(job core.JobSpec) string {
@@ -283,6 +396,10 @@ func harArtifactPath(job core.JobSpec) string {
 	return filepath.Join(artifactDirectory(job), artifactBaseName(job)+"-network.har")
 }
 
+func realtimeArtifactPath(job core.JobSpec) string {
+	return filepath.Join(artifactDirectory(job), artifactBaseName(job)+"-realtime.json")
+}
+
 func writeArtifact(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
@@ -322,6 +439,19 @@ func executeMockBrowser(job core.JobSpec) (string, bool, error) {
 			actionLog = append(actionLog, "hover:"+action.Selector)
 		case "eval":
 			actionLog = append(actionLog, "eval")
+		case "upload":
+			actionLog = append(actionLog, "upload:"+action.Selector+"="+action.Value)
+		case "shadow_text", "shadow_html", "shadow_extract":
+			actionLog = append(actionLog, action.Type+":"+action.Selector)
+		case "listen_realtime", "capture_realtime":
+			target := action.SaveAs
+			if target == "" {
+				target = realtimeArtifactPath(job)
+			}
+			if err := writeArtifact(target, []byte(mockString(mock["realtime_text"], "[]"))); err != nil {
+				return "", true, err
+			}
+			actionLog = append(actionLog, "realtime:"+target)
 		case "screenshot":
 			target := action.SaveAs
 			if target == "" {
@@ -394,6 +524,19 @@ func executeMockBrowser(job core.JobSpec) (string, bool, error) {
 			if err := writeArtifact(harArtifactPath(job), data); err != nil {
 				return "", true, err
 			}
+		}
+	}
+	if wantsRealtimeCapture(job) {
+		payload := mock["realtime_entries"]
+		if payload == nil {
+			payload = []map[string]interface{}{}
+		}
+		data, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			return "", true, err
+		}
+		if err := writeArtifact(realtimeArtifactPath(job), data); err != nil {
+			return "", true, err
 		}
 	}
 	return html, true, nil

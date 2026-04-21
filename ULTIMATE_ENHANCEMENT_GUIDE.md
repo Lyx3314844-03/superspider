@@ -1,410 +1,149 @@
 # Ultimate Enhancement Guide
 
-This guide documents the full capability surface of SuperSpider across all four runtimes, covering every major enhancement area.
+Updated: 2026-04-21
 
-## Enhancement Areas
+This guide explains what the repository's “ultimate” surfaces really mean today.
 
-1. [Media Platform Coverage](#media-platform-coverage)
-2. [Anti-Bot and WAF Bypass](#anti-bot-and-waf-bypass)
-3. [Distributed Crawling](#distributed-crawling)
-4. [AI Extraction](#ai-extraction)
-5. [Browser Automation](#browser-automation)
-6. [Storage and Export](#storage-and-export)
-7. [Monitoring and Observability](#monitoring-and-observability)
-8. [Security](#security)
-9. [Performance](#performance)
+The short version:
+
+- `ultimate` is not one single identical runtime across all four frameworks
+- it generally means a higher-level pipeline that combines anti-bot profiling, browser or reverse-assisted work, extraction, and artifact/checkpoint output
+- the strongest caveat is that several “simulate browser” stages are reverse-assisted emulation, not full browser sessions
 
 ---
 
-## Media Platform Coverage
+## 1. What “Ultimate” Means in Practice
 
-All four runtimes cover the same media platform surface.
+In the current codebase, ultimate flows usually combine:
 
-| Platform | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| YouTube | ✅ | ✅ | ✅ | ✅ |
-| Bilibili | ✅ | ✅ | ✅ | ✅ |
-| IQIYI | ✅ | ✅ | ✅ | ✅ |
-| Tencent Video | ✅ | ✅ | ✅ | ✅ |
-| Youku | ✅ | ✅ | ✅ | ✅ |
-| Douyin | ✅ | ✅ | ✅ | ✅ |
-| HLS (m3u8) | ✅ | ✅ | ✅ | ✅ |
-| DASH (mpd) | ✅ | ✅ | ✅ | ✅ |
-| FFmpeg | ✅ | ✅ | ✅ | ✅ |
-| DRM detection | ✅ | ✅ | ✅ | ✅ |
+- target fetch
+- anti-bot detection or profiling
+- reverse-service calls
+- optional captcha recovery
+- browser or browser-like simulation
+- extraction / reporting
+- checkpoint or artifact persistence
 
-### PySpider Media Usage
-
-```python
-from pyspider.media.multimedia_downloader import MultimediaDownloader
-from pyspider.media.hls_downloader import HLSDownloader
-from pyspider.media.ffmpeg_tools import FFmpegTools
-
-# Download from any supported platform
-downloader = MultimediaDownloader()
-result = downloader.download("https://www.youtube.com/watch?v=...")
-
-# HLS stream download
-hls = HLSDownloader()
-hls.download("https://example.com/stream.m3u8", output="video.mp4")
-
-# FFmpeg merge
-ffmpeg = FFmpegTools()
-ffmpeg.merge_segments(["seg1.ts", "seg2.ts"], output="merged.mp4")
-```
-
-### GoSpider Media Usage
-
-```go
-import "github.com/superspider/gospider/media"
-
-downloader := media.NewMultiPlatformDownloader()
-result, err := downloader.Download("https://www.youtube.com/watch?v=...")
-
-hls := media.NewHLSDownloader()
-err = hls.Download("https://example.com/stream.m3u8", "video.mp4")
-```
+This is stronger than a normal crawl, but not automatically equal to “real browser + real LLM + full site reproduction”.
 
 ---
 
-## Anti-Bot and WAF Bypass
+## 2. Runtime-by-Runtime View
 
-### Capability Matrix
+### PySpider
 
-| Feature | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| TLS fingerprint rotation | ✅ | ✅ | ✅ | ✅ |
-| Browser behavior simulation | ✅ | ✅ | ✅ | ✅ |
-| WAF bypass | ✅ | ✅ | ✅ | ✅ |
-| Captcha solver | ✅ | ✅ | ✅ | ✅ |
-| Night mode (reduced activity) | ✅ | ✅ | ✅ | ✅ |
-| Cookie jar management | ✅ | ✅ | ✅ | ✅ |
-| Header randomization | ✅ | ✅ | ✅ | ✅ |
+PySpider ultimate is useful when you want:
 
-### Night Mode
+- anti-bot profiling
+- reverse runtime data bundled into results
+- checkpointed multi-url execution
 
-Night mode reduces crawl activity during off-hours to avoid detection patterns:
+Current caveat:
 
-```python
-# PySpider
-from pyspider.antibot import AntiBotEnhancer
+- `advanced.ultimate.simulate_browser()` performs HTTP fetch and then calls `reverse_client.simulate_browser()`
+- that should be described as reverse-assisted simulation, not full browser session execution
 
-enhancer = AntiBotEnhancer()
-enhancer.enable_night_mode(
-    quiet_hours_start=22,  # 10 PM
-    quiet_hours_end=6,     # 6 AM
-    reduced_rate=0.1       # 10% of normal rate during quiet hours
-)
-```
+### GoSpider
 
-```go
-// GoSpider
-enhancer := antibot.NewEnhancer()
-enhancer.EnableNightMode(antibot.NightModeConfig{
-    QuietHoursStart: 22,
-    QuietHoursEnd:   6,
-    ReducedRate:     0.1,
-})
-```
+GoSpider ultimate is useful when you want:
 
-### Captcha Solving
+- anti-detect scoring
+- reverse runtime collection
+- pipeline-style result envelopes in a compiled runtime
 
-```python
-# PySpider
-from pyspider.captcha.solver import CaptchaSolver
+Current caveat:
 
-solver = CaptchaSolver(
-    provider="2captcha",  # or "anticaptcha", "local"
-    api_key="your_api_key"
-)
-solution = solver.solve(captcha_image_url)
-```
+- `ultimate.simulateBrowser()` is also HTTP fetch plus reverse simulation
+- it is not the same thing as driving a real Playwright/Chromedp/Selenium browser session through the target page
 
----
+### RustSpider
 
-## Distributed Crawling
+RustSpider ultimate is currently the richest “ultimate” implementation in the repo:
 
-### Queue Backend Comparison
+- advanced captcha recovery
+- detected challenge parameter extraction
+- reverse-assisted TLS/fingerprint/canvas collection
+- checkpoint integration
 
-| Backend | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| Redis | ✅ native | ✅ native | ✅ native | ✅ native |
-| RabbitMQ | ✅ | ✅ broker-native | ✅ bridge | ✅ broker-native |
-| Kafka | ✅ | ✅ broker-native | ✅ bridge | ✅ broker-native |
-| In-process | ✅ | ✅ | ✅ | ✅ |
+Current caveat:
 
-### Node Discovery
+- some browser-simulation phases are still reverse-assisted, not full browser sessions
 
-| Method | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| Environment variables | ✅ | ✅ | ✅ | ✅ |
-| File-based | ✅ | ✅ | ✅ | ✅ |
-| DNS-SRV | ✅ | ✅ | ✅ | ✅ |
-| Consul | ✅ | ✅ | ✅ | ✅ |
-| etcd | ✅ | ✅ | ✅ | ✅ |
+### JavaSpider
 
-### Multi-Worker Setup
+JavaSpider ultimate combines:
 
-```python
-# PySpider: start multiple workers
-from pyspider.distributed import RedisDistributed
+- anti-bot profiling
+- reverse-assisted TLS/canvas/browser simulation
+- AI extraction
+- checkpoint and monitor integration
 
-dist = RedisDistributed(redis_url="redis://localhost:6379")
+Current caveat:
 
-# Worker 1
-dist.start_worker(worker_id="worker-1", concurrency=10)
-
-# Worker 2 (on another machine)
-dist.start_worker(worker_id="worker-2", concurrency=10)
-```
+- the existence of Selenium workflows elsewhere in the runtime does not mean every ultimate browser phase is a live Selenium browser session
 
 ---
 
-## AI Extraction
+## 3. When to Use Ultimate
 
-### Capability Comparison
+Use an ultimate flow when the target has one or more of:
 
-| Feature | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| Entity extraction | ✅ | ✅ | ✅ | ✅ |
-| Summarization | ✅ | ✅ | ✅ | ✅ |
-| Sentiment analysis | ✅ | ✅ | ✅ | ✅ |
-| LLM extraction | ✅ | — | — | — |
-| Smart parser | ✅ | — | — | — |
-| Research runtime | ✅ | ✅ | ✅ | — |
+- anti-bot protections
+- fingerprint checks
+- crypto or signature generation
+- repeated protected API calls
+- a need for richer runtime diagnostics than a plain crawl
 
-### PySpider LLM Extraction
-
-```python
-from pyspider.ai_extractor.llm_extractor import LLMExtractor
-
-extractor = LLMExtractor(
-    model="gpt-4o",
-    api_key="your_openai_key"
-)
-
-result = extractor.extract(
-    html_content,
-    prompt="Extract: product name, price, availability, and description"
-)
-```
-
-### Smart Parser
-
-```python
-from pyspider.ai_extractor.smart_parser import SmartParser
-
-parser = SmartParser()
-# Automatically detects page type and extracts relevant fields
-result = parser.parse(html_content)
-```
+Do not use ultimate just because it sounds stronger. It adds complexity and depends more heavily on reverse/anti-bot support paths.
 
 ---
 
-## Browser Automation
+## 4. What Ultimate Does Not Guarantee
 
-### Playwright Support
+Ultimate does not automatically guarantee:
 
-All four runtimes support Playwright-based browser automation.
+- a real browser session for every stage
+- successful captcha solving in your environment
+- real LLM-backed extraction
+- successful reproduction of a site's login/session state
 
-```python
-# PySpider
-from pyspider.browser.playwright_browser import PlaywrightBrowser
+Those outcomes still depend on:
 
-browser = PlaywrightBrowser()
-page = await browser.new_page()
-await page.goto("https://example.com")
-content = await page.content()
-```
-
-```go
-// GoSpider
-browser := browser.NewBrowserPool(browser.Config{
-    MaxInstances: 5,
-    Headless:     true,
-})
-page, err := browser.NewPage()
-page.Goto("https://example.com")
-```
-
-### Session Management
-
-```python
-# PySpider: persistent session with cookie management
-from pyspider.core.cookie import CookieManager
-
-cookies = CookieManager(storage="./cookies.json")
-cookies.load()
-
-browser = PlaywrightBrowser(cookies=cookies)
-```
+- available API keys
+- external captcha services
+- NodeReverse service health
+- browser/runtime configuration
+- target-site behavior
 
 ---
 
-## Storage and Export
+## 5. Recommended Verification Pattern
 
-### Output Formats
+Before claiming an ultimate path works for a target site:
 
-All four runtimes support multiple output formats:
-
-| Format | PySpider | GoSpider | RustSpider | JavaSpider |
-| --- | --- | --- | --- | --- |
-| JSON | ✅ | ✅ | ✅ | ✅ |
-| CSV | ✅ | ✅ | ✅ | ✅ |
-| JSONL | ✅ | ✅ | ✅ | ✅ |
-| SQLite | ✅ | ✅ | ✅ | ✅ |
-| PostgreSQL | ✅ | ✅ adapter | ✅ adapter | ✅ |
-| MySQL | ✅ | ✅ adapter | ✅ adapter | ✅ |
-| MongoDB | ✅ | ✅ adapter | ✅ adapter | ✅ |
-
-### PySpider Dataset Writer
-
-```python
-from pyspider.store.dataset import DatasetWriter
-
-writer = DatasetWriter(output_dir="./output")
-writer.write({"title": "Example", "url": "https://example.com"})
-writer.flush()  # writes to JSON, CSV, and JSONL
-```
-
-### GoSpider Storage
-
-```go
-import "github.com/superspider/gospider/storage"
-
-store := storage.NewSQLDatasetStore("./output.db")
-store.Write(map[string]interface{}{
-    "title": "Example",
-    "url":   "https://example.com",
-})
-```
+1. Run `profile-site` or `node-reverse profile/detect`
+2. Run the framework's `ai` or `research` flow separately if extraction matters
+3. Capture browser artifacts separately if the site is heavily dynamic
+4. Only then run `ultimate`
+5. Inspect emitted warnings and reverse payloads, not just exit code
 
 ---
 
-## Monitoring and Observability
+## 6. Documentation Boundary
 
-### Audit Trail
+If you describe ultimate support in external docs, the safe wording is:
 
-JavaSpider has the strongest audit trail support. All runtimes include baseline audit logging.
+- “advanced pipeline”
+- “reverse-assisted browser/fingerprint simulation”
+- “checkpointed anti-bot/extraction workflow”
 
-```python
-# PySpider
-from pyspider.runtime.audit import AuditLogger
+Avoid:
 
-audit = AuditLogger(output="./audit.jsonl")
-audit.log_request(url, method, headers)
-audit.log_response(url, status, size)
-```
+- “full browser reproduction”
+- “guaranteed anti-bot bypass”
+- “real browser session emulation” unless you have runtime proof for that exact path
 
-```java
-// JavaSpider (strongest audit support)
-AuditTrail audit = new AuditTrail()
-    .output("./audit.jsonl")
-    .includeHeaders(true)
-    .includeBody(false);
+For the current implementation boundaries, see:
 
-spider.setAuditTrail(audit);
-```
-
-### Metrics and Monitoring
-
-```python
-# PySpider
-from pyspider.monitor.monitor import SpiderMonitor
-
-monitor = SpiderMonitor()
-monitor.start()
-
-# Access metrics
-stats = monitor.get_stats()
-print(f"Requests: {stats.total_requests}")
-print(f"Success rate: {stats.success_rate:.1%}")
-print(f"Avg response time: {stats.avg_response_ms}ms")
-```
-
----
-
-## Security
-
-### SSRF Protection
-
-All four runtimes include SSRF (Server-Side Request Forgery) protection to prevent crawlers from being used to access internal network resources.
-
-```python
-# PySpider
-from pyspider.core.ssrf_protection import SSRFProtection
-
-protection = SSRFProtection(
-    block_private_ranges=True,   # blocks 10.x, 172.16.x, 192.168.x
-    block_loopback=True,         # blocks 127.x
-    block_link_local=True,       # blocks 169.254.x
-    allowed_domains=["example.com"]
-)
-```
-
-### Robots.txt Compliance
-
-```python
-# PySpider
-from pyspider.core.robots import RobotsChecker
-
-checker = RobotsChecker(user_agent="SuperSpider/1.0")
-if checker.can_fetch("https://example.com/page"):
-    spider.crawl("https://example.com/page")
-```
-
----
-
-## Performance
-
-### Concurrency Settings
-
-| Runtime | Default concurrency | Max recommended |
-| --- | --- | --- |
-| PySpider | 10 | 100 |
-| GoSpider | 50 | 1000+ |
-| RustSpider | 50 | 1000+ |
-| JavaSpider | 20 | 200 |
-
-### Rate Limiting
-
-```python
-# PySpider
-from pyspider.performance.limiter import RateLimiter
-
-limiter = RateLimiter(
-    requests_per_second=10,
-    burst=20
-)
-```
-
-```go
-// GoSpider
-limiter := core.NewRateLimiter(core.RateLimiterConfig{
-    RequestsPerSecond: 50,
-    Burst:             100,
-})
-```
-
-### Circuit Breaker
-
-```python
-# PySpider
-from pyspider.performance.circuit_breaker import CircuitBreaker
-
-breaker = CircuitBreaker(
-    failure_threshold=5,
-    recovery_timeout=30,
-    half_open_requests=2
-)
-```
-
----
-
-## Related Docs
-
-- `ADVANCED_USAGE_GUIDE.md` — advanced crawling scenarios
-- `ENCRYPTED_SITE_CRAWLING_GUIDE.md` — encrypted site crawling
-- `NODE_REVERSE_INTEGRATION_GUIDE.md` — Node.js reverse engineering integration
-- `docs/FRAMEWORK_CAPABILITY_MATRIX.md` — full capability matrix
-- `docs/FRAMEWORK_CAPABILITIES.md` — per-framework capability details
+- [`HIDDEN_CAPABILITIES_REPORT.md`](HIDDEN_CAPABILITIES_REPORT.md)
+- [`FRAMEWORK_DEFECT_AUDIT.md`](FRAMEWORK_DEFECT_AUDIT.md)

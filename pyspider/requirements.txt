@@ -4,6 +4,8 @@
 requests>=2.32.4
 aiohttp>=3.13.3
 aiofiles>=24.1.0
+beautifulsoup4>=4.12.0
+lxml>=5.1.0
 
 # Browser automation
 playwright>=1.49.0

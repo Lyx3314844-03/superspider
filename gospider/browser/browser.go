@@ -18,19 +18,19 @@ import (
 
 // BrowserConfig 浏览器配置
 type BrowserConfig struct {
-	Headless        bool              `json:"headless"`
-	Stealth         bool              `json:"stealth"`
-	Timeout         time.Duration     `json:"timeout"`
-	UserAgent       string            `json:"user_agent"`
-	Proxy           string            `json:"proxy"`
-	ProxyUsername   string            `json:"proxy_username"`
-	ProxyPassword   string            `json:"proxy_password"`
-	ViewportWidth   int               `json:"viewport_width"`
-	ViewportHeight  int               `json:"viewport_height"`
-	ExtraHeaders    map[string]string `json:"extra_headers"`
-	BlockResources  []string          `json:"block_resources"`
-	RecordHar       bool              `json:"record_har"`
-	HarPath         string            `json:"har_path"`
+	Headless       bool              `json:"headless"`
+	Stealth        bool              `json:"stealth"`
+	Timeout        time.Duration     `json:"timeout"`
+	UserAgent      string            `json:"user_agent"`
+	Proxy          string            `json:"proxy"`
+	ProxyUsername  string            `json:"proxy_username"`
+	ProxyPassword  string            `json:"proxy_password"`
+	ViewportWidth  int               `json:"viewport_width"`
+	ViewportHeight int               `json:"viewport_height"`
+	ExtraHeaders   map[string]string `json:"extra_headers"`
+	BlockResources []string          `json:"block_resources"`
+	RecordHar      bool              `json:"record_har"`
+	HarPath        string            `json:"har_path"`
 }
 
 // RequestStats 请求统计
@@ -60,17 +60,32 @@ type NetworkEntry struct {
 	EncodedDataLength float64   `json:"encoded_data_length,omitempty"`
 }
 
+type RealtimeEntry struct {
+	Protocol  string    `json:"protocol"`
+	Direction string    `json:"direction,omitempty"`
+	RequestID string    `json:"request_id,omitempty"`
+	URL       string    `json:"url,omitempty"`
+	EventName string    `json:"event_name,omitempty"`
+	EventID   string    `json:"event_id,omitempty"`
+	Opcode    float64   `json:"opcode,omitempty"`
+	Data      string    `json:"data,omitempty"`
+	Error     string    `json:"error,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 // Browser 浏览器管理器
 type Browser struct {
-	config    *BrowserConfig
-	ctx       context.Context
-	cancel    context.CancelFunc
-	stats     *RequestStats
-	mu        sync.RWMutex
-	consoleEntries []ConsoleEntry
-	networkEntries []NetworkEntry
-	networkIndex map[string]int
-	isStarted bool
+	config          *BrowserConfig
+	ctx             context.Context
+	cancel          context.CancelFunc
+	stats           *RequestStats
+	mu              sync.RWMutex
+	consoleEntries  []ConsoleEntry
+	networkEntries  []NetworkEntry
+	realtimeEntries []RealtimeEntry
+	networkIndex    map[string]int
+	websocketURLs   map[string]string
+	isStarted       bool
 	behaviorProfile BehaviorProfile
 }
 
@@ -101,9 +116,11 @@ func NewBrowser(config *BrowserConfig) *Browser {
 		stats: &RequestStats{
 			ResourceTypes: make(map[string]int),
 		},
-		consoleEntries: make([]ConsoleEntry, 0),
-		networkEntries: make([]NetworkEntry, 0),
-		networkIndex: make(map[string]int),
+		consoleEntries:  make([]ConsoleEntry, 0),
+		networkEntries:  make([]NetworkEntry, 0),
+		realtimeEntries: make([]RealtimeEntry, 0),
+		networkIndex:    make(map[string]int),
+		websocketURLs:   make(map[string]string),
 		behaviorProfile: DefaultBehaviorProfile(),
 	}
 }
@@ -284,6 +301,24 @@ func (b *Browser) Fill(selector, value string) error {
 	)
 }
 
+// UploadFile uploads one or more files through an <input type="file"> element.
+func (b *Browser) UploadFile(selector string, filePaths ...string) error {
+	if !b.isStarted {
+		return fmt.Errorf("浏览器未启动")
+	}
+	normalized, err := normalizeUploadPaths(filePaths)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(b.ctx, b.config.Timeout)
+	defer cancel()
+
+	return chromedp.Run(ctx,
+		chromedp.SetUploadFiles(selector, normalized, chromedp.ByQuery),
+	)
+}
+
 // Hover 将鼠标移动到元素上方并触发常见 hover 事件。
 func (b *Browser) Hover(selector string) error {
 	if !b.isStarted {
@@ -379,6 +414,97 @@ func (b *Browser) Evaluate(script string) (interface{}, error) {
 // ExecuteJS 执行 JavaScript（别名）
 func (b *Browser) ExecuteJS(script string) (interface{}, error) {
 	return b.Evaluate(script)
+}
+
+// GetShadowText returns text from an element reached through open Shadow DOM roots.
+func (b *Browser) GetShadowText(selectorPath ...string) (string, error) {
+	value, err := b.ExecuteShadowDOM("target.textContent || ''", selectorPath...)
+	if err != nil {
+		return "", err
+	}
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	return fmt.Sprint(value), nil
+}
+
+// GetShadowContent returns HTML from an element reached through open Shadow DOM roots.
+func (b *Browser) GetShadowContent(selectorPath ...string) (string, error) {
+	value, err := b.ExecuteShadowDOM("target.outerHTML || target.textContent || ''", selectorPath...)
+	if err != nil {
+		return "", err
+	}
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	return fmt.Sprint(value), nil
+}
+
+// ExecuteShadowDOM evaluates an expression against an element reached through open Shadow DOM roots.
+func (b *Browser) ExecuteShadowDOM(expression string, selectorPath ...string) (interface{}, error) {
+	if !b.isStarted {
+		return nil, fmt.Errorf("浏览器未启动")
+	}
+	script, err := buildShadowTraversalScript(selectorPath, expression)
+	if err != nil {
+		return nil, err
+	}
+	return b.ExecuteJS(script)
+}
+
+// ExecuteInFrame executes JavaScript inside a same-origin iframe selected from the top document.
+func (b *Browser) ExecuteInFrame(frameSelector, script string) (interface{}, error) {
+	if !b.isStarted {
+		return nil, fmt.Errorf("浏览器未启动")
+	}
+
+	frameScript, err := buildFrameEvalScript(frameSelector, script)
+	if err != nil {
+		return nil, err
+	}
+	return b.ExecuteJS(frameScript)
+}
+
+// GetFrameContent returns the current HTML content of a same-origin iframe.
+func (b *Browser) GetFrameContent(frameSelector string) (string, error) {
+	value, err := b.ExecuteInFrame(frameSelector, "document.documentElement.outerHTML")
+	if err != nil {
+		return "", err
+	}
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	return fmt.Sprint(value), nil
+}
+
+// ClickInFrame clicks an element inside a same-origin iframe.
+func (b *Browser) ClickInFrame(frameSelector, selector string) error {
+	if !b.isStarted {
+		return fmt.Errorf("浏览器未启动")
+	}
+	time.Sleep(RandomizedActionDelay("click", b.behaviorProfile, time.Now()))
+
+	script, err := buildFrameMutationScript(frameSelector, selector, "click", "")
+	if err != nil {
+		return err
+	}
+	_, err = b.ExecuteJS(script)
+	return err
+}
+
+// FillInFrame fills an input element inside a same-origin iframe.
+func (b *Browser) FillInFrame(frameSelector, selector, value string) error {
+	if !b.isStarted {
+		return fmt.Errorf("浏览器未启动")
+	}
+	time.Sleep(RandomizedActionDelay("type", b.behaviorProfile, time.Now()))
+
+	script, err := buildFrameMutationScript(frameSelector, selector, "fill", value)
+	if err != nil {
+		return err
+	}
+	_, err = b.ExecuteJS(script)
+	return err
 }
 
 // ExportCookies 导出 Cookie
@@ -522,6 +648,14 @@ func (b *Browser) GetNetworkEntries() []NetworkEntry {
 	return result
 }
 
+func (b *Browser) GetRealtimeEntries() []RealtimeEntry {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	result := make([]RealtimeEntry, len(b.realtimeEntries))
+	copy(result, b.realtimeEntries)
+	return result
+}
+
 func (b *Browser) SaveConsoleToFile(path string) error {
 	data, err := json.MarshalIndent(b.GetConsoleEntries(), "", "  ")
 	if err != nil {
@@ -544,6 +678,17 @@ func (b *Browser) SaveNetworkToFile(path string) error {
 	return os.WriteFile(path, data, 0644)
 }
 
+func (b *Browser) SaveRealtimeToFile(path string) error {
+	data, err := json.MarshalIndent(b.GetRealtimeEntries(), "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
 func (b *Browser) SaveHARToFile(path string) error {
 	entries := make([]map[string]interface{}, 0)
 	for _, entry := range b.GetNetworkEntries() {
@@ -553,7 +698,7 @@ func (b *Browser) SaveHARToFile(path string) error {
 		}
 		entries = append(entries, map[string]interface{}{
 			"startedDateTime": entry.StartedAt.Format(time.RFC3339Nano),
-			"time": elapsed,
+			"time":            elapsed,
 			"request": map[string]interface{}{
 				"method": entry.Method,
 				"url":    entry.URL,
@@ -614,6 +759,29 @@ func (b *Browser) listenTarget(ev interface{}) {
 		b.recordConsole(string(e.Type), consoleText(e.Args))
 	case *cdpruntime.EventExceptionThrown:
 		b.recordConsole("exception", e.ExceptionDetails.Text)
+	case *cdpnetwork.EventWebSocketCreated:
+		b.recordWebSocketCreated(string(e.RequestID), e.URL)
+	case *cdpnetwork.EventWebSocketFrameSent:
+		b.recordWebSocketFrame(string(e.RequestID), "sent", e.Response)
+	case *cdpnetwork.EventWebSocketFrameReceived:
+		b.recordWebSocketFrame(string(e.RequestID), "received", e.Response)
+	case *cdpnetwork.EventWebSocketFrameError:
+		b.recordRealtime(RealtimeEntry{
+			Protocol:  "websocket",
+			Direction: "error",
+			RequestID: string(e.RequestID),
+			Error:     e.ErrorMessage,
+		})
+	case *cdpnetwork.EventEventSourceMessageReceived:
+		b.recordRealtime(RealtimeEntry{
+			Protocol:  "sse",
+			Direction: "received",
+			RequestID: string(e.RequestID),
+			URL:       b.urlForRequestID(string(e.RequestID)),
+			EventName: e.EventName,
+			EventID:   e.EventID,
+			Data:      e.Data,
+		})
 	}
 }
 
@@ -710,6 +878,56 @@ func (b *Browser) recordConsole(kind, text string) {
 	})
 }
 
+func (b *Browser) recordWebSocketCreated(requestID, url string) {
+	b.mu.Lock()
+	b.websocketURLs[requestID] = url
+	b.mu.Unlock()
+	b.recordRealtime(RealtimeEntry{
+		Protocol:  "websocket",
+		Direction: "open",
+		RequestID: requestID,
+		URL:       url,
+	})
+}
+
+func (b *Browser) recordWebSocketFrame(requestID, direction string, frame *cdpnetwork.WebSocketFrame) {
+	entry := RealtimeEntry{
+		Protocol:  "websocket",
+		Direction: direction,
+		RequestID: requestID,
+		URL:       b.urlForRequestID(requestID),
+	}
+	if frame != nil {
+		entry.Opcode = frame.Opcode
+		entry.Data = frame.PayloadData
+	}
+	b.recordRealtime(entry)
+}
+
+func (b *Browser) recordRealtime(entry RealtimeEntry) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if entry.URL == "" {
+		entry.URL = b.websocketURLs[entry.RequestID]
+	}
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now()
+	}
+	b.realtimeEntries = append(b.realtimeEntries, entry)
+}
+
+func (b *Browser) urlForRequestID(requestID string) string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if url := b.websocketURLs[requestID]; url != "" {
+		return url
+	}
+	if index, ok := b.networkIndex[requestID]; ok && index < len(b.networkEntries) {
+		return b.networkEntries[index].URL
+	}
+	return ""
+}
+
 // SmartClick 智能点击（带等待）
 func (b *Browser) SmartClick(selector string) error {
 	if err := b.WaitForSelector(selector); err != nil {
@@ -726,4 +944,157 @@ func (b *Browser) SmartFill(selector, value string) error {
 	}
 
 	return b.Fill(selector, value)
+}
+
+func normalizeUploadPaths(paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("至少需要一个上传文件路径")
+	}
+	normalized := make([]string, 0, len(paths))
+	for _, raw := range paths {
+		if strings.TrimSpace(raw) == "" {
+			return nil, fmt.Errorf("上传文件路径不能为空")
+		}
+		absolute, err := filepath.Abs(raw)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := os.Stat(absolute); err != nil {
+			return nil, err
+		}
+		normalized = append(normalized, absolute)
+	}
+	return normalized, nil
+}
+
+func normalizeShadowPath(selectors []string) ([]string, error) {
+	if len(selectors) == 0 {
+		return nil, fmt.Errorf("至少需要一个 Shadow DOM 选择器")
+	}
+	normalized := make([]string, 0, len(selectors))
+	for _, selector := range selectors {
+		selector = strings.TrimSpace(selector)
+		if selector == "" {
+			return nil, fmt.Errorf("Shadow DOM 选择器不能为空")
+		}
+		normalized = append(normalized, selector)
+	}
+	return normalized, nil
+}
+
+func splitShadowPath(path string) []string {
+	parts := strings.Split(path, ">>>")
+	selectors := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			selectors = append(selectors, trimmed)
+		}
+	}
+	return selectors
+}
+
+func SplitShadowPathForRuntime(path string) []string {
+	return splitShadowPath(path)
+}
+
+func buildShadowTraversalScript(selectors []string, expression string) (string, error) {
+	normalized, err := normalizeShadowPath(selectors)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(expression) == "" {
+		return "", fmt.Errorf("Shadow DOM 表达式不能为空")
+	}
+	selectorsJSON, err := json.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`(() => {
+		const selectors = %s;
+		let root = document;
+		let target = null;
+		for (let index = 0; index < selectors.length; index++) {
+			const selector = selectors[index];
+			target = root.querySelector(selector);
+			if (!target) {
+				throw new Error("shadow selector not found: " + selector);
+			}
+			if (index < selectors.length - 1) {
+				if (!target.shadowRoot) {
+					throw new Error("open shadowRoot not found: " + selector);
+				}
+				root = target.shadowRoot;
+			}
+		}
+		return (%s);
+	})()`, string(selectorsJSON), expression), nil
+}
+
+func buildFrameEvalScript(frameSelector, script string) (string, error) {
+	frameJSON, err := json.Marshal(frameSelector)
+	if err != nil {
+		return "", err
+	}
+	scriptJSON, err := json.Marshal(script)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`(() => {
+		const frameSelector = %s;
+		const frame = document.querySelector(frameSelector);
+		if (!frame) {
+			throw new Error("frame not found: " + frameSelector);
+		}
+		const win = frame.contentWindow;
+		const doc = frame.contentDocument;
+		if (!win || !doc) {
+			throw new Error("iframe is not same-origin or not loaded: " + frameSelector);
+		}
+		return win.eval(%s);
+	})()`, string(frameJSON), string(scriptJSON)), nil
+}
+
+func buildFrameMutationScript(frameSelector, selector, mode, value string) (string, error) {
+	frameJSON, err := json.Marshal(frameSelector)
+	if err != nil {
+		return "", err
+	}
+	selectorJSON, err := json.Marshal(selector)
+	if err != nil {
+		return "", err
+	}
+	valueJSON, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`(() => {
+		const frameSelector = %s;
+		const selector = %s;
+		const value = %s;
+		const frame = document.querySelector(frameSelector);
+		if (!frame) {
+			throw new Error("frame not found: " + frameSelector);
+		}
+		const doc = frame.contentDocument;
+		if (!doc) {
+			throw new Error("iframe is not same-origin or not loaded: " + frameSelector);
+		}
+		const target = doc.querySelector(selector);
+		if (!target) {
+			throw new Error("selector not found in frame: " + selector);
+		}
+		target.scrollIntoView({block: "center", inline: "center"});
+		if (%q === "click") {
+			target.dispatchEvent(new MouseEvent("mouseover", {view: window, bubbles: true, cancelable: true}));
+			target.dispatchEvent(new MouseEvent("mousedown", {view: window, bubbles: true, cancelable: true}));
+			target.click();
+			target.dispatchEvent(new MouseEvent("mouseup", {view: window, bubbles: true, cancelable: true}));
+			return true;
+		}
+		target.focus();
+		target.value = value;
+		target.dispatchEvent(new Event("input", {bubbles: true}));
+		target.dispatchEvent(new Event("change", {bubbles: true}));
+		return true;
+	})()`, string(frameJSON), string(selectorJSON), string(valueJSON), mode), nil
 }

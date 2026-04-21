@@ -1,284 +1,149 @@
 # Encrypted Site Crawling Guide
 
-This guide covers how to crawl sites that use JavaScript-based encryption, signature generation, or token obfuscation to protect their APIs.
+Updated: 2026-04-21
 
-## Overview
+This guide explains how encrypted-site support really works across the four runtimes.
 
-Many modern sites protect their APIs with:
+The practical model is:
 
-- JavaScript-generated request signatures
-- Encrypted request parameters
-- Token-based authentication derived from browser-side JS execution
-- Anti-debugging and obfuscation layers
+1. fetch page or protected response
+2. inspect crypto / anti-bot / obfuscation signals
+3. call reverse-assisted tooling when needed
+4. reconstruct request parameters, classify risk, or continue with a stronger runtime path
 
-All four SuperSpider runtimes include an `encrypted` module that handles these scenarios.
-
----
-
-## How It Works
-
-The encrypted crawling pipeline has three stages:
-
-1. **Analysis** — identify the encryption scheme (signature function, token generation, parameter encoding)
-2. **Extraction** — extract the JavaScript logic responsible for generating the protected values
-3. **Execution** — run the extracted logic (via Node.js bridge or embedded JS engine) to produce valid request parameters
+Do not assume encrypted crawling means every runtime can fully reproduce a browser session by itself.
 
 ---
 
-## PySpider
+## 1. What Counts as an Encrypted Site Here
 
-### Basic Usage
+In this repository, encrypted/protected targets usually involve one or more of:
 
-```python
-from pyspider.encrypted.crawler import EncryptedCrawler
+- JS-generated request signatures
+- browser-side token generation
+- obfuscated or packed JavaScript
+- anti-bot fingerprint checks
+- captcha or challenge gating
+- encrypted API payloads or encrypted parameter assembly
 
-crawler = EncryptedCrawler(
-    base_url="https://example.com/api",
-    js_file="signature.js",       # extracted JS signature function
-    sign_function="generateSign"  # function name to call
-)
-
-result = crawler.fetch("/data?page=1")
-```
-
-### Enhanced Mode
-
-```python
-from pyspider.encrypted.enhanced import EnhancedEncryptedCrawler
-
-crawler = EnhancedEncryptedCrawler(
-    base_url="https://example.com",
-    auto_detect=True,              # auto-detect signature scheme
-    node_bridge=True               # use Node.js bridge for JS execution
-)
-
-result = crawler.fetch("/api/list")
-```
-
-### Configuration
-
-```python
-config = {
-    "sign_key": "your_sign_key",
-    "timestamp_field": "t",
-    "sign_field": "sign",
-    "extra_params": {"version": "1.0"}
-}
-crawler = EncryptedCrawler(base_url="...", config=config)
-```
+All four runtimes have encrypted-related modules, but they are not identical in depth.
 
 ---
 
-## GoSpider
+## 2. Current Source-Aligned Pattern
 
-### Basic Usage
+Across the repo, encrypted crawling support usually combines:
 
-```go
-import "github.com/superspider/gospider/encrypted"
+- local signal detection
+- crypto family detection
+- NodeReverse service calls
+- optional browser or browser-like simulation
+- extraction/reporting/checkpoint output
 
-crawler := encrypted.NewCrawler(encrypted.Config{
-    BaseURL:      "https://example.com/api",
-    JSFile:       "signature.js",
-    SignFunction: "generateSign",
-})
+This is best thought of as:
 
-result, err := crawler.Fetch("/data?page=1")
-```
+- reverse-assisted protected-request reconstruction
 
-### Enhanced Mode
+not:
 
-```go
-crawler := encrypted.NewEnhancedCrawler(encrypted.EnhancedConfig{
-    BaseURL:     "https://example.com",
-    AutoDetect:  true,
-    NodeBridge:  true,
-})
-
-result, err := crawler.Fetch("/api/list")
-```
-
-### With Custom Headers
-
-```go
-crawler := encrypted.NewCrawler(encrypted.Config{
-    BaseURL:      "https://example.com/api",
-    JSFile:       "signature.js",
-    SignFunction: "generateSign",
-    ExtraHeaders: map[string]string{
-        "X-App-Version": "1.0",
-        "X-Platform":    "web",
-    },
-})
-```
+- universal automatic bypass
 
 ---
 
-## RustSpider
+## 3. Runtime Notes
 
-### Basic Usage
+### PySpider
 
-```rust
-use rustspider::encrypted::EncryptedCrawler;
+PySpider has encrypted modules and reverse-aware fetch paths.
 
-let crawler = EncryptedCrawler::new()
-    .base_url("https://example.com/api")
-    .js_file("signature.js")
-    .sign_function("generateSign");
+Important caveat:
 
-let result = crawler.fetch("/data?page=1").await?;
-```
+- some encrypted/browser-like paths still rely on reverse-service simulation rather than a real browser session
 
-### Enhanced Mode
+### GoSpider
 
-```rust
-use rustspider::encrypted::EnhancedEncryptedCrawler;
+GoSpider combines encrypted crawling with strong runtime/control-plane integration.
 
-let crawler = EnhancedEncryptedCrawler::new()
-    .base_url("https://example.com")
-    .auto_detect(true)
-    .node_bridge(true);
+Important caveat:
 
-let result = crawler.fetch("/api/list").await?;
-```
+- some higher-level browser-simulation steps in protected flows are reverse-assisted emulation, not full browser automation
 
----
+### RustSpider
 
-## JavaSpider
+RustSpider has some of the deepest protected-flow logic in the repo:
 
-### Basic Usage
+- encrypted crawler
+- advanced captcha recovery
+- reverse-assisted browser/fingerprint/TLS/canvas flows
 
-```java
-import com.superspider.javaspider.encrypted.EncryptedCrawler;
+Important caveat:
 
-EncryptedCrawler crawler = new EncryptedCrawler.Builder()
-    .baseUrl("https://example.com/api")
-    .jsFile("signature.js")
-    .signFunction("generateSign")
-    .build();
+- reverse-assisted simulation is still not the same thing as a live browser session
 
-String result = crawler.fetch("/data?page=1");
-```
+### JavaSpider
 
-### Enhanced Mode
+JavaSpider combines encrypted modules, workflow/browser tooling, and reverse service integration.
 
-```java
-import com.superspider.javaspider.encrypted.EnhancedEncryptedCrawler;
+Important caveat:
 
-EnhancedEncryptedCrawler crawler = new EnhancedEncryptedCrawler.Builder()
-    .baseUrl("https://example.com")
-    .autoDetect(true)
-    .nodeBridge(true)
-    .build();
-
-String result = crawler.fetch("/api/list");
-```
+- the presence of Selenium elsewhere in the runtime should not be taken to mean that every encrypted or ultimate stage is Selenium-backed
 
 ---
 
-## Common Encryption Patterns
+## 4. Practical Workflow
 
-### HMAC-SHA256 Signature
+For a protected target, the safest sequence is:
 
-Many APIs use HMAC-SHA256 to sign request parameters:
+1. Run `profile-site` or `node-reverse detect/profile`
+2. Inspect whether the site shows crypto, anti-bot, or challenge signals
+3. If JS is involved, run `node-reverse analyze-crypto`, `ast`, or `webpack`
+4. If fingerprinting is involved, run `fingerprint-spoof`, `tls-fingerprint`, `canvas-fingerprint`
+5. If the site is still browser-heavy, collect real browser artifacts separately
+6. Only then run encrypted or ultimate paths
 
-```javascript
-// signature.js (extracted from target site)
-function generateSign(params, secretKey) {
-    const sorted = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');
-    return CryptoJS.HmacSHA256(sorted, secretKey).toString();
-}
-```
-
-### Timestamp + Nonce Token
-
-```javascript
-// token.js
-function generateToken(appId, timestamp, nonce) {
-    return md5(appId + timestamp + nonce + SECRET);
-}
-```
-
-### Base64-Encoded Encrypted Parameters
-
-```javascript
-// encrypt.js
-function encryptParams(params) {
-    const json = JSON.stringify(params);
-    return btoa(AES.encrypt(json, KEY).toString());
-}
-```
+This sequence gives you much better evidence than starting with the heaviest path first.
 
 ---
 
-## Node.js Bridge
+## 5. What to Watch For
 
-The Node.js bridge allows all four runtimes to execute arbitrary JavaScript for signature generation without embedding a full JS engine.
+### Good signs
 
-### Setup
+- crypto families detected
+- anti-bot profile returned with usable signals
+- reverse service healthy
+- browser artifacts captured separately when needed
 
-```bash
-# Install the node-reverse-server
-cd node-reverse-server
-npm install
-node server.js --port 3000
-```
+### Risk signs
 
-### PySpider with Node Bridge
-
-```python
-from pyspider.node_reverse.client import NodeReverseClient
-
-client = NodeReverseClient(server_url="http://localhost:3000")
-sign = client.execute("generateSign", params={"page": 1, "size": 20})
-```
-
-### GoSpider with Node Bridge
-
-```go
-import "github.com/superspider/gospider/node_reverse"
-
-client := node_reverse.NewClient("http://localhost:3000")
-sign, err := client.Execute("generateSign", map[string]interface{}{
-    "page": 1, "size": 20,
-})
-```
-
-See `NODE_REVERSE_INTEGRATION_GUIDE.md` for full Node.js bridge documentation.
+- AI or browser paths returning only fallback-style output
+- reverse service unavailable
+- challenge-heavy pages with only simulation and no real browser capture
+- docs or examples assuming public library APIs that are not present in the current repo
 
 ---
 
-## Debugging Encrypted Sites
+## 6. Recommended Documentation Language
 
-### Step 1: Identify the Signature Function
+When describing encrypted crawling support externally, use:
 
-Use browser DevTools to find where the signature is generated:
+- `encrypted-site support`
+- `reverse-assisted request reconstruction`
+- `protected-flow analysis`
+- `reverse-assisted browser emulation`
 
-1. Open DevTools → Network tab
-2. Find a protected API request
-3. Look for `sign`, `token`, `_t`, `_sign`, or similar parameters
-4. Use the Sources tab to search for where these values are assigned
+Avoid:
 
-### Step 2: Extract the JavaScript
-
-Copy the relevant function(s) from the minified source. Tools like `prettier` can help format it.
-
-### Step 3: Test the Extracted Function
-
-```bash
-node -e "
-const { generateSign } = require('./signature.js');
-console.log(generateSign({ page: 1 }, 'secret_key'));
-"
-```
-
-### Step 4: Integrate with SuperSpider
-
-Pass the extracted JS file path to the `EncryptedCrawler` as shown above.
+- `fully automatic bypass`
+- `guaranteed decryption`
+- `real browser execution` unless that specific path is actually using the runtime's browser module
 
 ---
 
-## Related Docs
+## 7. Related Docs
 
-- `NODE_REVERSE_INTEGRATION_GUIDE.md` — Node.js reverse engineering integration
-- `ADVANCED_USAGE_GUIDE.md` — advanced crawling scenarios
-- `docs/FRAMEWORK_CAPABILITY_MATRIX.md` — capability comparison
+- [`NODE_REVERSE_INTEGRATION_GUIDE.md`](NODE_REVERSE_INTEGRATION_GUIDE.md)
+- [`ADVANCED_USAGE_GUIDE.md`](ADVANCED_USAGE_GUIDE.md)
+- [`ULTIMATE_ENHANCEMENT_GUIDE.md`](ULTIMATE_ENHANCEMENT_GUIDE.md)
+- [`HIDDEN_CAPABILITIES_REPORT.md`](HIDDEN_CAPABILITIES_REPORT.md)
+- [`FRAMEWORK_DEFECT_AUDIT.md`](FRAMEWORK_DEFECT_AUDIT.md)
