@@ -1,8 +1,8 @@
 # SuperSpider Framework Capabilities
 
-Updated: 2026-04-21
+Updated: 2026-04-23
 
-This document replaces the previous deep-scan dump with a source-aligned summary.
+This is the canonical source-aligned capability summary for the GitHub-facing docs.
 
 Status vocabulary used here:
 
@@ -17,15 +17,17 @@ Status vocabulary used here:
 
 The four runtimes all implement the following broad areas:
 
-- HTTP + browser crawling
+- HTTP plus browser crawling
+- shared config scaffolding, preflight checks, and runtime capability reporting
+- site profiling, crawler-type hints, site-family presets, and reusable starter assets
 - anti-bot helpers, captcha-related utilities, and SSRF protection
 - media parsing/downloading for mainstream video formats
-- NodeReverse integration for crypto / anti-bot / browser-emulation workflows
+- NodeReverse integration for crypto, anti-bot, and browser-emulation workflows
 - distributed or queue-backed execution paths
 - audit, artifact, checkpoint, and runtime-control surfaces
 - scrapy-style or project-style authoring interfaces
 
-What is not shared equally is maturity. Several capabilities exist in every runtime but differ in depth or runtime guarantees.
+What is not shared equally is maturity. Several capabilities exist in every runtime but differ in depth, runtime guarantees, or operational polish.
 
 ---
 
@@ -39,12 +41,14 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 
 ### Implemented
 
-- Unified CLI with `crawl`, `browser`, `ai`, `media`, `workflow`, `scrapy`, `ultimate`, `anti-bot`, `node-reverse`, `console`, `audit`, `jobdir`, `http-cache`, `capabilities`
-- Scrapy-style project flows including `plan-ai`, `sync-ai`, `auth-validate`, `auth-capture`, `scaffold-ai`, `genspider`, `init`, and `contracts`
+- Unified CLI with `config`, `crawl`, `doctor`, `preflight`, `media`, `web`, `version`, `browser`, `export`, `curl`, `job`, `async-job`, `workflow`, `capabilities`, `sitemap-discover`, `plugins`, `selector-studio`, `scrapy`, `profile-site`, `ultimate`, `ai`, `anti-bot`, `node-reverse`, `jobdir`, `http-cache`, `console`, and `audit`
+- Browser tooling subcommands `fetch`, `trace`, `mock`, and `codegen`
+- Scrapy-style project flows including `demo`, `run`, `export`, `profile`, `doctor`, `bench`, `shell`, `list`, `validate`, `plan-ai`, `sync-ai`, `auth-validate`, `auth-capture`, `scaffold-ai`, `genspider`, `init`, and `contracts`
+- `profile-site`, `scrapy plan-ai`, and `scrapy scaffold-ai` emit `crawler_type`, `site_family`, `runner_order`, `strategy_hints`, and `job_templates`
+- Shared starter assets under `examples/crawler-types/`, `examples/site-presets/`, and `examples/class-kits/`, plus native ecommerce examples under `pyspider/examples/`
 - CookieJar with persistence, Netscape export/import, expiry cleanup, and domain-aware matching
-- Graph extraction and graph artifact generation
-- Dataset writing, audit sinks, runtime notebook output, and control-plane files
-- Artifact-driven media parsing from browser HTML / network / HAR outputs
+- Graph extraction, graph artifacts, dataset writing, audit sinks, runtime notebook output, and control-plane files
+- Artifact-driven media parsing from browser HTML, network, and HAR outputs
 - Feature gates for `ai`, `browser`, `distributed`, `media`, `workflow`, and `crawlee`
 
 ### Conditional
@@ -75,15 +79,16 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 
 ### Implemented
 
-- Unified CLI with `crawl`, `browser`, `ai`, `media`, `workflow`, `scrapy`, `ultimate`, `anti-bot`, `node-reverse`, `research`, `console`, `audit`, `jobdir`, `http-cache`, `doctor`, `preflight`
-- Feature gates for `ai`, `browser`, `distributed`, `media`, `workflow`, and `crawlee`
+- Unified CLI with `config`, `crawl`, `browser`, `export`, `curl`, `run`, `job`, `async-job`, `jobdir`, `http-cache`, `console`, `audit`, `capabilities`, `web`, `workflow`, `media`, `ultimate`, `ai`, `selector-studio`, `scrapy`, `sitemap-discover`, `plugins`, `profile-site`, `research`, `node-reverse`, `anti-bot`, `doctor`, and `preflight`
+- Browser tooling subcommands `fetch`, `trace`, `mock`, and `codegen`
+- `config`, `profile-site`, `sitemap-discover`, `selector-studio`, `plugins`, `jobdir`, `http-cache`, `console`, and `audit` are documented operator/control-plane tools rather than internal helpers
 - Browser runtime artifact capture for HTML, DOM, screenshot, console, network JSON, HAR, and realtime WebSocket/SSE messages
 - Browser layer support for upload-input handling, same-origin iframe helper operations, and open Shadow DOM helper paths
-- JobSpec/Workflow actions including `goto`, `wait`, `click`, `type`, `scroll`, `select`, `hover`, `eval`, `screenshot`, and `listen_network`
-- Storage backends for file/process/SQL result and dataset stores
+- JobSpec/workflow actions including `goto`, `wait`, `click`, `type`, `scroll`, `select`, `hover`, `eval`, `screenshot`, and `listen_network`
+- Shared starter assets under the repo-level `examples/` tree, plus native ecommerce examples under `gospider/examples/ecommerce/`
+- Storage backends for file, process, and SQL result/dataset stores
 - Research runtime with `run`, `async`, `soak`, and notebook-style output
-- Queue bridge support and native queue client construction
-- Scrapy-style runtime with plugins, pipelines, spider middleware, downloader middleware, and browser fetch hooks
+- Queue bridge support, native queue client construction, and scrapy-style runtime plugins/middlewares/browser fetch hooks
 
 ### Conditional
 
@@ -99,7 +104,6 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 ### Caveats
 
 - `ultimate.simulateBrowser()` is reverse-assisted emulation, not a real browser session bootstrap
-- The repository still contains `monitor.go.corrupted` and `monitor.go.original`, which are stale artifacts and should not be read as active runtime implementations
 
 ---
 
@@ -114,8 +118,10 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 ### Implemented
 
 - Feature-gated modules for `browser`, `video`, `distributed`, `api`, `web`, `ai`, and `full`
-- Unified CLI with `crawl`, `browser`, `ai`, `doctor`, `preflight`, `media`, `workflow`, `ultimate`, `scrapy`, `research`, `anti-bot`, `node-reverse`, `console`, `audit`, `jobdir`, `http-cache`, `capabilities`
+- Unified CLI with `config`, `crawl`, `browser`, `ai`, `doctor`, `preflight`, `export`, `curl`, `run`, `job`, `async-job`, `workflow`, `jobdir`, `http-cache`, `console`, `audit`, `web`, `media`, `ultimate`, `sitemap-discover`, `plugins`, `selector-studio`, `scrapy`, `profile-site`, `research`, `node-reverse`, `anti-bot`, and `capabilities`
 - Browser tooling subcommands `fetch`, `trace`, `mock`, and `codegen`
+- Site profiling, sitemap discovery, selector debugging, plugin execution, and shared control-plane tooling are public entrypoints now
+- Shared starter assets under the repo-level `examples/` tree, plus native ecommerce examples under `rustspider/examples/ecommerce/`
 - Browser manager support for upload-input handling, explicit frame switching, open Shadow DOM helper paths, and in-page WebSocket/EventSource collection
 - Token-protected Web/API surfaces with task, artifact, log, graph, and research endpoints
 - Advanced captcha recovery logic in ultimate paths, including challenge-field extraction
@@ -149,7 +155,10 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 
 ### Implemented
 
-- Unified CLI with `crawl`, `browser`, `ai`, `media`, `workflow`, `research`, `run`, `job`, `async-job`, `web`, `api`, `node-reverse`, `console`, `audit`, `jobdir`, `http-cache`, `doctor`, `preflight`, `capabilities`
+- Unified CLI with `config`, `crawl`, `browser`, `ai`, `doctor`, `preflight`, `export`, `curl`, `jobdir`, `http-cache`, `console`, `audit`, `node-reverse`, `web`, `run`, `research`, `workflow`, `media`, `job`, `async-job`, `sitemap-discover`, `plugins`, `selector-studio`, `scrapy`, `profile-site`, `anti-bot`, `capabilities`, `version`, and `help`
+- Browser tooling subcommands `fetch`, `trace`, `mock`, and `codegen`
+- Shared config generation, cache/jobdir management, console/audit views, site profiling, and selector debugging are part of the documented public surface
+- Shared starter assets under the repo-level `examples/` tree, plus native ecommerce examples under `com.javaspider.examples.ecommerce`
 - Selenium-backed workflow engine with network listening, extraction, screenshots, download steps, and captcha-aware context helpers
 - Workflow replay and graph reconstruction
 - Research runtime with sync and async modes
@@ -195,7 +204,10 @@ Important boundary:
 
 - `rustspider` full `cargo test --quiet` is substantially heavier than the targeted slices above and is better treated as a CI-tier check with a longer timeout budget.
 
-For current caveats and known implementation gaps, see:
+For related docs, use:
 
-- [`../HIDDEN_CAPABILITIES_REPORT.md`](../HIDDEN_CAPABILITIES_REPORT.md)
-- [`../FRAMEWORK_DEFECT_AUDIT.md`](../FRAMEWORK_DEFECT_AUDIT.md)
+- [`FRAMEWORK_CAPABILITY_MATRIX.md`](FRAMEWORK_CAPABILITY_MATRIX.md)
+- [`CRAWL_SCENARIO_GAP_MATRIX.md`](CRAWL_SCENARIO_GAP_MATRIX.md)
+- [`LATEST_SCENARIO_CASES.md`](LATEST_SCENARIO_CASES.md)
+- [`CRAWLER_TYPE_PLAYBOOK.md`](CRAWLER_TYPE_PLAYBOOK.md)
+- [`SITE_PRESET_PLAYBOOK.md`](SITE_PRESET_PLAYBOOK.md)

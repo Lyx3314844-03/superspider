@@ -10,12 +10,14 @@ GoSpider is the SuperSpider runtime for compiled, operations-friendly crawler de
 - browser artifact capture and replay-oriented runtime dispatch
 - anti-bot, media, research, API, and workflow surfaces
 
-## Hidden Capabilities
+## Public Runtime Surface
 
 ### Unified Runtime Surface
 
 - CLI commands include `config`, `crawl`, `browser`, `export`, `curl`, `run`, `job`, `async-job`, `jobdir`, `http-cache`, `console`, `audit`, `capabilities`, `web`, `workflow`, `media`, `ultimate`, `ai`, `selector-studio`, `scrapy`, `sitemap-discover`, `plugins`, `profile-site`, `research`, `node-reverse`, `anti-bot`, `doctor`, and `preflight`.
+- Browser tooling includes `fetch`, `trace`, `mock`, and `codegen`.
 - Feature gates are implemented for `ai`, `browser`, `distributed`, `media`, `workflow`, and `crawlee`, with `lite`, `ai`, `distributed`, and `full` profiles.
+- Operator/control-plane tooling is now part of the public surface: `config`, `profile-site`, `sitemap-discover`, `selector-studio`, `plugins`, `jobdir`, `http-cache`, `console`, and `audit` are not internal helpers.
 
 ### Browser and Artifact Pipeline
 
@@ -40,6 +42,7 @@ GoSpider is the SuperSpider runtime for compiled, operations-friendly crawler de
 
 - Scrapy-style runtime supports plugins, item pipelines, spider middleware, downloader middleware, browser fetchers, and project-level declarative configuration.
 - Browser contract config already includes `storage_state_file`, `cookies_file`, and `auth_file`.
+- Shared starter assets now cover crawler types, site-family presets, and reusable class kits under the repo-level `examples/` tree, so GoSpider docs no longer rely on hidden capability mirrors.
 - NodeReverse integration covers profile/detect flows plus fingerprint spoofing, TLS fingerprinting, Canvas fingerprinting, and middleware-assisted injection.
 - Distributed modules include Redis clients, queue backends, service/state-machine layers, node discovery, workers, and soak scenarios.
 
@@ -53,7 +56,6 @@ GoSpider is the SuperSpider runtime for compiled, operations-friendly crawler de
 
 - The `ai` CLI can fall back to heuristic extraction when no AI API key is configured; not every AI path is guaranteed to be LLM-backed.
 - `ultimate.simulateBrowser()` is reverse-assisted emulation, not a full browser session bootstrap.
-- The repository still contains `monitor.go.corrupted` and `monitor.go.original`, which should be treated as stale files rather than active implementations.
 
 ## Concrete Media Coverage
 

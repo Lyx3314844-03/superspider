@@ -1,0 +1,30 @@
+{
+  "name": "pinduoduo-search-browser",
+  "runtime": "browser",
+  "target": {
+    "url": "https://mobile.yangkeduo.com/search_result.html?search_key=iphone",
+    "method": "GET",
+    "allowed_domains": ["pinduoduo.com", "yangkeduo.com"]
+  },
+  "browser": {
+    "headless": true,
+    "wait_load": true,
+    "viewport": { "width": 430, "height": 1200 },
+    "capture": ["html", "dom", "screenshot", "network"]
+  },
+  "actions": [
+    { "type": "wait" },
+    { "type": "scroll" },
+    { "type": "wait" },
+    { "type": "scroll" }
+  ],
+  "extract": [
+    { "field": "title", "type": "css", "expr": "title" },
+    { "field": "price", "type": "regex", "expr": "(?:￥|¥)\\s?([0-9]+(?:\\.[0-9]{1,2})?)" }
+  ],
+  "output": { "format": "json", "path": "artifacts/exports/pinduoduo-search-browser.json" },
+  "metadata": {
+    "site_family": "pinduoduo",
+    "crawler_type": "ecommerce_search"
+  }
+}

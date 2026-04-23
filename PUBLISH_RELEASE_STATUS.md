@@ -1,6 +1,6 @@
 # SuperSpider Publish / Release Status
 
-Updated: 2026-04-21
+Updated: 2026-04-23
 
 This file is a release-facing summary for the GitHub publish step.
 
@@ -78,12 +78,13 @@ Status: pass
 
 - Root publish docs:
   - `README.md`
-  - `HIDDEN_CAPABILITIES_REPORT.md`
-  - `FRAMEWORK_DEFECT_AUDIT.md`
+  - `docs/DOCS_INDEX.md`
   - `PUBLISH_RELEASE_STATUS.md`
 - Matrix / capability docs:
   - `docs/FRAMEWORK_CAPABILITIES.md`
   - `docs/FRAMEWORK_CAPABILITY_MATRIX.md`
+  - `docs/CRAWLER_TYPE_PLAYBOOK.md`
+  - `docs/SITE_PRESET_PLAYBOOK.md`
 - Runtime READMEs:
   - `javaspider/README.md`
   - `gospider/README.md`

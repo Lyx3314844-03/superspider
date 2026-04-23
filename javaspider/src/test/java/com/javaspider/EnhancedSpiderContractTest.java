@@ -512,6 +512,9 @@ class EnhancedSpiderContractTest {
             assertTrue(stdout.contains("\"command\" : \"profile-site\""));
             assertTrue(stdout.contains("\"page_type\" : \"detail\""));
             assertTrue(stdout.contains("\"framework\" : \"javaspider\""));
+            assertTrue(stdout.contains("\"crawler_type\" : \"static_detail\""));
+            assertTrue(stdout.contains("\"runner_order\""));
+            assertTrue(stdout.contains("\"job_templates\""));
             assertTrue(stdout.contains("\"reverse\""));
             assertTrue(stdout.contains("mock-ja3"));
             assertTrue(stdout.contains("mock-canvas"));

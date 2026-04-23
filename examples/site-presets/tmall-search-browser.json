@@ -1,0 +1,29 @@
+{
+  "name": "tmall-search-browser",
+  "runtime": "browser",
+  "target": {
+    "url": "https://list.tmall.com/search_product.htm?q=iphone",
+    "method": "GET",
+    "allowed_domains": ["tmall.com"]
+  },
+  "browser": {
+    "headless": true,
+    "wait_load": true,
+    "viewport": { "width": 1440, "height": 1400 },
+    "capture": ["html", "dom", "screenshot", "network"]
+  },
+  "actions": [
+    { "type": "wait" },
+    { "type": "scroll" },
+    { "type": "wait" }
+  ],
+  "extract": [
+    { "field": "title", "type": "css", "expr": "title" },
+    { "field": "price", "type": "regex", "expr": "(?:￥|¥)\\s?([0-9]+(?:\\.[0-9]{1,2})?)" }
+  ],
+  "output": { "format": "json", "path": "artifacts/exports/tmall-search-browser.json" },
+  "metadata": {
+    "site_family": "tmall",
+    "crawler_type": "ecommerce_search"
+  }
+}

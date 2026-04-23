@@ -1,0 +1,29 @@
+{
+  "name": "xiaohongshu-feed-browser",
+  "runtime": "browser",
+  "target": {
+    "url": "https://www.xiaohongshu.com/search_result?keyword=iphone",
+    "method": "GET",
+    "allowed_domains": ["xiaohongshu.com", "xhslink.com"]
+  },
+  "browser": {
+    "headless": true,
+    "wait_load": true,
+    "viewport": { "width": 1440, "height": 1400 },
+    "capture": ["html", "dom", "screenshot", "network"]
+  },
+  "actions": [
+    { "type": "wait" },
+    { "type": "scroll" },
+    { "type": "wait" }
+  ],
+  "extract": [
+    { "field": "title", "type": "css", "expr": "title" },
+    { "field": "note_id", "type": "regex", "expr": "(?:noteId|note_id)[\"'=:\\s]+([A-Za-z0-9_-]+)" }
+  ],
+  "output": { "format": "json", "path": "artifacts/exports/xiaohongshu-feed-browser.json" },
+  "metadata": {
+    "site_family": "xiaohongshu",
+    "crawler_type": "hydrated_spa"
+  }
+}

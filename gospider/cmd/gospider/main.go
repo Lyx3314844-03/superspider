@@ -13,7 +13,7 @@ import (
 	"go/token"
 	"io"
 	"net/http"
-	"net/url"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -4619,12 +4619,57 @@ func reverseFocusPayload(reversePayload any) map[string]any {
 
 func buildSiteProfile(url string, html string) map[string]any {
 	lower := strings.ToLower(html)
-	pageType := "generic"
-	if strings.Contains(lower, "<li") || strings.Contains(lower, "<ul") {
-		pageType = "list"
+	compact := strings.ReplaceAll(lower, " ", "")
+	parsed, _ := neturl.Parse(url)
+	query := map[string][]string{}
+	pathLower := ""
+	hostLower := ""
+	if parsed != nil {
+		query = parsed.Query()
+		pathLower = strings.ToLower(parsed.Path)
+		hostLower = strings.ToLower(parsed.Hostname())
 	}
-	if strings.Contains(lower, "<article") || strings.Contains(lower, "<h1") {
+	hasSearchQuery := len(query["q"]) > 0 ||
+		len(query["query"]) > 0 ||
+		len(query["keyword"]) > 0 ||
+		len(query["search"]) > 0 ||
+		len(query["wd"]) > 0 ||
+		strings.Contains(strings.ToLower(url), "/search") ||
+		strings.Contains(strings.ToLower(url), "search?") ||
+		strings.Contains(strings.ToLower(url), "keyword=")
+	pageSignals := map[string]bool{
+		"has_form":            strings.Contains(lower, "<form"),
+		"has_pagination":      strings.Contains(lower, "next") || strings.Contains(lower, "page=") || strings.Contains(lower, "pagination") || strings.Contains(html, "下一页"),
+		"has_list":            strings.Contains(lower, "<li") || strings.Contains(lower, "<ul") || strings.Contains(lower, "<ol") || strings.Contains(lower, "product-list") || strings.Contains(lower, "goods-list") || strings.Contains(lower, "sku-item"),
+		"has_detail":          strings.Contains(lower, "<article") || strings.Contains(lower, "<h1"),
+		"has_captcha":         strings.Contains(lower, "captcha") || strings.Contains(lower, "verify") || strings.Contains(lower, "human verification") || strings.Contains(html, "滑块") || strings.Contains(html, "验证码"),
+		"has_price":           strings.Contains(lower, "price") || strings.Contains(lower, `"price"`) || strings.Contains(html, "￥") || strings.Contains(html, "¥") || strings.Contains(html, "价格"),
+		"has_search":          hasSearchQuery || strings.Contains(lower, `type="search"`) || strings.Contains(html, "搜索") || strings.Contains(lower, "search-input"),
+		"has_login":           strings.Contains(lower, `type="password"`) || strings.Contains(lower, "sign in") || strings.Contains(lower, "signin") || strings.Contains(html, "登录"),
+		"has_hydration":       strings.Contains(lower, "__next_data__") || strings.Contains(lower, "__next_f") || strings.Contains(lower, "__nuxt__") || strings.Contains(lower, "__apollo_state__") || strings.Contains(lower, "__initial_state__") || strings.Contains(lower, "__preloaded_state__") || strings.Contains(lower, "window.__initial_data__"),
+		"has_api_bootstrap":   strings.Contains(lower, "__initial_state__") || strings.Contains(lower, "__preloaded_state__") || strings.Contains(lower, "__next_data__") || strings.Contains(lower, "__apollo_state__") || strings.Contains(lower, "application/json") || strings.Contains(lower, "window.__initial_data__"),
+		"has_infinite_scroll": strings.Contains(lower, "load more") || strings.Contains(lower, "infinite") || strings.Contains(lower, "intersectionobserver") || strings.Contains(lower, "onscroll") || strings.Contains(lower, "virtual-list") || strings.Contains(html, "加载更多"),
+		"has_graphql":         strings.Contains(lower, "graphql"),
+		"has_reviews":         strings.Contains(lower, "review") || strings.Contains(html, "评价") || strings.Contains(lower, "comments"),
+		"has_product_schema":  strings.Contains(compact, `"@type":"product"`) || strings.Contains(compact, `"@type":"offer"`),
+		"has_cart":            strings.Contains(lower, "add to cart") || strings.Contains(html, "购物车") || strings.Contains(lower, "buy-now") || strings.Contains(html, "立即购买"),
+		"has_sku":             strings.Contains(lower, "sku") || strings.Contains(html, "商品编号") || strings.Contains(strings.ToLower(url), "item.jd.com") || strings.Contains(strings.ToLower(url), "/item.htm"),
+		"has_image":           strings.Contains(lower, "<img") || strings.Contains(lower, "og:image"),
+	}
+	siteFamily := resolveLocalSiteFamily(hostLower)
+	crawlerType := resolveLocalCrawlerType(pageSignals, pathLower)
+	pageType := "generic"
+	switch crawlerType {
+	case "static_listing", "search_results", "ecommerce_search", "infinite_scroll_listing":
+		pageType = "list"
+	case "static_detail", "ecommerce_detail":
 		pageType = "detail"
+	default:
+		if pageSignals["has_list"] && !pageSignals["has_detail"] {
+			pageType = "list"
+		} else if pageSignals["has_detail"] {
+			pageType = "detail"
+		}
 	}
 	candidateFields := make([]string, 0)
 	for _, pair := range []struct {
@@ -4635,26 +4680,35 @@ func buildSiteProfile(url string, html string) map[string]any {
 		{"price", "price"},
 		{"author", "author"},
 		{"date", "date"},
+		{"shop", "shop"},
+		{"seller", "shop"},
+		{"description", "description"},
 	} {
 		if strings.Contains(lower, pair.token) {
 			candidateFields = append(candidateFields, pair.field)
 		}
 	}
+	if pageSignals["has_sku"] {
+		candidateFields = append(candidateFields, "sku")
+	}
+	if pageSignals["has_reviews"] {
+		candidateFields = append(candidateFields, "rating")
+	}
+	if pageSignals["has_search"] {
+		candidateFields = append(candidateFields, "keyword")
+	}
+	if pageSignals["has_image"] {
+		candidateFields = append(candidateFields, "image")
+	}
 	signals := antiBotSignals(html, 200)
 	riskLevel := "low"
-	if strings.Contains(lower, "<form") || containsSignal(signals, "captcha") {
+	if pageSignals["has_captcha"] || containsSignal(signals, "captcha") || containsSignal(signals, "vendor:cloudflare") {
+		riskLevel = "high"
+	} else if strings.HasPrefix(strings.ToLower(url), "https://") && (pageSignals["has_form"] || pageSignals["has_login"] || pageSignals["has_hydration"] || pageSignals["has_graphql"]) {
 		riskLevel = "medium"
 	}
-	if containsSignal(signals, "captcha") || containsSignal(signals, "vendor:cloudflare") {
-		riskLevel = "high"
-	}
-	recommendedRuntime := "go"
-	if pageType == "detail" {
-		recommendedRuntime = "python"
-	}
-	if containsSignal(signals, "vendor:cloudflare") {
-		recommendedRuntime = "java"
-	}
+	runnerOrder := resolveLocalRunnerOrder(crawlerType, pageSignals)
+	recommendedRuntime := recommendedFrameworkForProfile(runnerOrder, pageType, riskLevel)
 	return map[string]any{
 		"command":                  "profile-site",
 		"runtime":                  "go",
@@ -4662,13 +4716,202 @@ func buildSiteProfile(url string, html string) map[string]any {
 		"version":                  version,
 		"url":                      url,
 		"page_type":                pageType,
-		"candidate_fields":         candidateFields,
+		"site_family":              siteFamily,
+		"crawler_type":             crawlerType,
+		"candidate_fields":         uniqueLocalStrings(candidateFields),
 		"risk_level":               riskLevel,
-		"signals":                  signals,
+		"signals":                  pageSignals,
+		"anti_bot_signals":         signals,
+		"runner_order":             runnerOrder,
+		"strategy_hints":           resolveLocalStrategyHints(crawlerType, pageSignals),
+		"job_templates":            resolveLocalJobTemplates(crawlerType, siteFamily),
 		"recommended_runtime":      recommendedRuntime,
+		"recommended_framework":    recommendedRuntime,
 		"anti_bot_recommended":     riskLevel != "low",
-		"node_reverse_recommended": false,
+		"node_reverse_recommended": crawlerType == "hydrated_spa" || crawlerType == "api_bootstrap" || crawlerType == "ecommerce_search",
 	}
+}
+
+func resolveLocalSiteFamily(host string) string {
+	mapping := map[string]string{
+		"jd.com":          "jd",
+		"3.cn":            "jd",
+		"taobao.com":      "taobao",
+		"tmall.com":       "tmall",
+		"pinduoduo.com":   "pinduoduo",
+		"yangkeduo.com":   "pinduoduo",
+		"xiaohongshu.com": "xiaohongshu",
+		"xhslink.com":     "xiaohongshu",
+		"douyin.com":      "douyin-shop",
+		"jinritemai.com":  "douyin-shop",
+	}
+	for suffix, family := range mapping {
+		if host == suffix || strings.HasSuffix(host, "."+suffix) {
+			return family
+		}
+	}
+	return "generic"
+}
+
+func resolveLocalCrawlerType(signals map[string]bool, path string) string {
+	switch {
+	case signals["has_login"] && !signals["has_detail"]:
+		return "login_session"
+	case signals["has_infinite_scroll"] && (signals["has_list"] || signals["has_search"]):
+		return "infinite_scroll_listing"
+	case signals["has_price"] && (signals["has_cart"] || signals["has_sku"] || signals["has_product_schema"]) && (signals["has_search"] || (signals["has_list"] && strings.Contains(path, "search"))):
+		return "ecommerce_search"
+	case signals["has_price"] && (signals["has_cart"] || signals["has_sku"] || signals["has_product_schema"]) && signals["has_list"] && !signals["has_detail"]:
+		return "ecommerce_search"
+	case signals["has_price"] && (signals["has_cart"] || signals["has_sku"] || signals["has_product_schema"]):
+		return "ecommerce_detail"
+	case signals["has_hydration"] && (signals["has_list"] || signals["has_detail"] || signals["has_search"]):
+		return "hydrated_spa"
+	case signals["has_api_bootstrap"] || signals["has_graphql"]:
+		return "api_bootstrap"
+	case signals["has_search"] && (signals["has_list"] || signals["has_pagination"]):
+		return "search_results"
+	case signals["has_list"] && !signals["has_detail"]:
+		return "static_listing"
+	case signals["has_detail"]:
+		return "static_detail"
+	default:
+		return "generic_http"
+	}
+}
+
+func resolveLocalRunnerOrder(crawlerType string, signals map[string]bool) []string {
+	switch crawlerType {
+	case "hydrated_spa", "infinite_scroll_listing", "login_session", "ecommerce_search":
+		return []string{"browser", "http"}
+	case "ecommerce_detail":
+		if signals["has_hydration"] {
+			return []string{"browser", "http"}
+		}
+		return []string{"http", "browser"}
+	default:
+		return []string{"http", "browser"}
+	}
+}
+
+func resolveLocalStrategyHints(crawlerType string, signals map[string]bool) []string {
+	hints := map[string][]string{
+		"generic_http": {
+			"start with plain HTTP fetch and fall back to browser only if selectors are empty",
+			"prefer stable title/meta/schema extraction before custom DOM selectors",
+		},
+		"static_listing": {
+			"use HTTP mode first and follow pagination links conservatively",
+			"dedupe URLs before entering detail pages to avoid list-page churn",
+		},
+		"static_detail": {
+			"extract title, meta, and structured data before custom selectors",
+			"persist raw HTML for selector iteration and regression tests",
+		},
+		"search_results": {
+			"seed from the search URL and normalize keyword/query parameters",
+			"treat listing and detail extraction as separate stages with separate schemas",
+		},
+		"ecommerce_search": {
+			"start with browser rendering, capture HTML and network payloads, then promote stable fields into HTTP follow-up jobs",
+			"split listing fields from detail fields so sku and price can be validated independently",
+		},
+		"ecommerce_detail": {
+			"extract embedded product JSON and schema blocks before relying on brittle selectors",
+			"keep screenshot and HTML artifacts together for price and title regression checks",
+		},
+		"hydrated_spa": {
+			"render the page in browser mode and inspect embedded hydration data before DOM scraping",
+			"capture network responses and promote repeatable JSON endpoints into secondary HTTP jobs",
+		},
+		"api_bootstrap": {
+			"inspect script tags and bootstrap JSON before adding browser interactions",
+			"extract stable JSON blobs into dedicated parsing rules so DOM churn matters less",
+		},
+		"infinite_scroll_listing": {
+			"drive a bounded scroll loop and stop when repeated snapshots stop changing",
+			"persist network and DOM artifacts so load-more behavior can be replayed without guessing",
+		},
+		"login_session": {
+			"bootstrap an authenticated session once, then reuse cookies or storage state for follow-up jobs",
+			"validate the post-login page shape before starting extraction",
+		},
+	}
+	resolved := append([]string(nil), hints[crawlerType]...)
+	if len(resolved) == 0 {
+		resolved = append([]string(nil), hints["generic_http"]...)
+	}
+	if signals["has_captcha"] {
+		resolved = append(resolved, "treat challenge pages as blockers and capture evidence instead of scraping through them")
+	}
+	return resolved
+}
+
+func resolveLocalJobTemplates(crawlerType string, siteFamily string) []string {
+	mapping := map[string][]string{
+		"generic_http":            {"examples/crawler-types/api-bootstrap-http.json"},
+		"static_listing":          {"examples/crawler-types/api-bootstrap-http.json"},
+		"static_detail":           {"examples/crawler-types/api-bootstrap-http.json"},
+		"search_results":          {"examples/crawler-types/api-bootstrap-http.json"},
+		"ecommerce_search":        {"examples/crawler-types/ecommerce-search-browser.json"},
+		"ecommerce_detail":        {"examples/crawler-types/ecommerce-search-browser.json", "examples/crawler-types/api-bootstrap-http.json"},
+		"hydrated_spa":            {"examples/crawler-types/hydrated-spa-browser.json"},
+		"api_bootstrap":           {"examples/crawler-types/api-bootstrap-http.json"},
+		"infinite_scroll_listing": {"examples/crawler-types/infinite-scroll-browser.json"},
+		"login_session":           {"examples/crawler-types/login-session-browser.json"},
+	}
+	if templates, ok := mapping[crawlerType]; ok {
+		return appendLocalSiteFamilyTemplates(templates, siteFamily, crawlerType)
+	}
+	return appendLocalSiteFamilyTemplates([]string{"examples/crawler-types/api-bootstrap-http.json"}, siteFamily, crawlerType)
+}
+
+func appendLocalSiteFamilyTemplates(templates []string, siteFamily string, crawlerType string) []string {
+	familyTemplates := map[string][]string{
+		"jd":          {"examples/site-presets/jd-search-browser.json"},
+		"taobao":      {"examples/site-presets/taobao-search-browser.json"},
+		"tmall":       {"examples/site-presets/tmall-search-browser.json"},
+		"pinduoduo":   {"examples/site-presets/pinduoduo-search-browser.json"},
+		"xiaohongshu": {"examples/site-presets/xiaohongshu-feed-browser.json"},
+		"douyin-shop": {"examples/site-presets/douyin-shop-browser.json"},
+	}
+	if siteFamily == "jd" && crawlerType == "ecommerce_detail" {
+		familyTemplates["jd"] = []string{"examples/site-presets/jd-detail-browser.json"}
+	}
+	if siteFamily == "taobao" && crawlerType == "ecommerce_detail" {
+		familyTemplates["taobao"] = []string{"examples/site-presets/taobao-detail-browser.json"}
+	}
+	return uniqueLocalStrings(append(append([]string{}, templates...), familyTemplates[siteFamily]...))
+}
+
+func uniqueLocalStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func recommendedFrameworkForProfile(runnerOrder []string, pageType string, riskLevel string) string {
+	firstRunner := "http"
+	if len(runnerOrder) > 0 {
+		firstRunner = runnerOrder[0]
+	}
+	if firstRunner == "browser" && riskLevel == "high" {
+		return "java"
+	}
+	if firstRunner == "browser" {
+		return "python"
+	}
+	if pageType == "list" {
+		return "go"
+	}
+	return "python"
 }
 
 func aiCommand(args []string) int {
@@ -4876,10 +5119,13 @@ func heuristicAIUnderstand(url string, html string, question string) map[string]
 		questionText = "请总结页面类型、核心内容和推荐提取字段。"
 	}
 	answer := fmt.Sprintf(
-		"页面类型=%v，候选字段=%v，风险等级=%v。问题：%s",
+		"页面类型=%v，站点家族=%v，爬虫类型=%v，候选字段=%v，风险等级=%v，优先 runner=%v。问题：%s",
 		profile["page_type"],
+		profile["site_family"],
+		profile["crawler_type"],
 		profile["candidate_fields"],
 		profile["risk_level"],
+		profile["runner_order"],
 		questionText,
 	)
 	return map[string]any{
@@ -4995,27 +5241,54 @@ func buildAIBlueprint(resolvedURL string, spiderName string, profile map[string]
 	}
 	sort.Strings(fieldNames)
 	pageType := fmt.Sprint(profile["page_type"])
+	siteFamily := fmt.Sprint(profile["site_family"])
+	crawlerType := fmt.Sprint(profile["crawler_type"])
 	riskLevel := fmt.Sprint(profile["risk_level"])
 	lowered := strings.ToLower(html)
-	signals := []string{}
-	if rawSignals, ok := profile["signals"].([]string); ok {
-		signals = append(signals, rawSignals...)
-	} else if rawSignals, ok := profile["signals"].([]any); ok {
-		for _, item := range rawSignals {
-			signals = append(signals, fmt.Sprint(item))
+	runnerOrder := []string{}
+	if rawOrder, ok := profile["runner_order"].([]string); ok {
+		runnerOrder = append(runnerOrder, rawOrder...)
+	} else if rawOrder, ok := profile["runner_order"].([]any); ok {
+		for _, item := range rawOrder {
+			runnerOrder = append(runnerOrder, fmt.Sprint(item))
 		}
+	}
+	strategyHints := []string{}
+	if rawHints, ok := profile["strategy_hints"].([]string); ok {
+		strategyHints = append(strategyHints, rawHints...)
+	} else if rawHints, ok := profile["strategy_hints"].([]any); ok {
+		for _, item := range rawHints {
+			strategyHints = append(strategyHints, fmt.Sprint(item))
+		}
+	}
+	jobTemplates := []string{}
+	if rawTemplates, ok := profile["job_templates"].([]string); ok {
+		jobTemplates = append(jobTemplates, rawTemplates...)
+	} else if rawTemplates, ok := profile["job_templates"].([]any); ok {
+		for _, item := range rawTemplates {
+			jobTemplates = append(jobTemplates, fmt.Sprint(item))
+		}
+	}
+	antiBotRunner := "http"
+	if len(runnerOrder) > 0 {
+		antiBotRunner = runnerOrder[0]
 	}
 	return map[string]any{
 		"version":          1,
 		"spider_name":      spiderName,
 		"resolved_url":     resolvedURL,
 		"page_type":        pageType,
+		"site_family":      siteFamily,
+		"crawler_type":     crawlerType,
 		"candidate_fields": candidateFields,
 		"schema":           schema,
 		"extraction_prompt": fmt.Sprintf(
 			"请从页面中提取以下字段，并只返回 JSON：%s。缺失字段返回空字符串或空数组。",
 			strings.Join(fieldNames, ", "),
 		),
+		"runner_order":   runnerOrder,
+		"strategy_hints": strategyHints,
+		"job_templates":  jobTemplates,
 		"follow_rules": []map[string]any{
 			{
 				"name":        "same-domain-content",
@@ -5025,7 +5298,7 @@ func buildAIBlueprint(resolvedURL string, spiderName string, profile map[string]
 		},
 		"pagination": map[string]any{
 			"enabled":   pageType == "list" || pageType == "generic" || strings.Contains(lowered, `rel="next"`) || strings.Contains(lowered, "pagination") || strings.Contains(lowered, "page=") || strings.Contains(lowered, "next page") || strings.Contains(lowered, "下一页"),
-			"strategy":  "follow next page or numbered pagination links",
+			"strategy":  map[bool]string{true: "bounded scroll batches with repeated DOM and network snapshot checks", false: "follow next page or numbered pagination links"}[crawlerType == "infinite_scroll_listing"],
 			"selectors": []string{"a[rel='next']", ".next", ".pagination a"},
 		},
 		"authentication": map[string]any{
@@ -5033,8 +5306,8 @@ func buildAIBlueprint(resolvedURL string, spiderName string, profile map[string]
 			"strategy": map[bool]string{true: "capture session/login flow before crawl", false: "not required"}[strings.Contains(lowered, `type="password"`) || strings.Contains(lowered, `type='password'`) || strings.Contains(lowered, "login") || strings.Contains(lowered, "sign in") || strings.Contains(lowered, "signin") || strings.Contains(lowered, "登录")],
 		},
 		"javascript_runtime": map[string]any{
-			"required":           strings.Contains(lowered, "__next_data__") || strings.Contains(lowered, "window.__") || strings.Contains(lowered, "webpack") || strings.Contains(lowered, "fetch(") || strings.Contains(lowered, "graphql") || strings.Contains(lowered, "xhr"),
-			"recommended_runner": map[bool]string{true: "browser", false: "http"}[strings.Contains(lowered, "__next_data__") || strings.Contains(lowered, "window.__") || strings.Contains(lowered, "webpack") || strings.Contains(lowered, "fetch(") || strings.Contains(lowered, "graphql") || strings.Contains(lowered, "xhr")],
+			"required":           strings.Contains(lowered, "__next_data__") || strings.Contains(lowered, "window.__") || strings.Contains(lowered, "webpack") || strings.Contains(lowered, "fetch(") || strings.Contains(lowered, "graphql") || strings.Contains(lowered, "xhr") || crawlerType == "hydrated_spa" || crawlerType == "infinite_scroll_listing" || crawlerType == "ecommerce_search",
+			"recommended_runner": map[bool]string{true: "browser", false: "http"}[(len(runnerOrder) > 0 && runnerOrder[0] == "browser") || strings.Contains(lowered, "__next_data__") || strings.Contains(lowered, "window.__") || strings.Contains(lowered, "webpack") || strings.Contains(lowered, "fetch(") || strings.Contains(lowered, "graphql") || strings.Contains(lowered, "xhr")],
 		},
 		"reverse_engineering": map[string]any{
 			"required": strings.Contains(lowered, "crypto") || strings.Contains(lowered, "signature") || strings.Contains(lowered, "token") || strings.Contains(lowered, "webpack") || strings.Contains(lowered, "obfusc") || strings.Contains(lowered, "encrypt") || strings.Contains(lowered, "decrypt"),
@@ -5042,8 +5315,8 @@ func buildAIBlueprint(resolvedURL string, spiderName string, profile map[string]
 		},
 		"anti_bot_strategy": map[string]any{
 			"risk_level":         riskLevel,
-			"signals":            signals,
-			"recommended_runner": map[bool]string{true: "browser", false: "http"}[riskLevel != "low"],
+			"signals":            profile["signals"],
+			"recommended_runner": antiBotRunner,
 			"notes":              "高风险页面建议先走浏览器模式并降低抓取速率",
 		},
 	}
@@ -5133,7 +5406,7 @@ func deriveDomainFromURL(raw string) string {
 	if strings.TrimSpace(raw) == "" {
 		return "example.com"
 	}
-	if parsed, err := url.Parse(raw); err == nil && strings.TrimSpace(parsed.Host) != "" {
+	if parsed, err := neturl.Parse(raw); err == nil && strings.TrimSpace(parsed.Host) != "" {
 		return parsed.Host
 	}
 	return "example.com"

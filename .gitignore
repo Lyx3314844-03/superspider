@@ -59,6 +59,8 @@ examples/__pycache__/
 **/__pycache__/
 *.db
 *.ts
+output/
+nul
 
 # Backup files
 *.md.bak

@@ -2262,18 +2262,13 @@ def cmd_profile_site(args: argparse.Namespace) -> int:
         "runtime": "python",
         "framework": "pyspider",
         "version": VERSION,
-        "url": profile.url,
-        "page_type": profile.page_type,
-        "signals": profile.signals,
-        "candidate_fields": profile.candidate_fields,
-        "risk_level": profile.risk_level,
-        "recommended_runtime": (
-            "java"
-            if profile.risk_level == "high"
-            else "python" if profile.page_type == "detail" else "go"
-        ),
-        "anti_bot_recommended": profile.risk_level != "low",
-        "node_reverse_recommended": False,
+        **_site_profile_payload(profile),
+        "recommended_framework": _recommended_framework_for_profile(profile),
+        "recommended_runtime": _recommended_framework_for_profile(profile),
+        "anti_bot_recommended": profile.risk_level != "low"
+        or bool(profile.signals.get("has_login")),
+        "node_reverse_recommended": profile.crawler_type
+        in {"hydrated_spa", "api_bootstrap", "ecommerce_search"},
         "reverse": {},
     }
     try:
@@ -2302,6 +2297,33 @@ def cmd_profile_site(args: argparse.Namespace) -> int:
 
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
+
+
+def _site_profile_payload(profile: Any) -> Dict[str, Any]:
+    return {
+        "url": profile.url,
+        "page_type": profile.page_type,
+        "site_family": getattr(profile, "site_family", "generic"),
+        "crawler_type": getattr(profile, "crawler_type", "generic_http"),
+        "signals": profile.signals,
+        "candidate_fields": profile.candidate_fields,
+        "risk_level": profile.risk_level,
+        "runner_order": list(getattr(profile, "runner_order", []) or []),
+        "strategy_hints": list(getattr(profile, "strategy_hints", []) or []),
+        "job_templates": list(getattr(profile, "job_templates", []) or []),
+    }
+
+
+def _recommended_framework_for_profile(profile: Any) -> str:
+    runner_order = list(getattr(profile, "runner_order", []) or [])
+    first_runner = runner_order[0] if runner_order else "http"
+    if first_runner == "browser" and profile.risk_level == "high":
+        return "java"
+    if first_runner == "browser":
+        return "python"
+    if profile.page_type == "list":
+        return "go"
+    return "python"
 
 
 def _reverse_focus_payload(reverse_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -2746,13 +2768,7 @@ def cmd_scrapy(args: argparse.Namespace) -> int:
         blueprint = _build_ai_blueprint(
             resolved_url,
             spider_name,
-            {
-                "url": profile.url,
-                "page_type": profile.page_type,
-                "signals": profile.signals,
-                "candidate_fields": profile.candidate_fields,
-                "risk_level": profile.risk_level,
-            },
+            _site_profile_payload(profile),
             schema,
             content,
         )
@@ -2764,18 +2780,9 @@ def cmd_scrapy(args: argparse.Namespace) -> int:
             "spider_name": spider_name,
             "source": source,
             "resolved_url": resolved_url,
-            "recommended_runtime": (
-                "java"
-                if profile.risk_level == "high"
-                else "python" if profile.page_type == "detail" else "go"
-            ),
-            "page_profile": {
-                "url": profile.url,
-                "page_type": profile.page_type,
-                "signals": profile.signals,
-                "candidate_fields": profile.candidate_fields,
-                "risk_level": profile.risk_level,
-            },
+            "recommended_runtime": _recommended_framework_for_profile(profile),
+            "recommended_framework": _recommended_framework_for_profile(profile),
+            "page_profile": _site_profile_payload(profile),
             "schema": schema,
             "blueprint": blueprint,
             "suggested_commands": [
@@ -3164,13 +3171,7 @@ def cmd_scrapy(args: argparse.Namespace) -> int:
         blueprint = _build_ai_blueprint(
             resolved_url,
             spider_name,
-            {
-                "url": profile.url,
-                "page_type": profile.page_type,
-                "signals": profile.signals,
-                "candidate_fields": profile.candidate_fields,
-                "risk_level": profile.risk_level,
-            },
+            _site_profile_payload(profile),
             schema,
             content,
         )
@@ -3214,18 +3215,9 @@ def cmd_scrapy(args: argparse.Namespace) -> int:
             "spider_name": spider_name,
             "source": source,
             "resolved_url": resolved_url,
-            "recommended_runtime": (
-                "java"
-                if profile.risk_level == "high"
-                else "python" if profile.page_type == "detail" else "go"
-            ),
-            "page_profile": {
-                "url": profile.url,
-                "page_type": profile.page_type,
-                "signals": profile.signals,
-                "candidate_fields": profile.candidate_fields,
-                "risk_level": profile.risk_level,
-            },
+            "recommended_runtime": _recommended_framework_for_profile(profile),
+            "recommended_framework": _recommended_framework_for_profile(profile),
+            "page_profile": _site_profile_payload(profile),
             "schema": schema,
             "blueprint": blueprint,
             "written_files": [],
@@ -4141,14 +4133,12 @@ def _heuristic_ai_understand(url: str, html: str, question: str) -> dict[str, An
     profile = profiler.profile(url or "", html)
     question_text = question or "请总结页面类型、核心内容和推荐提取字段。"
     return {
-        "answer": f"页面类型={profile.page_type}，候选字段={profile.candidate_fields}，风险等级={profile.risk_level}。问题：{question_text}",
-        "page_profile": {
-            "url": profile.url,
-            "page_type": profile.page_type,
-            "signals": profile.signals,
-            "candidate_fields": profile.candidate_fields,
-            "risk_level": profile.risk_level,
-        },
+        "answer": (
+            f"页面类型={profile.page_type}，爬虫类型={profile.crawler_type}，"
+            f"候选字段={profile.candidate_fields}，风险等级={profile.risk_level}，"
+            f"优先 runner={profile.runner_order}。问题：{question_text}"
+        ),
+        "page_profile": _site_profile_payload(profile),
     }
 
 
@@ -4228,8 +4218,12 @@ def _build_ai_blueprint(
         + "。缺失字段返回空字符串或空数组。"
     )
     page_type = str(page_profile.get("page_type") or "generic")
-    signals = list(page_profile.get("signals") or [])
+    crawler_type = str(page_profile.get("crawler_type") or "generic_http")
+    signals = dict(page_profile.get("signals") or {})
     risk_level = str(page_profile.get("risk_level") or "low")
+    runner_order = list(page_profile.get("runner_order") or [])
+    strategy_hints = list(page_profile.get("strategy_hints") or [])
+    job_templates = list(page_profile.get("job_templates") or [])
     lowered = (html or "").lower()
     auth_required = any(token in lowered for token in ["type=\"password\"", "type='password'", "login", "sign in", "signin", "登录"])
     js_heavy = any(token in lowered for token in ["__next_data__", "window.__", "webpack", "fetch(", "graphql", "xhr"])
@@ -4243,13 +4237,17 @@ def _build_ai_blueprint(
     ]
     pagination = {
         "enabled": page_type in {"list", "generic"} or any(token in lowered for token in ["rel=\"next\"", "pagination", "page=", "next page", "下一页"]),
-        "strategy": "follow next page or numbered pagination links",
+        "strategy": (
+            "bounded scroll batches with repeated DOM/network snapshot checks"
+            if crawler_type == "infinite_scroll_listing"
+            else "follow next page or numbered pagination links"
+        ),
         "selectors": ["a[rel='next']", ".next", ".pagination a"],
     }
     anti_bot = {
         "risk_level": risk_level,
         "signals": signals,
-        "recommended_runner": "browser" if risk_level != "low" else "http",
+        "recommended_runner": runner_order[0] if runner_order else ("browser" if risk_level != "low" else "http"),
         "notes": "高风险页面建议先走浏览器模式并降低抓取速率",
     }
     return {
@@ -4257,9 +4255,13 @@ def _build_ai_blueprint(
         "spider_name": spider_name,
         "resolved_url": resolved_url,
         "page_type": page_type,
+        "crawler_type": crawler_type,
         "candidate_fields": candidate_fields,
         "schema": schema,
         "extraction_prompt": extraction_prompt,
+        "runner_order": runner_order,
+        "strategy_hints": strategy_hints,
+        "job_templates": job_templates,
         "follow_rules": follow_rules,
         "pagination": pagination,
         "authentication": {
@@ -4267,8 +4269,8 @@ def _build_ai_blueprint(
             "strategy": "capture session/login flow before crawl" if auth_required else "not required",
         },
         "javascript_runtime": {
-            "required": js_heavy,
-            "recommended_runner": "browser" if js_heavy else "http",
+            "required": js_heavy or crawler_type in {"hydrated_spa", "infinite_scroll_listing", "ecommerce_search"},
+            "recommended_runner": "browser" if (js_heavy or (runner_order and runner_order[0] == "browser")) else "http",
         },
         "reverse_engineering": {
             "required": reverse_required,

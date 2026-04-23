@@ -527,6 +527,10 @@ fn rust_cli_profile_site_command_builds_profile() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("\"command\": \"profile-site\""));
     assert!(stdout.contains("\"page_type\": \"detail\""));
+    assert!(stdout.contains("\"crawler_type\": \"static_detail\""));
+    assert!(stdout.contains("\"site_family\": \"generic\""));
+    assert!(stdout.contains("\"runner_order\""));
+    assert!(stdout.contains("\"job_templates\""));
     assert!(stdout.contains("\"reverse\""));
     assert!(stdout.contains("mock-ja3"));
     assert!(stdout.contains("mock-canvas"));

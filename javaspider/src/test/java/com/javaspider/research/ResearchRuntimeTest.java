@@ -41,6 +41,20 @@ class ResearchRuntimeTest {
     }
 
     @Test
+    void researchRuntimeProfilesCrawlerType() {
+        ResearchRuntime runtime = new ResearchRuntime();
+        SiteProfile profile = runtime.profile(
+            "https://shop.example.com/search?q=phone",
+            "<html><head><title>Search</title><script>window.__NEXT_DATA__={\"items\":[{\"sku\":\"SKU1\",\"price\":\"10\"}]}</script></head><body><div class='product-list'><div class='sku-item'>SKU1</div><div class='price'>￥10</div><button>加入购物车</button></div></body></html>"
+        );
+
+        assertEquals("generic", profile.getSiteFamily());
+        assertEquals("ecommerce_search", profile.getCrawlerType());
+        assertEquals(List.of("browser", "http"), profile.getRunnerOrder());
+        assertTrue(profile.getJobTemplates().contains("examples/crawler-types/ecommerce-search-browser.json"));
+    }
+
+    @Test
     void researchRuntimeWritesJsonlDataset() throws Exception {
         ResearchRuntime runtime = new ResearchRuntime();
         Path output = Files.createTempDirectory("java-research").resolve("rows.jsonl");

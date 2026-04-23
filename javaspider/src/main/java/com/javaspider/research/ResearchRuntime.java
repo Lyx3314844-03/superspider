@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -49,27 +50,196 @@ public class ResearchRuntime {
 
     public SiteProfile profile(String url, String content) {
         String lower = content.toLowerCase(Locale.ROOT);
+        String compact = lower.replace(" ", "");
+        String urlLower = url.toLowerCase(Locale.ROOT);
+        String siteFamily = resolveSiteFamily(urlLower);
+        boolean hasSearchQuery = urlLower.contains("/search")
+            || urlLower.contains("search?")
+            || urlLower.contains("keyword=")
+            || urlLower.contains("q=")
+            || urlLower.contains("query=")
+            || urlLower.contains("wd=");
         Map<String, Boolean> signals = new LinkedHashMap<>();
         signals.put("has_form", lower.contains("<form"));
-        signals.put("has_pagination", lower.contains("next") || lower.contains("page="));
-        signals.put("has_list", lower.contains("<li") || lower.contains("<ul"));
+        signals.put("has_pagination", lower.contains("next") || lower.contains("page=") || lower.contains("pagination") || content.contains("下一页"));
+        signals.put("has_list", lower.contains("<li") || lower.contains("<ul") || lower.contains("<ol") || lower.contains("product-list") || lower.contains("goods-list") || lower.contains("sku-item"));
         signals.put("has_detail", lower.contains("<article") || lower.contains("<h1"));
-        signals.put("has_captcha", lower.contains("captcha") || lower.contains("verify"));
+        signals.put("has_captcha", lower.contains("captcha") || lower.contains("verify") || lower.contains("human verification") || content.contains("滑块") || content.contains("验证码"));
+        signals.put("has_price", lower.contains("price") || lower.contains("\"price\"") || content.contains("￥") || content.contains("¥") || content.contains("价格"));
+        signals.put("has_search", hasSearchQuery || lower.contains("type=\"search\"") || content.contains("搜索") || lower.contains("search-input"));
+        signals.put("has_login", lower.contains("type=\"password\"") || lower.contains("sign in") || lower.contains("signin") || content.contains("登录"));
+        signals.put("has_hydration", lower.contains("__next_data__") || lower.contains("__next_f") || lower.contains("__nuxt__") || lower.contains("__apollo_state__") || lower.contains("__initial_state__") || lower.contains("__preloaded_state__") || lower.contains("window.__initial_data__"));
+        signals.put("has_api_bootstrap", lower.contains("__initial_state__") || lower.contains("__preloaded_state__") || lower.contains("__next_data__") || lower.contains("__apollo_state__") || lower.contains("application/json") || lower.contains("window.__initial_data__"));
+        signals.put("has_infinite_scroll", lower.contains("load more") || lower.contains("infinite") || lower.contains("intersectionobserver") || lower.contains("onscroll") || lower.contains("virtual-list") || content.contains("加载更多"));
+        signals.put("has_graphql", lower.contains("graphql"));
+        signals.put("has_reviews", lower.contains("review") || content.contains("评价") || lower.contains("comments"));
+        signals.put("has_product_schema", compact.contains("\"@type\":\"product\"") || compact.contains("\"@type\":\"offer\""));
+        signals.put("has_cart", lower.contains("add to cart") || content.contains("购物车") || lower.contains("buy-now") || content.contains("立即购买"));
+        signals.put("has_sku", lower.contains("sku") || content.contains("商品编号") || urlLower.contains("item.jd.com") || urlLower.contains("/item.htm"));
+        signals.put("has_image", lower.contains("<img") || lower.contains("og:image"));
 
-        String pageType = signals.get("has_list") && !signals.get("has_detail")
-            ? "list"
-            : (signals.get("has_detail") ? "detail" : "generic");
+        String crawlerType = resolveCrawlerType(signals, urlLower);
+        String pageType = switch (crawlerType) {
+            case "static_listing", "search_results", "ecommerce_search", "infinite_scroll_listing" -> "list";
+            case "static_detail", "ecommerce_detail" -> "detail";
+            default -> signals.get("has_list") && !signals.get("has_detail")
+                ? "list"
+                : (signals.get("has_detail") ? "detail" : "generic");
+        };
 
         List<String> candidateFields = new ArrayList<>();
         if (lower.contains("<title")) candidateFields.add("title");
-        if (lower.contains("price")) candidateFields.add("price");
-        if (lower.contains("author")) candidateFields.add("author");
+        if (signals.get("has_price")) candidateFields.add("price");
+        if (lower.contains("author") || content.contains("作者")) candidateFields.add("author");
+        if (signals.get("has_sku")) candidateFields.add("sku");
+        if (signals.get("has_reviews")) candidateFields.add("rating");
+        if (signals.get("has_search")) candidateFields.add("keyword");
+        if (signals.get("has_image")) candidateFields.add("image");
+        if (lower.contains("shop") || lower.contains("seller") || content.contains("店铺")) candidateFields.add("shop");
+        if (lower.contains("description") || content.contains("详情")) candidateFields.add("description");
+        candidateFields = new ArrayList<>(new LinkedHashSet<>(candidateFields));
 
         String riskLevel = signals.get("has_captcha")
             ? "high"
-            : (url.startsWith("https://") && signals.get("has_form") ? "medium" : "low");
+            : (url.startsWith("https://") && (signals.get("has_form") || signals.get("has_login") || signals.get("has_hydration") || signals.get("has_graphql")) ? "medium" : "low");
+        List<String> runnerOrder = resolveRunnerOrder(crawlerType, signals);
 
-        return new SiteProfile(url, pageType, signals, candidateFields, riskLevel);
+        return new SiteProfile(
+            url,
+            pageType,
+            siteFamily,
+            signals,
+            candidateFields,
+            riskLevel,
+            crawlerType,
+            runnerOrder,
+            resolveStrategyHints(crawlerType),
+            resolveJobTemplates(crawlerType, siteFamily)
+        );
+    }
+
+    private String resolveSiteFamily(String urlLower) {
+        if (urlLower.contains("jd.com") || urlLower.contains("3.cn")) return "jd";
+        if (urlLower.contains("taobao.com")) return "taobao";
+        if (urlLower.contains("tmall.com")) return "tmall";
+        if (urlLower.contains("pinduoduo.com") || urlLower.contains("yangkeduo.com")) return "pinduoduo";
+        if (urlLower.contains("xiaohongshu.com") || urlLower.contains("xhslink.com")) return "xiaohongshu";
+        if (urlLower.contains("douyin.com") || urlLower.contains("jinritemai.com")) return "douyin-shop";
+        return "generic";
+    }
+
+    private String resolveCrawlerType(Map<String, Boolean> signals, String urlLower) {
+        if (Boolean.TRUE.equals(signals.get("has_login")) && !Boolean.TRUE.equals(signals.get("has_detail"))) {
+            return "login_session";
+        }
+        if (Boolean.TRUE.equals(signals.get("has_infinite_scroll")) && (Boolean.TRUE.equals(signals.get("has_list")) || Boolean.TRUE.equals(signals.get("has_search")))) {
+            return "infinite_scroll_listing";
+        }
+        if (Boolean.TRUE.equals(signals.get("has_price"))
+            && (Boolean.TRUE.equals(signals.get("has_cart")) || Boolean.TRUE.equals(signals.get("has_sku")) || Boolean.TRUE.equals(signals.get("has_product_schema")))
+            && (Boolean.TRUE.equals(signals.get("has_search")) || (Boolean.TRUE.equals(signals.get("has_list")) && urlLower.contains("search")))) {
+            return "ecommerce_search";
+        }
+        if (Boolean.TRUE.equals(signals.get("has_price"))
+            && (Boolean.TRUE.equals(signals.get("has_cart")) || Boolean.TRUE.equals(signals.get("has_sku")) || Boolean.TRUE.equals(signals.get("has_product_schema")))
+            && Boolean.TRUE.equals(signals.get("has_list"))
+            && !Boolean.TRUE.equals(signals.get("has_detail"))) {
+            return "ecommerce_search";
+        }
+        if (Boolean.TRUE.equals(signals.get("has_price"))
+            && (Boolean.TRUE.equals(signals.get("has_cart")) || Boolean.TRUE.equals(signals.get("has_sku")) || Boolean.TRUE.equals(signals.get("has_product_schema")))) {
+            return "ecommerce_detail";
+        }
+        if (Boolean.TRUE.equals(signals.get("has_hydration"))
+            && (Boolean.TRUE.equals(signals.get("has_list")) || Boolean.TRUE.equals(signals.get("has_detail")) || Boolean.TRUE.equals(signals.get("has_search")))) {
+            return "hydrated_spa";
+        }
+        if (Boolean.TRUE.equals(signals.get("has_api_bootstrap")) || Boolean.TRUE.equals(signals.get("has_graphql"))) {
+            return "api_bootstrap";
+        }
+        if (Boolean.TRUE.equals(signals.get("has_search"))
+            && (Boolean.TRUE.equals(signals.get("has_list")) || Boolean.TRUE.equals(signals.get("has_pagination")))) {
+            return "search_results";
+        }
+        if (Boolean.TRUE.equals(signals.get("has_list")) && !Boolean.TRUE.equals(signals.get("has_detail"))) {
+            return "static_listing";
+        }
+        if (Boolean.TRUE.equals(signals.get("has_detail"))) {
+            return "static_detail";
+        }
+        return "generic_http";
+    }
+
+    private List<String> resolveRunnerOrder(String crawlerType, Map<String, Boolean> signals) {
+        return switch (crawlerType) {
+            case "hydrated_spa", "infinite_scroll_listing", "login_session", "ecommerce_search" -> List.of("browser", "http");
+            case "ecommerce_detail" -> Boolean.TRUE.equals(signals.get("has_hydration"))
+                ? List.of("browser", "http")
+                : List.of("http", "browser");
+            default -> List.of("http", "browser");
+        };
+    }
+
+    private List<String> resolveStrategyHints(String crawlerType) {
+        return switch (crawlerType) {
+            case "ecommerce_search" -> List.of(
+                "start with browser rendering, capture HTML and network payloads, then promote stable fields into HTTP follow-up jobs",
+                "split listing fields from detail fields so sku and price can be validated independently"
+            );
+            case "hydrated_spa" -> List.of(
+                "render the page in browser mode and inspect embedded hydration data before DOM scraping",
+                "capture network responses and promote repeatable JSON endpoints into secondary HTTP jobs"
+            );
+            case "infinite_scroll_listing" -> List.of(
+                "drive a bounded scroll loop and stop when repeated snapshots stop changing",
+                "persist network and DOM artifacts so load-more behavior can be replayed without guessing"
+            );
+            case "login_session" -> List.of(
+                "bootstrap an authenticated session once, then reuse cookies or storage state for follow-up jobs",
+                "validate the post-login page shape before starting extraction"
+            );
+            case "ecommerce_detail" -> List.of(
+                "extract embedded product JSON and schema blocks before relying on brittle selectors",
+                "keep screenshot and HTML artifacts together for price and title regression checks"
+            );
+            case "api_bootstrap" -> List.of(
+                "inspect script tags and bootstrap JSON before adding browser interactions",
+                "extract stable JSON blobs into dedicated parsing rules so DOM churn matters less"
+            );
+            default -> List.of(
+                "start with plain HTTP fetch and fall back to browser only if selectors are empty",
+                "prefer stable title, meta, schema, and bootstrap data before brittle DOM selectors"
+            );
+        };
+    }
+
+    private List<String> resolveJobTemplates(String crawlerType, String siteFamily) {
+        List<String> templates = new ArrayList<>(switch (crawlerType) {
+            case "hydrated_spa" -> List.of("examples/crawler-types/hydrated-spa-browser.json");
+            case "infinite_scroll_listing" -> List.of("examples/crawler-types/infinite-scroll-browser.json");
+            case "ecommerce_search" -> List.of("examples/crawler-types/ecommerce-search-browser.json");
+            case "ecommerce_detail" -> List.of(
+                "examples/crawler-types/ecommerce-search-browser.json",
+                "examples/crawler-types/api-bootstrap-http.json"
+            );
+            case "login_session" -> List.of("examples/crawler-types/login-session-browser.json");
+            default -> List.of("examples/crawler-types/api-bootstrap-http.json");
+        });
+        switch (siteFamily) {
+            case "jd" -> templates.add("ecommerce_detail".equals(crawlerType)
+                ? "examples/site-presets/jd-detail-browser.json"
+                : "examples/site-presets/jd-search-browser.json");
+            case "taobao" -> templates.add("ecommerce_detail".equals(crawlerType)
+                ? "examples/site-presets/taobao-detail-browser.json"
+                : "examples/site-presets/taobao-search-browser.json");
+            case "tmall" -> templates.add("examples/site-presets/tmall-search-browser.json");
+            case "pinduoduo" -> templates.add("examples/site-presets/pinduoduo-search-browser.json");
+            case "xiaohongshu" -> templates.add("examples/site-presets/xiaohongshu-feed-browser.json");
+            case "douyin-shop" -> templates.add("examples/site-presets/douyin-shop-browser.json");
+            default -> {
+            }
+        }
+        return new ArrayList<>(new LinkedHashSet<>(templates));
     }
 
     private Map<String, Object> extract(

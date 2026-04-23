@@ -36,6 +36,10 @@ SuperSpider is a **multi-language web crawler framework** that ships four produc
 - HTTP and browser-based crawling (Playwright + Selenium)
 - Scrapy-style project interface with plugin injection
 - Dynamic site handling (JavaScript-rendered pages)
+- **Crawler type templates** — hydrated SPA, bootstrap JSON, infinite scroll, login session, and e-commerce search JobSpec starters
+- **Site presets** — JD, Taobao, Tmall, Pinduoduo, Xiaohongshu, and Douyin Shop starter JobSpec templates
+- **Spider class kits** — reusable spider class templates for PySpider, GoSpider, RustSpider, and JavaSpider
+- **Native ecommerce examples** — catalog/detail/review examples in all four runtimes with a JD fast path plus a `generic` fallback for unknown storefronts
 - Proxy pool with health checking and automatic rotation
 - Rate limiting, circuit breaker, deduplication
 - Robots.txt compliance
@@ -153,6 +157,36 @@ Many modern sites protect their APIs with JavaScript-generated signatures. Super
 - **REST API server**: full spider lifecycle management via HTTP (start/stop/stats/queues/tasks)
 - **API authentication**: Bearer token / X-API-Token support for production API security
 
+### 🧭 Operator and Authoring Surface
+- **Shared config scaffolding** — `config init` bootstraps the cross-runtime contract config
+- **Site profiling** — `profile-site` emits `crawler_type`, `site_family`, `runner_order`, `strategy_hints`, and `job_templates`
+- **Pre-crawl discovery** — `sitemap-discover` expands crawl candidates before you commit to selectors
+- **Selector debugging** — `selector-studio` lets you validate CSS/XPath/regex rules against saved HTML
+- **Control-plane tools** — `plugins`, `jobdir`, `http-cache`, `console`, and `audit` are public operator surfaces
+- **Browser tooling** — `fetch`, `trace`, `mock`, and `codegen` are exposed in the browser CLI across the runtimes
+- **Shared starter assets** — `examples/crawler-types/`, `examples/site-presets/`, and `examples/class-kits/` are the canonical starting points for hard site families
+- **Research flows** — async research, notebook-style output, and scenario playbooks are part of the published runtime surface
+
+## Public E-commerce Scope
+
+The native ecommerce examples and class kits are built for publicly accessible marketplace data.
+
+They currently aim for:
+
+- product links and identifiers
+- price and promotion signals
+- shop / seller signals
+- review and rating summaries
+- images, videos, embedded JSON, and API candidates
+
+Current fast paths:
+
+- `jd`: SKU extraction plus price/review public APIs
+- `taobao`, `tmall`, `pinduoduo`, `amazon`: JSON-LD product / aggregate-rating fast paths when present
+- `generic`: fallback public-data extraction for unknown storefronts
+
+They do not guarantee universal extraction across every storefront and they do not imply access to login-gated, private, or user-owned commerce data.
+
 ---
 
 ## 🐍 PySpider — AI-First Python Crawler
@@ -182,6 +216,7 @@ Many modern sites protect their APIs with JavaScript-generated signatures. Super
 - **Robots.txt compliance** — crawl-delay respect and disallow enforcement
 - **Curl converter** — convert curl commands to spider requests
 - **Production config** — multi-environment configuration with validation
+- **Crawler type playbook** — `docs/CRAWLER_TYPE_PLAYBOOK.md` plus `examples/crawler-types/`
 
 ### Install
 ```bash
@@ -373,13 +408,15 @@ bash scripts/macos/install-javaspider.sh
 
 | Document | Description |
 | --- | --- |
+| [`docs/DOCS_INDEX.md`](docs/DOCS_INDEX.md) | Canonical documentation index and recommended reading order |
 | [`docs/FRAMEWORK_CAPABILITIES.md`](docs/FRAMEWORK_CAPABILITIES.md) | Detailed per-framework capability descriptions |
 | [`docs/FRAMEWORK_CAPABILITY_MATRIX.md`](docs/FRAMEWORK_CAPABILITY_MATRIX.md) | Full capability comparison tables |
 | [`docs/CRAWL_SCENARIO_GAP_MATRIX.md`](docs/CRAWL_SCENARIO_GAP_MATRIX.md) | Real crawling scenarios that are still partial or missing across the four runtimes |
 | [`docs/LATEST_SCENARIO_CASES.md`](docs/LATEST_SCENARIO_CASES.md) | Latest practical scenario playbooks and recommended runtime choices |
+| [`docs/CRAWLER_TYPE_PLAYBOOK.md`](docs/CRAWLER_TYPE_PLAYBOOK.md) | Shared crawler types, runner-order guidance, and JobSpec template mapping |
+| [`docs/SITE_PRESET_PLAYBOOK.md`](docs/SITE_PRESET_PLAYBOOK.md) | Site-family starter presets for major marketplace and social-commerce domains |
+| [`examples/class-kits/README.md`](examples/class-kits/README.md) | Reusable spider class templates for all four runtimes |
 | [`docs/SUPERSPIDER_INSTALLS.md`](docs/SUPERSPIDER_INSTALLS.md) | Install instructions for all three OS |
-| [`HIDDEN_CAPABILITIES_REPORT.md`](HIDDEN_CAPABILITIES_REPORT.md) | Hidden capabilities, real boundaries, and source-verified caveats |
-| [`FRAMEWORK_DEFECT_AUDIT.md`](FRAMEWORK_DEFECT_AUDIT.md) | Current defect audit and implementation gaps across the four runtimes |
 | [`MEDIA_PARITY_REPORT.md`](MEDIA_PARITY_REPORT.md) | Media platform coverage evidence |
 | [`ADVANCED_USAGE_GUIDE.md`](ADVANCED_USAGE_GUIDE.md) | Advanced crawling scenarios |
 | [`ENCRYPTED_SITE_CRAWLING_GUIDE.md`](ENCRYPTED_SITE_CRAWLING_GUIDE.md) | JS-encrypted site crawling |
@@ -393,7 +430,7 @@ bash scripts/macos/install-javaspider.sh
 
 ## ✅ Verification Snapshot
 
-Checked against the current workspace on **2026-04-21**:
+Checked against the current workspace on **2026-04-23**:
 
 | Runtime | Verified command(s) | Current result |
 | --- | --- | --- |

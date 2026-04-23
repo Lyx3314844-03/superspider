@@ -54,6 +54,9 @@ class ScaffoldAIContractTest {
         assertTrue(Files.exists(project.resolve("ai-blueprint.json")));
         assertTrue(Files.exists(project.resolve("ai-extract-prompt.txt")));
         assertTrue(Files.exists(project.resolve("ai-auth.json")));
+        String blueprint = Files.readString(project.resolve("ai-blueprint.json"));
+        assertTrue(blueprint.contains("\"crawler_type\" : \"static_detail\"") || blueprint.contains("\"crawler_type\":\"static_detail\""));
+        assertTrue(blueprint.contains("\"job_templates\""));
         assertTrue(Files.exists(project.resolve("src").resolve("main").resolve("java").resolve("project").resolve("spiders").resolve("Scaffold_aiSpiderFactory.java")));
     }
 

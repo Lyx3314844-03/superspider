@@ -1,0 +1,33 @@
+{
+  "name": "jd-detail-browser",
+  "runtime": "browser",
+  "target": {
+    "url": "https://item.jd.com/100000000000.html",
+    "method": "GET",
+    "allowed_domains": ["jd.com", "3.cn"]
+  },
+  "browser": {
+    "headless": true,
+    "wait_load": true,
+    "viewport": { "width": 1440, "height": 1400 },
+    "capture": ["html", "dom", "screenshot", "network"]
+  },
+  "actions": [
+    { "type": "wait" },
+    { "type": "scroll" },
+    { "type": "wait" }
+  ],
+  "extract": [
+    { "field": "title", "type": "css", "expr": "title" },
+    { "field": "sku", "type": "regex", "expr": "(?:sku|wareId|skuId)[\"'=:\\s]+([A-Za-z0-9_-]+)" },
+    { "field": "price", "type": "regex", "expr": "(?:￥|¥)\\s?([0-9]+(?:\\.[0-9]{1,2})?)" },
+    { "field": "shop", "type": "regex", "expr": "(?:shopName|venderName)[\"'=:\\s]+([^\"'\\n<,}]+)" },
+    { "field": "comment_count", "type": "regex", "expr": "(?:commentCount|comment_num)[\"'=:\\s]+([0-9]+)" }
+  ],
+  "output": { "format": "json", "path": "artifacts/exports/jd-detail-browser.json" },
+  "metadata": {
+    "site_family": "jd",
+    "crawler_type": "ecommerce_detail",
+    "notes": "Prefer embedded item JSON and captured network payloads before brittle DOM selectors."
+  }
+}

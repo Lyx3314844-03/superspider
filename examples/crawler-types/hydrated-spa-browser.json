@@ -1,0 +1,67 @@
+{
+  "name": "hydrated-spa-browser",
+  "runtime": "browser",
+  "target": {
+    "url": "https://example.com/app/products",
+    "method": "GET",
+    "allowed_domains": [
+      "example.com"
+    ]
+  },
+  "browser": {
+    "headless": true,
+    "wait_load": true,
+    "viewport": {
+      "width": 1440,
+      "height": 1200
+    },
+    "capture": [
+      "html",
+      "dom",
+      "screenshot",
+      "network"
+    ]
+  },
+  "actions": [
+    {
+      "type": "wait"
+    },
+    {
+      "type": "scroll"
+    },
+    {
+      "type": "wait"
+    },
+    {
+      "type": "screenshot",
+      "save_as": "artifacts/browser/hydrated-spa-browser-screenshot.png"
+    }
+  ],
+  "extract": [
+    {
+      "field": "title",
+      "type": "css",
+      "expr": "title"
+    },
+    {
+      "field": "app_state",
+      "type": "regex",
+      "expr": "(?:__NEXT_DATA__|__APOLLO_STATE__|__INITIAL_STATE__)\\s*=\\s*(\\{.*?\\})"
+    }
+  ],
+  "output": {
+    "format": "json",
+    "path": "artifacts/exports/hydrated-spa-browser.json"
+  },
+  "policy": {
+    "respect_robots_txt": true,
+    "same_domain_only": true,
+    "budget": {
+      "requests": 12
+    }
+  },
+  "metadata": {
+    "crawler_type": "hydrated_spa",
+    "notes": "Capture network payloads and embedded hydration data before relying on DOM selectors."
+  }
+}

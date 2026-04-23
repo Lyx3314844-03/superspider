@@ -719,6 +719,13 @@ func TestProfileSiteCommandBuildsSiteProfile(t *testing.T) {
 	if !strings.Contains(output, `"recommended_runtime": "python"`) {
 		t.Fatalf("expected recommended runtime in output: %s", output)
 	}
+	if !strings.Contains(output, `"crawler_type": "static_detail"`) || !strings.Contains(output, `"runner_order": [`) || !strings.Contains(output, `"job_templates": [`) {
+		t.Fatalf("expected crawler type metadata in output: %s", output)
+	}
+	domainProfile := buildSiteProfile("https://search.jd.com/Search?keyword=iphone", `<html><title>京东搜索</title><div class="price">￥1</div></html>`)
+	if domainProfile["site_family"] != "jd" {
+		t.Fatalf("expected jd site family detection, got: %#v", domainProfile["site_family"])
+	}
 	if !strings.Contains(output, `"reverse":`) || !strings.Contains(output, `mock-ja3`) || !strings.Contains(output, `"canvas_fingerprint"`) || !strings.Contains(output, `mock-canvas`) || !strings.Contains(output, `"crypto_analysis"`) || !strings.Contains(output, `AES`) {
 		t.Fatalf("expected reverse summary in output: %s", output)
 	}

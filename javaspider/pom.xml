@@ -33,7 +33,7 @@
         <spark.version>2.8.0</spark.version>
         <jackson.version>2.16.1</jackson.version>
         <sqlite.jdbc.version>3.45.3.0</sqlite.jdbc.version>
-        <lombok.version>1.18.30</lombok.version>
+        <lombok.version>1.18.36</lombok.version>
         <webdrivermanager.version>5.7.0</webdrivermanager.version>
         <feature.ai>true</feature.ai>
         <feature.browser>true</feature.browser>
@@ -252,6 +252,13 @@
                     <target>17</target>
                     <encoding>UTF-8</encoding>
                     <implicit>class</implicit>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                     <excludes>
                         <exclude>com/javaspider/examples/**</exclude>
                     </excludes>

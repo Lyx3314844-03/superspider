@@ -1,0 +1,76 @@
+{
+  "name": "infinite-scroll-browser",
+  "runtime": "browser",
+  "target": {
+    "url": "https://example.com/discover",
+    "method": "GET",
+    "allowed_domains": [
+      "example.com"
+    ]
+  },
+  "browser": {
+    "headless": true,
+    "wait_load": true,
+    "viewport": {
+      "width": 1440,
+      "height": 1600
+    },
+    "capture": [
+      "html",
+      "dom",
+      "screenshot",
+      "network"
+    ]
+  },
+  "actions": [
+    {
+      "type": "wait"
+    },
+    {
+      "type": "scroll"
+    },
+    {
+      "type": "wait"
+    },
+    {
+      "type": "scroll"
+    },
+    {
+      "type": "wait"
+    },
+    {
+      "type": "scroll"
+    },
+    {
+      "type": "screenshot",
+      "save_as": "artifacts/browser/infinite-scroll-browser-screenshot.png"
+    }
+  ],
+  "extract": [
+    {
+      "field": "title",
+      "type": "css",
+      "expr": "title"
+    },
+    {
+      "field": "load_more_marker",
+      "type": "regex",
+      "expr": "(load more|加载更多|infinite)"
+    }
+  ],
+  "output": {
+    "format": "json",
+    "path": "artifacts/exports/infinite-scroll-browser.json"
+  },
+  "policy": {
+    "respect_robots_txt": true,
+    "same_domain_only": true,
+    "budget": {
+      "requests": 16
+    }
+  },
+  "metadata": {
+    "crawler_type": "infinite_scroll_listing",
+    "notes": "Use bounded scroll batches and compare DOM/network artifacts between scrolls."
+  }
+}

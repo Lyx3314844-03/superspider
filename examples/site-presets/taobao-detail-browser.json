@@ -1,0 +1,33 @@
+{
+  "name": "taobao-detail-browser",
+  "runtime": "browser",
+  "target": {
+    "url": "https://item.taobao.com/item.htm?id=100000000000",
+    "method": "GET",
+    "allowed_domains": ["taobao.com"]
+  },
+  "browser": {
+    "headless": true,
+    "wait_load": true,
+    "viewport": { "width": 1440, "height": 1400 },
+    "capture": ["html", "dom", "screenshot", "network"]
+  },
+  "actions": [
+    { "type": "wait" },
+    { "type": "scroll" },
+    { "type": "wait" }
+  ],
+  "extract": [
+    { "field": "title", "type": "css", "expr": "title" },
+    { "field": "item_id", "type": "regex", "expr": "(?:itemId|item_id|id)[\"'=:\\s]+([A-Za-z0-9_-]+)" },
+    { "field": "price", "type": "regex", "expr": "(?:￥|¥)\\s?([0-9]+(?:\\.[0-9]{1,2})?)" },
+    { "field": "shop", "type": "regex", "expr": "(?:shopName|sellerNick)[\"'=:\\s]+([^\"'\\n<,}]+)" },
+    { "field": "sold_count", "type": "regex", "expr": "(?:soldCount|sellCount)[\"'=:\\s]+([0-9]+)" }
+  ],
+  "output": { "format": "json", "path": "artifacts/exports/taobao-detail-browser.json" },
+  "metadata": {
+    "site_family": "taobao",
+    "crawler_type": "ecommerce_detail",
+    "notes": "Prefer page bootstrap data and network captures before relying on current DOM shape."
+  }
+}

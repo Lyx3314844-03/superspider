@@ -10,13 +10,15 @@ JavaSpider is the SuperSpider runtime for Java. It ships as more than a Maven cr
 - audit, connector, session, anti-bot, media, and workflow replay
 - API, Web, research, and reverse-engineering runtime surfaces
 
-## Hidden Capabilities
+## Public Runtime Surface
 
 ### Unified Runtime Surface
 
-- Unified CLI commands include `config`, `crawl`, `browser`, `ai`, `doctor`, `preflight`, `export`, `curl`, `jobdir`, `http-cache`, `console`, `audit`, `node-reverse`, `api`, `web`, `run`, `research`, `workflow`, `media`, `job`, `async-job`, and `capabilities`.
+- Unified CLI commands include `config`, `crawl`, `browser`, `ai`, `doctor`, `preflight`, `export`, `curl`, `jobdir`, `http-cache`, `console`, `audit`, `node-reverse`, `web`, `run`, `research`, `workflow`, `media`, `job`, `async-job`, and `capabilities`.
+- Browser tooling includes `fetch`, `trace`, `mock`, and `codegen`.
 - `run` and `job` provide normalized runtime dispatch instead of only framework-native spider classes.
 - `research` exposes sync and async analysis flows in addition to crawling.
+- The control-plane surface is now explicitly public: shared config generation, cache/jobdir management, console/audit views, and profiling/debugging helpers are all release-facing features.
 
 ### Workflow and Replay
 
@@ -34,6 +36,7 @@ JavaSpider is the SuperSpider runtime for Java. It ships as more than a Maven cr
 
 - API and Web launcher surfaces are included for remote control and operator-facing workflows.
 - Research runtime modules provide site profiling, async research, experiment tracking, and structured extraction.
+- Shared starter assets now include crawler-type templates, site-family presets, and reusable class kits under the repo-level `examples/` tree.
 - Graph extraction is available through `GraphBuilder`, and artifacts can be written through connectors and JSONL sinks.
 
 ### Reverse, Distributed, and Media

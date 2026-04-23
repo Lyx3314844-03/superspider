@@ -203,8 +203,8 @@ Avoid these common mistakes:
 - Do not assume every code snippet from older docs corresponds to a current public API.
 - Do not assume cross-runtime parity means identical maturity.
 
-For current caveats and defects, read:
+For current caveats and practical boundaries, read:
 
-- [`HIDDEN_CAPABILITIES_REPORT.md`](HIDDEN_CAPABILITIES_REPORT.md)
-- [`FRAMEWORK_DEFECT_AUDIT.md`](FRAMEWORK_DEFECT_AUDIT.md)
 - [`docs/FRAMEWORK_CAPABILITIES.md`](docs/FRAMEWORK_CAPABILITIES.md)
+- [`docs/FRAMEWORK_CAPABILITY_MATRIX.md`](docs/FRAMEWORK_CAPABILITY_MATRIX.md)
+- [`docs/CRAWL_SCENARIO_GAP_MATRIX.md`](docs/CRAWL_SCENARIO_GAP_MATRIX.md)

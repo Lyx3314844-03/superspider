@@ -69,6 +69,10 @@ actix-rt = { version = "2.9", optional = true }
 which = { version = "4.4", optional = true }
 tempfile = { version = "3.8" }
 
+[[bin]]
+name = "jd_iphone17"
+path = "src/bin/jd_iphone17.rs"
+
 [features]
 default = ["browser"]
 browser = ["fantoccini"]

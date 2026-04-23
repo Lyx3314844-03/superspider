@@ -1,0 +1,19 @@
+{
+  "classes": [
+    "SearchListingSpider",
+    "ProductDetailSpider",
+    "ApiBootstrapSpider",
+    "InfiniteScrollSpider",
+    "LoginSessionSpider",
+    "SocialFeedSpider",
+    "EcommerceCatalogSpider",
+    "EcommerceDetailSpider",
+    "EcommerceReviewSpider"
+  ],
+  "runtimes": {
+    "pyspider": "examples/class-kits/pyspider",
+    "gospider": "examples/class-kits/gospider",
+    "rustspider": "examples/class-kits/rustspider",
+    "javaspider": "examples/class-kits/javaspider"
+  }
+}

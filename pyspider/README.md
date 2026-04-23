@@ -10,19 +10,24 @@ PySpider is the SuperSpider runtime for Python-first authoring, AI-assisted proj
 - browser + HTTP hybrid crawling
 - anti-bot, captcha, node-reverse, media handling, and dataset output
 
-## Hidden Capabilities
+## Public Runtime Surface
 
 ### Unified Runtime Surface
 
 - The main CLI exposes `crawl`, `doctor`, `preflight`, `media`, `web`, `version`, `browser`, `export`, `curl`, `job`, `async-job`, `workflow`, `capabilities`, `sitemap-discover`, `plugins`, `selector-studio`, `scrapy`, `profile-site`, `ultimate`, `ai`, `anti-bot`, `node-reverse`, `config`, `jobdir`, `http-cache`, `console`, and `audit`.
 - Browser tooling includes `fetch`, `trace`, `mock`, and `codegen`.
 - `capabilities` returns an aggregated runtime capability payload rather than a simple version string.
+- The operator/control-plane surface is first-class: shared config generation, site profiling, sitemap discovery, selector debugging, plugin execution, jobdir/cache management, and console/audit views are all documented entrypoints now.
 
 ### Scrapy Project and AI Authoring
 
 - Scrapy tooling includes `demo`, `run`, `export`, `profile`, `doctor`, `bench`, `shell`, `list`, `validate`, `plan-ai`, `sync-ai`, `auth-validate`, `auth-capture`, `scaffold-ai`, `genspider`, `init`, and `contracts`.
 - AI scaffolding writes schema, blueprint, prompt, auth asset, plan output, and spider template files for project-based generation.
 - Auth capture and auth validation are first-class project flows rather than ad hoc examples.
+- `profile-site`, `scrapy plan-ai`, and `scrapy scaffold-ai` now emit crawler-type hints, runner order, strategy hints, and shared JobSpec template paths for modern site families.
+- Domain-aware site family hints now cover `jd`, `taobao`, `tmall`, `pinduoduo`, `xiaohongshu`, and `douyin-shop`, pointing to starter presets under `examples/site-presets/`.
+- Reusable multi-class spider templates now live under `examples/class-kits/`, covering search listing, product detail, API bootstrap, infinite scroll, login session, and social feed spiders for all four runtimes.
+- The crawler-type and site-family outputs are now part of the main GitHub-facing docs through `docs/CRAWLER_TYPE_PLAYBOOK.md`, `docs/SITE_PRESET_PLAYBOOK.md`, and the shared `examples/` starter assets.
 
 ### Runtime Artifacts and Control Plane
 

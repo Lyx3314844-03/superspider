@@ -10,7 +10,7 @@ RustSpider is the SuperSpider runtime for strongly typed, feature-gated, product
 - preflight, monitoring, anti-bot, media, audit, and workflow surfaces
 - explicit release-boundary and packaging control
 
-## Hidden Capabilities
+## Public Runtime Surface
 
 ### Feature-Gated Delivery
 
@@ -22,6 +22,7 @@ RustSpider is the SuperSpider runtime for strongly typed, feature-gated, product
 - CLI commands include `config`, `crawl`, `browser`, `ai`, `doctor`, `preflight`, `export`, `curl`, `run`, `job`, `async-job`, `workflow`, `jobdir`, `http-cache`, `console`, `audit`, `web`, `media`, `ultimate`, `sitemap-discover`, `plugins`, `selector-studio`, `scrapy`, `profile-site`, `research`, `node-reverse`, `anti-bot`, and `capabilities`.
 - Browser tooling includes `fetch`, `trace`, `mock`, and `codegen`.
 - Console and audit tooling both support snapshot and tail workflows over shared control-plane artifacts.
+- Site profiling, sitemap discovery, selector debugging, plugin execution, and shared control-plane tooling are all documented public entrypoints, not hidden maintenance paths.
 
 ### Web, API, and Research
 
@@ -45,6 +46,7 @@ RustSpider is the SuperSpider runtime for strongly typed, feature-gated, product
 ### Project and Cross-Runtime Integration
 
 - Scrapy-style project runtime supports declarative pipelines, spider middlewares, downloader middlewares, browser runners, and NodeReverse-assisted fingerprint injection.
+- Shared starter assets now include crawler-type templates, site-family presets, and class kits under the repo-level `examples/` tree.
 - Python FFI integration exists as an explicit cross-language bridge point.
 - Preflight is available both through the main CLI and a dedicated binary surface.
 

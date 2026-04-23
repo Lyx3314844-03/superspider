@@ -1,0 +1,76 @@
+{
+  "name": "login-session-browser",
+  "runtime": "browser",
+  "target": {
+    "url": "https://example.com/login",
+    "method": "GET",
+    "allowed_domains": [
+      "example.com"
+    ]
+  },
+  "browser": {
+    "headless": true,
+    "wait_load": true,
+    "viewport": {
+      "width": 1280,
+      "height": 960
+    },
+    "capture": [
+      "html",
+      "dom",
+      "screenshot"
+    ]
+  },
+  "actions": [
+    {
+      "type": "wait"
+    },
+    {
+      "type": "type",
+      "selector": "#username",
+      "value": "",
+      "optional": true
+    },
+    {
+      "type": "type",
+      "selector": "#password",
+      "value": "",
+      "optional": true
+    },
+    {
+      "type": "click",
+      "selector": "button[type='submit']",
+      "optional": true
+    },
+    {
+      "type": "wait"
+    },
+    {
+      "type": "screenshot",
+      "save_as": "artifacts/browser/login-session-browser-screenshot.png"
+    }
+  ],
+  "extract": [
+    {
+      "field": "title",
+      "type": "css",
+      "expr": "title"
+    }
+  ],
+  "output": {
+    "format": "json",
+    "path": "artifacts/exports/login-session-browser.json"
+  },
+  "policy": {
+    "respect_robots_txt": true,
+    "same_domain_only": true,
+    "budget": {
+      "requests": 6
+    }
+  },
+  "metadata": {
+    "crawler_type": "login_session",
+    "customize_before_run": true,
+    "notes": "Fill your own selectors and authorized session inputs before using this template."
+  }
+}

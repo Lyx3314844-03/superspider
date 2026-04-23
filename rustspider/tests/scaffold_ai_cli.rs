@@ -123,6 +123,10 @@ fn rust_cli_scaffold_ai_generates_plan_schema_blueprint_and_spider() {
     assert!(project_dir.join("ai-blueprint.json").exists());
     assert!(project_dir.join("ai-extract-prompt.txt").exists());
     assert!(project_dir.join("ai-auth.json").exists());
+    let blueprint = fs::read_to_string(project_dir.join("ai-blueprint.json"))
+        .expect("blueprint should be readable");
+    assert!(blueprint.contains("\"crawler_type\": \"static_detail\""));
+    assert!(blueprint.contains("\"job_templates\""));
     assert!(project_dir
         .join("src")
         .join("spiders")

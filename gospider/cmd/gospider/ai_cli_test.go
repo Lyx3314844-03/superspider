@@ -137,6 +137,13 @@ func TestScrapyPlanAIWritesPlanFiles(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(projectDir, "ai-auth.json")); err != nil {
 		t.Fatalf("expected ai-auth.json: %v", err)
 	}
+	blueprint, err := os.ReadFile(filepath.Join(projectDir, "ai-blueprint.json"))
+	if err != nil {
+		t.Fatalf("read blueprint: %v", err)
+	}
+	if !strings.Contains(string(blueprint), `"crawler_type": "static_detail"`) || !strings.Contains(string(blueprint), `"job_templates":`) {
+		t.Fatalf("expected crawler metadata in blueprint, got:\n%s", string(blueprint))
+	}
 }
 
 func TestScrapyScaffoldAIWritesPlanSchemaAndSpider(t *testing.T) {
@@ -172,6 +179,13 @@ func TestScrapyScaffoldAIWritesPlanSchemaAndSpider(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(projectDir, "ai-auth.json")); err != nil {
 		t.Fatalf("expected ai-auth.json: %v", err)
+	}
+	blueprint, err := os.ReadFile(filepath.Join(projectDir, "ai-blueprint.json"))
+	if err != nil {
+		t.Fatalf("read blueprint: %v", err)
+	}
+	if !strings.Contains(string(blueprint), `"crawler_type": "static_detail"`) || !strings.Contains(string(blueprint), `"job_templates":`) {
+		t.Fatalf("expected crawler metadata in blueprint, got:\n%s", string(blueprint))
 	}
 	content, err := os.ReadFile(filepath.Join(projectDir, "spiders", "scaffold_ai.go"))
 	if err != nil {

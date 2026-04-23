@@ -9422,12 +9422,38 @@ fn local_antibot_signals(html: &str, status_code: u16) -> Vec<String> {
 
 fn local_site_profile_payload(url: &str, html: &str) -> serde_json::Value {
     let lower = html.to_ascii_lowercase();
-    let page_type = if lower.contains("<article") || lower.contains("<h1") {
-        "detail"
-    } else if lower.contains("<li") || lower.contains("<ul") {
-        "list"
-    } else {
-        "generic"
+    let compact = lower.replace(' ', "");
+    let url_lower = url.to_ascii_lowercase();
+    let site_family = resolve_local_site_family(&url_lower);
+    let has_search_query = ["/search", "search?", "keyword=", "q=", "query=", "wd="]
+        .iter()
+        .any(|token| url_lower.contains(token));
+    let page_signals = serde_json::json!({
+        "has_form": lower.contains("<form"),
+        "has_pagination": lower.contains("next") || lower.contains("page=") || lower.contains("pagination") || html.contains("下一页"),
+        "has_list": lower.contains("<li") || lower.contains("<ul") || lower.contains("<ol") || lower.contains("product-list") || lower.contains("goods-list") || lower.contains("sku-item"),
+        "has_detail": lower.contains("<article") || lower.contains("<h1"),
+        "has_captcha": lower.contains("captcha") || lower.contains("verify") || lower.contains("human verification") || html.contains("滑块") || html.contains("验证码"),
+        "has_price": lower.contains("price") || lower.contains("\"price\"") || html.contains("￥") || html.contains("¥") || html.contains("价格"),
+        "has_search": has_search_query || lower.contains("type=\"search\"") || html.contains("搜索") || lower.contains("search-input"),
+        "has_login": lower.contains("type=\"password\"") || lower.contains("sign in") || lower.contains("signin") || html.contains("登录"),
+        "has_hydration": lower.contains("__next_data__") || lower.contains("__next_f") || lower.contains("__nuxt__") || lower.contains("__apollo_state__") || lower.contains("__initial_state__") || lower.contains("__preloaded_state__") || lower.contains("window.__initial_data__"),
+        "has_api_bootstrap": lower.contains("__initial_state__") || lower.contains("__preloaded_state__") || lower.contains("__next_data__") || lower.contains("__apollo_state__") || lower.contains("application/json") || lower.contains("window.__initial_data__"),
+        "has_infinite_scroll": lower.contains("load more") || lower.contains("infinite") || lower.contains("intersectionobserver") || lower.contains("onscroll") || lower.contains("virtual-list") || html.contains("加载更多"),
+        "has_graphql": lower.contains("graphql"),
+        "has_reviews": lower.contains("review") || html.contains("评价") || lower.contains("comments"),
+        "has_product_schema": compact.contains("\"@type\":\"product\"") || compact.contains("\"@type\":\"offer\""),
+        "has_cart": lower.contains("add to cart") || html.contains("购物车") || lower.contains("buy-now") || html.contains("立即购买"),
+        "has_sku": lower.contains("sku") || html.contains("商品编号") || url_lower.contains("item.jd.com") || url_lower.contains("/item.htm"),
+        "has_image": lower.contains("<img") || lower.contains("og:image")
+    });
+    let crawler_type = resolve_local_crawler_type(&page_signals, &url_lower);
+    let page_type = match crawler_type.as_str() {
+        "static_listing" | "search_results" | "ecommerce_search" | "infinite_scroll_listing" => "list",
+        "static_detail" | "ecommerce_detail" => "detail",
+        _ if page_signals["has_list"].as_bool() == Some(true) && page_signals["has_detail"].as_bool() != Some(true) => "list",
+        _ if page_signals["has_detail"].as_bool() == Some(true) => "detail",
+        _ => "generic",
     };
     let mut candidate_fields = Vec::new();
     for (token, field) in [
@@ -9435,41 +9461,249 @@ fn local_site_profile_payload(url: &str, html: &str) -> serde_json::Value {
         ("price", "price"),
         ("author", "author"),
         ("date", "date"),
+        ("shop", "shop"),
+        ("seller", "shop"),
+        ("description", "description"),
     ] {
         if lower.contains(token) {
             candidate_fields.push(field);
         }
     }
-    let signals = local_antibot_signals(html, 200);
-    let risk_level = if signals
+    if page_signals["has_sku"].as_bool() == Some(true) {
+        candidate_fields.push("sku");
+    }
+    if page_signals["has_reviews"].as_bool() == Some(true) {
+        candidate_fields.push("rating");
+    }
+    if page_signals["has_search"].as_bool() == Some(true) {
+        candidate_fields.push("keyword");
+    }
+    if page_signals["has_image"].as_bool() == Some(true) {
+        candidate_fields.push("image");
+    }
+    candidate_fields.sort();
+    candidate_fields.dedup();
+    let anti_bot_signals = local_antibot_signals(html, 200);
+    let risk_level = if anti_bot_signals
         .iter()
         .any(|item| item == "captcha" || item == "vendor:cloudflare")
+        || page_signals["has_captcha"].as_bool() == Some(true)
     {
         "high"
-    } else if lower.contains("<form") {
+    } else if url_lower.starts_with("https://")
+        && (page_signals["has_form"].as_bool() == Some(true)
+            || page_signals["has_login"].as_bool() == Some(true)
+            || page_signals["has_hydration"].as_bool() == Some(true)
+            || page_signals["has_graphql"].as_bool() == Some(true))
+    {
         "medium"
     } else {
         "low"
     };
-    let recommended_runtime = if risk_level == "high" {
-        "java"
-    } else if page_type == "detail" {
-        "python"
-    } else {
-        "go"
-    };
+    let runner_order = resolve_local_runner_order(&crawler_type, &page_signals);
+    let recommended_runtime = recommended_framework_for_profile(
+        runner_order.first().map(String::as_str).unwrap_or("http"),
+        page_type,
+        risk_level,
+    );
     serde_json::json!({
         "command": "profile-site",
         "runtime": "rust",
+        "framework": "rustspider",
         "url": url,
         "page_type": page_type,
+        "site_family": site_family,
+        "crawler_type": crawler_type,
         "candidate_fields": candidate_fields,
-        "signals": signals,
+        "signals": page_signals,
+        "anti_bot_signals": anti_bot_signals,
         "risk_level": risk_level,
         "recommended_runtime": recommended_runtime,
+        "recommended_framework": recommended_runtime,
+        "runner_order": runner_order,
+        "strategy_hints": resolve_local_strategy_hints(&crawler_type),
+        "job_templates": resolve_local_job_templates(&crawler_type, &url_lower),
         "anti_bot_recommended": risk_level != "low",
-        "node_reverse_recommended": false
+        "node_reverse_recommended": crawler_type == "hydrated_spa" || crawler_type == "api_bootstrap" || crawler_type == "ecommerce_search"
     })
+}
+
+fn resolve_local_site_family(url_lower: &str) -> &'static str {
+    if url_lower.contains("jd.com") || url_lower.contains("3.cn") {
+        "jd"
+    } else if url_lower.contains("taobao.com") {
+        "taobao"
+    } else if url_lower.contains("tmall.com") {
+        "tmall"
+    } else if url_lower.contains("pinduoduo.com") || url_lower.contains("yangkeduo.com") {
+        "pinduoduo"
+    } else if url_lower.contains("xiaohongshu.com") || url_lower.contains("xhslink.com") {
+        "xiaohongshu"
+    } else if url_lower.contains("douyin.com") || url_lower.contains("jinritemai.com") {
+        "douyin-shop"
+    } else {
+        "generic"
+    }
+}
+
+fn resolve_local_crawler_type(signals: &serde_json::Value, url_lower: &str) -> String {
+    if signals["has_login"].as_bool() == Some(true) && signals["has_detail"].as_bool() != Some(true)
+    {
+        return "login_session".to_string();
+    }
+    if signals["has_infinite_scroll"].as_bool() == Some(true)
+        && (signals["has_list"].as_bool() == Some(true) || signals["has_search"].as_bool() == Some(true))
+    {
+        return "infinite_scroll_listing".to_string();
+    }
+    if signals["has_price"].as_bool() == Some(true)
+        && (signals["has_cart"].as_bool() == Some(true)
+            || signals["has_sku"].as_bool() == Some(true)
+            || signals["has_product_schema"].as_bool() == Some(true))
+        && (signals["has_search"].as_bool() == Some(true)
+            || (signals["has_list"].as_bool() == Some(true) && url_lower.contains("search")))
+    {
+        return "ecommerce_search".to_string();
+    }
+    if signals["has_price"].as_bool() == Some(true)
+        && (signals["has_cart"].as_bool() == Some(true)
+            || signals["has_sku"].as_bool() == Some(true)
+            || signals["has_product_schema"].as_bool() == Some(true))
+        && signals["has_list"].as_bool() == Some(true)
+        && signals["has_detail"].as_bool() != Some(true)
+    {
+        return "ecommerce_search".to_string();
+    }
+    if signals["has_price"].as_bool() == Some(true)
+        && (signals["has_cart"].as_bool() == Some(true)
+            || signals["has_sku"].as_bool() == Some(true)
+            || signals["has_product_schema"].as_bool() == Some(true))
+    {
+        return "ecommerce_detail".to_string();
+    }
+    if signals["has_hydration"].as_bool() == Some(true)
+        && (signals["has_list"].as_bool() == Some(true)
+            || signals["has_detail"].as_bool() == Some(true)
+            || signals["has_search"].as_bool() == Some(true))
+    {
+        return "hydrated_spa".to_string();
+    }
+    if signals["has_api_bootstrap"].as_bool() == Some(true)
+        || signals["has_graphql"].as_bool() == Some(true)
+    {
+        return "api_bootstrap".to_string();
+    }
+    if signals["has_search"].as_bool() == Some(true)
+        && (signals["has_list"].as_bool() == Some(true)
+            || signals["has_pagination"].as_bool() == Some(true))
+    {
+        return "search_results".to_string();
+    }
+    if signals["has_list"].as_bool() == Some(true) && signals["has_detail"].as_bool() != Some(true)
+    {
+        return "static_listing".to_string();
+    }
+    if signals["has_detail"].as_bool() == Some(true) {
+        return "static_detail".to_string();
+    }
+    "generic_http".to_string()
+}
+
+fn resolve_local_runner_order(
+    crawler_type: &str,
+    signals: &serde_json::Value,
+) -> Vec<String> {
+    match crawler_type {
+        "hydrated_spa" | "infinite_scroll_listing" | "login_session" | "ecommerce_search" => {
+            vec!["browser".to_string(), "http".to_string()]
+        }
+        "ecommerce_detail" if signals["has_hydration"].as_bool() == Some(true) => {
+            vec!["browser".to_string(), "http".to_string()]
+        }
+        "ecommerce_detail" => vec!["http".to_string(), "browser".to_string()],
+        _ => vec!["http".to_string(), "browser".to_string()],
+    }
+}
+
+fn resolve_local_strategy_hints(crawler_type: &str) -> Vec<String> {
+    match crawler_type {
+        "ecommerce_search" => vec![
+            "start with browser rendering, capture HTML and network payloads, then promote stable fields into HTTP follow-up jobs".to_string(),
+            "split listing fields from detail fields so sku and price can be validated independently".to_string(),
+        ],
+        "hydrated_spa" => vec![
+            "render the page in browser mode and inspect embedded hydration data before DOM scraping".to_string(),
+            "capture network responses and promote repeatable JSON endpoints into secondary HTTP jobs".to_string(),
+        ],
+        "infinite_scroll_listing" => vec![
+            "drive a bounded scroll loop and stop when repeated snapshots stop changing".to_string(),
+            "persist network and DOM artifacts so load-more behavior can be replayed without guessing".to_string(),
+        ],
+        "login_session" => vec![
+            "bootstrap an authenticated session once, then reuse cookies or storage state for follow-up jobs".to_string(),
+            "validate the post-login page shape before starting extraction".to_string(),
+        ],
+        "ecommerce_detail" => vec![
+            "extract embedded product JSON and schema blocks before relying on brittle selectors".to_string(),
+            "keep screenshot and HTML artifacts together for price and title regression checks".to_string(),
+        ],
+        "api_bootstrap" => vec![
+            "inspect script tags and bootstrap JSON before adding browser interactions".to_string(),
+            "extract stable JSON blobs into dedicated parsing rules so DOM churn matters less".to_string(),
+        ],
+        _ => vec![
+            "start with plain HTTP fetch and fall back to browser only if selectors are empty".to_string(),
+            "prefer stable title, meta, schema, and bootstrap data before brittle DOM selectors".to_string(),
+        ],
+    }
+}
+
+fn resolve_local_job_templates(crawler_type: &str, url_lower: &str) -> Vec<String> {
+    let mut templates = match crawler_type {
+        "hydrated_spa" => vec!["examples/crawler-types/hydrated-spa-browser.json".to_string()],
+        "infinite_scroll_listing" => vec!["examples/crawler-types/infinite-scroll-browser.json".to_string()],
+        "ecommerce_search" => vec!["examples/crawler-types/ecommerce-search-browser.json".to_string()],
+        "ecommerce_detail" => vec![
+            "examples/crawler-types/ecommerce-search-browser.json".to_string(),
+            "examples/crawler-types/api-bootstrap-http.json".to_string(),
+        ],
+        "login_session" => vec!["examples/crawler-types/login-session-browser.json".to_string()],
+        _ => vec!["examples/crawler-types/api-bootstrap-http.json".to_string()],
+    };
+    match resolve_local_site_family(url_lower) {
+        "jd" if crawler_type == "ecommerce_detail" => {
+            templates.push("examples/site-presets/jd-detail-browser.json".to_string())
+        }
+        "taobao" if crawler_type == "ecommerce_detail" => {
+            templates.push("examples/site-presets/taobao-detail-browser.json".to_string())
+        }
+        "jd" => templates.push("examples/site-presets/jd-search-browser.json".to_string()),
+        "taobao" => templates.push("examples/site-presets/taobao-search-browser.json".to_string()),
+        "tmall" => templates.push("examples/site-presets/tmall-search-browser.json".to_string()),
+        "pinduoduo" => templates.push("examples/site-presets/pinduoduo-search-browser.json".to_string()),
+        "xiaohongshu" => templates.push("examples/site-presets/xiaohongshu-feed-browser.json".to_string()),
+        "douyin-shop" => templates.push("examples/site-presets/douyin-shop-browser.json".to_string()),
+        _ => {}
+    }
+    templates.sort();
+    templates.dedup();
+    templates
+}
+
+fn recommended_framework_for_profile(
+    first_runner: &str,
+    page_type: &str,
+    risk_level: &str,
+) -> &'static str {
+    if first_runner == "browser" && risk_level == "high" {
+        "java"
+    } else if first_runner == "browser" {
+        "python"
+    } else if page_type == "list" {
+        "go"
+    } else {
+        "python"
+    }
 }
 
 fn detect_ai_mode(
@@ -9664,10 +9898,13 @@ fn heuristic_ai_understand(url: &str, html: &str, question: &str) -> serde_json:
     };
     serde_json::json!({
         "answer": format!(
-            "页面类型={}，候选字段={:?}，风险等级={}。问题：{}",
+            "页面类型={}，站点家族={}，爬虫类型={}，候选字段={:?}，风险等级={}，优先 runner={:?}。问题：{}",
             profile["page_type"].as_str().unwrap_or("generic"),
+            profile["site_family"].as_str().unwrap_or("generic"),
+            profile["crawler_type"].as_str().unwrap_or("generic_http"),
             profile["candidate_fields"].as_array().cloned().unwrap_or_default(),
             profile["risk_level"].as_str().unwrap_or("low"),
+            profile["runner_order"].as_array().cloned().unwrap_or_default(),
             question_text
         ),
         "page_profile": profile
@@ -9773,20 +10010,45 @@ fn build_rust_ai_blueprint(
         .as_array()
         .cloned()
         .unwrap_or_default();
+    let runner_order = profile["runner_order"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let strategy_hints = profile["strategy_hints"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let job_templates = profile["job_templates"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     let mut field_names = schema["properties"]
         .as_object()
         .map(|value| value.keys().cloned().collect::<Vec<_>>())
         .unwrap_or_default();
     field_names.sort();
     let lower = html.to_ascii_lowercase();
+    let crawler_type = profile["crawler_type"]
+        .as_str()
+        .unwrap_or("generic_http")
+        .to_string();
+    let anti_bot_runner = runner_order
+        .first()
+        .and_then(|value| value.as_str())
+        .unwrap_or("http");
     serde_json::json!({
         "version": 1,
         "spider_name": spider_name,
         "resolved_url": resolved_url,
         "page_type": profile["page_type"].clone(),
+        "site_family": profile["site_family"].clone(),
+        "crawler_type": crawler_type,
         "candidate_fields": candidate_fields,
         "schema": schema,
         "extraction_prompt": format!("请从页面中提取以下字段，并只返回 JSON：{}。缺失字段返回空字符串或空数组。", field_names.join(", ")),
+        "runner_order": runner_order,
+        "strategy_hints": strategy_hints,
+        "job_templates": job_templates,
         "follow_rules": [
             {
                 "name": "same-domain-content",
@@ -9796,7 +10058,7 @@ fn build_rust_ai_blueprint(
         ],
         "pagination": {
             "enabled": matches!(profile["page_type"].as_str(), Some("list") | Some("generic")) || lower.contains("rel=\"next\"") || lower.contains("pagination") || lower.contains("page=") || lower.contains("next page") || lower.contains("下一页"),
-            "strategy": "follow next page or numbered pagination links",
+            "strategy": if crawler_type == "infinite_scroll_listing" { "bounded scroll batches with repeated DOM and network snapshot checks" } else { "follow next page or numbered pagination links" },
             "selectors": ["a[rel='next']", ".next", ".pagination a"]
         },
         "authentication": {
@@ -9804,8 +10066,8 @@ fn build_rust_ai_blueprint(
             "strategy": if lower.contains("type=\"password\"") || lower.contains("type='password'") || lower.contains("login") || lower.contains("sign in") || lower.contains("signin") || lower.contains("登录") { "capture session/login flow before crawl" } else { "not required" }
         },
         "javascript_runtime": {
-            "required": lower.contains("__next_data__") || lower.contains("window.__") || lower.contains("webpack") || lower.contains("fetch(") || lower.contains("graphql") || lower.contains("xhr"),
-            "recommended_runner": if lower.contains("__next_data__") || lower.contains("window.__") || lower.contains("webpack") || lower.contains("fetch(") || lower.contains("graphql") || lower.contains("xhr") { "browser" } else { "http" }
+            "required": lower.contains("__next_data__") || lower.contains("window.__") || lower.contains("webpack") || lower.contains("fetch(") || lower.contains("graphql") || lower.contains("xhr") || crawler_type == "hydrated_spa" || crawler_type == "infinite_scroll_listing" || crawler_type == "ecommerce_search",
+            "recommended_runner": if anti_bot_runner == "browser" || lower.contains("__next_data__") || lower.contains("window.__") || lower.contains("webpack") || lower.contains("fetch(") || lower.contains("graphql") || lower.contains("xhr") { "browser" } else { "http" }
         },
         "reverse_engineering": {
             "required": lower.contains("crypto") || lower.contains("signature") || lower.contains("token") || lower.contains("webpack") || lower.contains("obfusc") || lower.contains("encrypt") || lower.contains("decrypt"),
@@ -9814,7 +10076,7 @@ fn build_rust_ai_blueprint(
         "anti_bot_strategy": {
             "risk_level": profile["risk_level"].clone(),
             "signals": profile["signals"].clone(),
-            "recommended_runner": if profile["risk_level"].as_str() == Some("low") { "http" } else { "browser" },
+            "recommended_runner": anti_bot_runner,
             "notes": "高风险页面建议先走浏览器模式并降低抓取速率"
         }
     })

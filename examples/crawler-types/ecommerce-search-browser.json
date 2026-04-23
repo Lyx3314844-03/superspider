@@ -1,0 +1,72 @@
+{
+  "name": "ecommerce-search-browser",
+  "runtime": "browser",
+  "target": {
+    "url": "https://example.com/search?q=phone",
+    "method": "GET",
+    "allowed_domains": [
+      "example.com"
+    ]
+  },
+  "browser": {
+    "headless": true,
+    "wait_load": true,
+    "viewport": {
+      "width": 1440,
+      "height": 1400
+    },
+    "capture": [
+      "html",
+      "dom",
+      "screenshot",
+      "network"
+    ]
+  },
+  "actions": [
+    {
+      "type": "wait"
+    },
+    {
+      "type": "scroll"
+    },
+    {
+      "type": "wait"
+    },
+    {
+      "type": "screenshot",
+      "save_as": "artifacts/browser/ecommerce-search-browser-screenshot.png"
+    }
+  ],
+  "extract": [
+    {
+      "field": "title",
+      "type": "css",
+      "expr": "title"
+    },
+    {
+      "field": "price",
+      "type": "regex",
+      "expr": "(?:￥|¥|\\$)\\s?([0-9]+(?:\\.[0-9]{1,2})?)"
+    },
+    {
+      "field": "sku",
+      "type": "regex",
+      "expr": "(?:sku|itemId|productId)[\"'=:\\s]+([A-Za-z0-9_-]+)"
+    }
+  ],
+  "output": {
+    "format": "json",
+    "path": "artifacts/exports/ecommerce-search-browser.json"
+  },
+  "policy": {
+    "respect_robots_txt": true,
+    "same_domain_only": true,
+    "budget": {
+      "requests": 12
+    }
+  },
+  "metadata": {
+    "crawler_type": "ecommerce_search",
+    "notes": "Use browser capture for catalog pages, then promote stable APIs or product detail links into follow-up jobs."
+  }
+}

@@ -19,6 +19,8 @@ go build -o gospider.exe .
   - broad feature showcase across runtime modules
 - `scrapy_style/main.go`
   - project-style / scrapy-like flow
+- `ecommerce/`
+  - native catalog/detail/review ecommerce spiders with JD fast path and generic fallback
 - `video_downloader/main.go`
   - generic video/media downloader flow
 - `youku_downloader/main.go`
@@ -30,8 +32,38 @@ go build -o gospider.exe .
 go run ./examples/basic
 go run ./examples/showcase
 go run ./examples/scrapy_style
+go run ./examples/ecommerce catalog jd
+go run ./examples/ecommerce detail taobao
+go run ./examples/ecommerce review generic
 go run ./examples/video_downloader
 ```
+
+Supported built-in site families: `jd`, `taobao`, `tmall`, `pinduoduo`, `amazon`, `generic`.
+
+Fast-path coverage:
+
+- `jd`: SKU + price API + review JSON
+- `taobao`, `tmall`, `pinduoduo`, `amazon`: JSON-LD product / rating fast paths when available
+
+The ecommerce examples are public-data extractors. They widen field coverage with images, videos, embedded JSON, and API candidates, but they do not imply access to private or login-gated commerce data.
+
+## Shared Starter Assets
+
+The repo-level starter assets are part of the public GoSpider surface now. Use them before hard-coding selectors into a runtime example.
+
+- `examples/crawler-types/`
+  - normalized JobSpec templates for difficult page families
+- `examples/site-presets/`
+  - domain starters for JD, Taobao, Tmall, Pinduoduo, Xiaohongshu, and Douyin Shop
+- `examples/class-kits/`
+  - reusable spider class templates for all four runtimes
+
+Recommended order:
+
+1. Run `gospider profile-site --url <target>`
+2. Optionally run `gospider sitemap-discover --url <target>`
+3. Start from the closest preset or crawler-type template
+4. Pull in the matching class kit or native ecommerce example
 
 ## Domain-Specific Media Examples
 

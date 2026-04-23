@@ -24,9 +24,14 @@ pub struct ResearchJob {
 pub struct SiteProfile {
     pub url: String,
     pub page_type: String,
+    pub site_family: String,
     pub signals: BTreeMap<String, bool>,
     pub candidate_fields: Vec<String>,
     pub risk_level: String,
+    pub crawler_type: String,
+    pub runner_order: Vec<String>,
+    pub strategy_hints: Vec<String>,
+    pub job_templates: Vec<String>,
 }
 
 pub struct ResearchRuntime;
@@ -88,15 +93,29 @@ impl Default for ResearchRuntime {
 
 pub fn profile_site(url: &str, content: &str) -> SiteProfile {
     let lower = content.to_ascii_lowercase();
+    let compact = lower.replace(' ', "");
+    let url_lower = url.to_ascii_lowercase();
+    let site_family = resolve_site_family(&url_lower);
+    let has_search_query = ["/search", "search?", "keyword=", "q=", "query=", "wd="]
+        .iter()
+        .any(|token| url_lower.contains(token));
     let signals = BTreeMap::from([
         ("has_form".to_string(), lower.contains("<form")),
         (
             "has_pagination".to_string(),
-            lower.contains("next") || lower.contains("page="),
+            lower.contains("next")
+                || lower.contains("page=")
+                || lower.contains("pagination")
+                || content.contains("下一页"),
         ),
         (
             "has_list".to_string(),
-            lower.contains("<li") || lower.contains("<ul"),
+            lower.contains("<li")
+                || lower.contains("<ul")
+                || lower.contains("<ol")
+                || lower.contains("product-list")
+                || lower.contains("goods-list")
+                || lower.contains("sku-item"),
         ),
         (
             "has_detail".to_string(),
@@ -104,47 +123,319 @@ pub fn profile_site(url: &str, content: &str) -> SiteProfile {
         ),
         (
             "has_captcha".to_string(),
-            lower.contains("captcha") || lower.contains("verify"),
+            lower.contains("captcha")
+                || lower.contains("verify")
+                || lower.contains("human verification")
+                || content.contains("滑块")
+                || content.contains("验证码"),
+        ),
+        (
+            "has_price".to_string(),
+            lower.contains("price")
+                || lower.contains("\"price\"")
+                || content.contains("￥")
+                || content.contains("¥")
+                || content.contains("价格"),
+        ),
+        (
+            "has_search".to_string(),
+            has_search_query
+                || lower.contains("type=\"search\"")
+                || content.contains("搜索")
+                || lower.contains("search-input"),
+        ),
+        (
+            "has_login".to_string(),
+            lower.contains("type=\"password\"")
+                || lower.contains("sign in")
+                || lower.contains("signin")
+                || content.contains("登录"),
+        ),
+        (
+            "has_hydration".to_string(),
+            lower.contains("__next_data__")
+                || lower.contains("__next_f")
+                || lower.contains("__nuxt__")
+                || lower.contains("__apollo_state__")
+                || lower.contains("__initial_state__")
+                || lower.contains("__preloaded_state__")
+                || lower.contains("window.__initial_data__"),
+        ),
+        (
+            "has_api_bootstrap".to_string(),
+            lower.contains("__initial_state__")
+                || lower.contains("__preloaded_state__")
+                || lower.contains("__next_data__")
+                || lower.contains("__apollo_state__")
+                || lower.contains("application/json")
+                || lower.contains("window.__initial_data__"),
+        ),
+        (
+            "has_infinite_scroll".to_string(),
+            lower.contains("load more")
+                || lower.contains("infinite")
+                || lower.contains("intersectionobserver")
+                || lower.contains("onscroll")
+                || lower.contains("virtual-list")
+                || content.contains("加载更多"),
+        ),
+        ("has_graphql".to_string(), lower.contains("graphql")),
+        (
+            "has_reviews".to_string(),
+            lower.contains("review") || content.contains("评价") || lower.contains("comments"),
+        ),
+        (
+            "has_product_schema".to_string(),
+            compact.contains("\"@type\":\"product\"") || compact.contains("\"@type\":\"offer\""),
+        ),
+        (
+            "has_cart".to_string(),
+            lower.contains("add to cart")
+                || content.contains("购物车")
+                || lower.contains("buy-now")
+                || content.contains("立即购买"),
+        ),
+        (
+            "has_sku".to_string(),
+            lower.contains("sku")
+                || content.contains("商品编号")
+                || url_lower.contains("item.jd.com")
+                || url_lower.contains("/item.htm"),
+        ),
+        (
+            "has_image".to_string(),
+            lower.contains("<img") || lower.contains("og:image"),
         ),
     ]);
-    let page_type = if *signals.get("has_list").unwrap_or(&false)
-        && !*signals.get("has_detail").unwrap_or(&false)
-    {
-        "list"
-    } else if *signals.get("has_detail").unwrap_or(&false) {
-        "detail"
-    } else {
-        "generic"
+    let crawler_type = resolve_crawler_type(&signals, "");
+    let page_type = match crawler_type.as_str() {
+        "static_listing" | "search_results" | "ecommerce_search" | "infinite_scroll_listing" => "list",
+        "static_detail" | "ecommerce_detail" => "detail",
+        _ if *signals.get("has_list").unwrap_or(&false) && !*signals.get("has_detail").unwrap_or(&false) => "list",
+        _ if *signals.get("has_detail").unwrap_or(&false) => "detail",
+        _ => "generic",
     };
 
     let mut candidate_fields = Vec::new();
     if lower.contains("<title") {
         candidate_fields.push("title".to_string());
     }
-    if lower.contains("price") {
+    if *signals.get("has_price").unwrap_or(&false) {
         candidate_fields.push("price".to_string());
     }
-    if lower.contains("author") {
+    if lower.contains("author") || content.contains("作者") {
         candidate_fields.push("author".to_string());
     }
+    if *signals.get("has_sku").unwrap_or(&false) {
+        candidate_fields.push("sku".to_string());
+    }
+    if *signals.get("has_reviews").unwrap_or(&false) {
+        candidate_fields.push("rating".to_string());
+    }
+    if *signals.get("has_search").unwrap_or(&false) {
+        candidate_fields.push("keyword".to_string());
+    }
+    if *signals.get("has_image").unwrap_or(&false) {
+        candidate_fields.push("image".to_string());
+    }
+    if lower.contains("shop") || lower.contains("seller") || content.contains("店铺") {
+        candidate_fields.push("shop".to_string());
+    }
+    if lower.contains("description") || content.contains("详情") {
+        candidate_fields.push("description".to_string());
+    }
+    candidate_fields.sort();
+    candidate_fields.dedup();
 
     let risk_level = if *signals.get("has_captcha").unwrap_or(&false) {
         "high"
     } else if url.to_ascii_lowercase().starts_with("https://")
-        && *signals.get("has_form").unwrap_or(&false)
+        && (*signals.get("has_form").unwrap_or(&false)
+            || *signals.get("has_login").unwrap_or(&false)
+            || *signals.get("has_hydration").unwrap_or(&false)
+            || *signals.get("has_graphql").unwrap_or(&false))
     {
         "medium"
     } else {
         "low"
     };
+    let runner_order = resolve_runner_order(&crawler_type, &signals);
 
     SiteProfile {
         url: url.to_string(),
         page_type: page_type.to_string(),
+        site_family,
         signals,
         candidate_fields,
         risk_level: risk_level.to_string(),
+        crawler_type: crawler_type.clone(),
+        runner_order: runner_order.clone(),
+        strategy_hints: resolve_strategy_hints(&crawler_type, &runner_order),
+        job_templates: resolve_job_templates(&crawler_type, &url_lower),
     }
+}
+
+fn resolve_site_family(url_lower: &str) -> String {
+    let mapping = [
+        ("jd.com", "jd"),
+        ("3.cn", "jd"),
+        ("taobao.com", "taobao"),
+        ("tmall.com", "tmall"),
+        ("pinduoduo.com", "pinduoduo"),
+        ("yangkeduo.com", "pinduoduo"),
+        ("xiaohongshu.com", "xiaohongshu"),
+        ("xhslink.com", "xiaohongshu"),
+        ("douyin.com", "douyin-shop"),
+        ("jinritemai.com", "douyin-shop"),
+    ];
+    for (suffix, family) in mapping {
+        if url_lower.contains(suffix) {
+            return family.to_string();
+        }
+    }
+    "generic".to_string()
+}
+
+fn resolve_crawler_type(signals: &BTreeMap<String, bool>, path: &str) -> String {
+    if *signals.get("has_login").unwrap_or(&false) && !*signals.get("has_detail").unwrap_or(&false) {
+        return "login_session".to_string();
+    }
+    if *signals.get("has_infinite_scroll").unwrap_or(&false)
+        && (*signals.get("has_list").unwrap_or(&false) || *signals.get("has_search").unwrap_or(&false))
+    {
+        return "infinite_scroll_listing".to_string();
+    }
+    if *signals.get("has_price").unwrap_or(&false)
+        && (*signals.get("has_cart").unwrap_or(&false)
+            || *signals.get("has_sku").unwrap_or(&false)
+            || *signals.get("has_product_schema").unwrap_or(&false))
+        && (*signals.get("has_search").unwrap_or(&false)
+            || (*signals.get("has_list").unwrap_or(&false) && path.contains("search")))
+    {
+        return "ecommerce_search".to_string();
+    }
+    if *signals.get("has_price").unwrap_or(&false)
+        && (*signals.get("has_cart").unwrap_or(&false)
+            || *signals.get("has_sku").unwrap_or(&false)
+            || *signals.get("has_product_schema").unwrap_or(&false))
+        && *signals.get("has_list").unwrap_or(&false)
+        && !*signals.get("has_detail").unwrap_or(&false)
+    {
+        return "ecommerce_search".to_string();
+    }
+    if *signals.get("has_price").unwrap_or(&false)
+        && (*signals.get("has_cart").unwrap_or(&false)
+            || *signals.get("has_sku").unwrap_or(&false)
+            || *signals.get("has_product_schema").unwrap_or(&false))
+    {
+        return "ecommerce_detail".to_string();
+    }
+    if *signals.get("has_hydration").unwrap_or(&false)
+        && (*signals.get("has_list").unwrap_or(&false)
+            || *signals.get("has_detail").unwrap_or(&false)
+            || *signals.get("has_search").unwrap_or(&false))
+    {
+        return "hydrated_spa".to_string();
+    }
+    if *signals.get("has_api_bootstrap").unwrap_or(&false)
+        || *signals.get("has_graphql").unwrap_or(&false)
+    {
+        return "api_bootstrap".to_string();
+    }
+    if *signals.get("has_search").unwrap_or(&false)
+        && (*signals.get("has_list").unwrap_or(&false)
+            || *signals.get("has_pagination").unwrap_or(&false))
+    {
+        return "search_results".to_string();
+    }
+    if *signals.get("has_list").unwrap_or(&false) && !*signals.get("has_detail").unwrap_or(&false) {
+        return "static_listing".to_string();
+    }
+    if *signals.get("has_detail").unwrap_or(&false) {
+        return "static_detail".to_string();
+    }
+    "generic_http".to_string()
+}
+
+fn resolve_runner_order(crawler_type: &str, signals: &BTreeMap<String, bool>) -> Vec<String> {
+    match crawler_type {
+        "hydrated_spa" | "infinite_scroll_listing" | "login_session" | "ecommerce_search" => {
+            vec!["browser".to_string(), "http".to_string()]
+        }
+        "ecommerce_detail" if *signals.get("has_hydration").unwrap_or(&false) => {
+            vec!["browser".to_string(), "http".to_string()]
+        }
+        "ecommerce_detail" => vec!["http".to_string(), "browser".to_string()],
+        _ => vec!["http".to_string(), "browser".to_string()],
+    }
+}
+
+fn resolve_strategy_hints(crawler_type: &str, runner_order: &[String]) -> Vec<String> {
+    match crawler_type {
+        "ecommerce_search" => vec![
+            "start with browser rendering, capture HTML and network payloads, then promote stable fields into HTTP follow-up jobs".to_string(),
+            "split listing fields from detail fields so sku and price can be validated independently".to_string(),
+        ],
+        "hydrated_spa" => vec![
+            "render the page in browser mode and inspect embedded hydration data before DOM scraping".to_string(),
+            "capture network responses and promote repeatable JSON endpoints into secondary HTTP jobs".to_string(),
+        ],
+        "infinite_scroll_listing" => vec![
+            "drive a bounded scroll loop and stop when repeated snapshots stop changing".to_string(),
+            "persist network and DOM artifacts so load-more behavior can be replayed without guessing".to_string(),
+        ],
+        "login_session" => vec![
+            "bootstrap an authenticated session once, then reuse cookies or storage state for follow-up jobs".to_string(),
+            "validate the post-login page shape before starting extraction".to_string(),
+        ],
+        "ecommerce_detail" => vec![
+            "extract embedded product JSON and schema blocks before relying on brittle selectors".to_string(),
+            "keep screenshot and HTML artifacts together for price and title regression checks".to_string(),
+        ],
+        "api_bootstrap" => vec![
+            "inspect script tags and bootstrap JSON before adding browser interactions".to_string(),
+            "extract stable JSON blobs into dedicated parsing rules so DOM churn matters less".to_string(),
+        ],
+        _ => vec![
+            format!(
+                "start with {} mode and fall back only when the initial surface is empty",
+                runner_order.first().map(String::as_str).unwrap_or("http")
+            ),
+            "prefer stable title, meta, schema, and bootstrap data before brittle DOM selectors".to_string(),
+        ],
+    }
+}
+
+fn resolve_job_templates(crawler_type: &str, url_lower: &str) -> Vec<String> {
+    let mut templates = match crawler_type {
+        "hydrated_spa" => vec!["examples/crawler-types/hydrated-spa-browser.json".to_string()],
+        "infinite_scroll_listing" => vec!["examples/crawler-types/infinite-scroll-browser.json".to_string()],
+        "ecommerce_search" => vec!["examples/crawler-types/ecommerce-search-browser.json".to_string()],
+        "ecommerce_detail" => vec![
+            "examples/crawler-types/ecommerce-search-browser.json".to_string(),
+            "examples/crawler-types/api-bootstrap-http.json".to_string(),
+        ],
+        "login_session" => vec!["examples/crawler-types/login-session-browser.json".to_string()],
+        _ => vec!["examples/crawler-types/api-bootstrap-http.json".to_string()],
+    };
+    match resolve_site_family(url_lower).as_str() {
+        "jd" if crawler_type == "ecommerce_detail" => {
+            templates.push("examples/site-presets/jd-detail-browser.json".to_string())
+        }
+        "taobao" if crawler_type == "ecommerce_detail" => {
+            templates.push("examples/site-presets/taobao-detail-browser.json".to_string())
+        }
+        "jd" => templates.push("examples/site-presets/jd-search-browser.json".to_string()),
+        "taobao" => templates.push("examples/site-presets/taobao-search-browser.json".to_string()),
+        "tmall" => templates.push("examples/site-presets/tmall-search-browser.json".to_string()),
+        "pinduoduo" => templates.push("examples/site-presets/pinduoduo-search-browser.json".to_string()),
+        "xiaohongshu" => templates.push("examples/site-presets/xiaohongshu-feed-browser.json".to_string()),
+        "douyin-shop" => templates.push("examples/site-presets/douyin-shop-browser.json".to_string()),
+        _ => {}
+    }
+    templates.sort();
+    templates.dedup();
+    templates
 }
 
 fn extract_content(

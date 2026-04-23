@@ -1,0 +1,46 @@
+{
+  "name": "api-bootstrap-http",
+  "runtime": "http",
+  "target": {
+    "url": "https://example.com/product/123",
+    "method": "GET",
+    "allowed_domains": [
+      "example.com"
+    ],
+    "headers": {
+      "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8"
+    }
+  },
+  "extract": [
+    {
+      "field": "title",
+      "type": "css",
+      "expr": "title"
+    },
+    {
+      "field": "bootstrap_json",
+      "type": "regex",
+      "expr": "<script[^>]*>(?:window\\.__INITIAL_STATE__|window\\.__NEXT_DATA__|window\\.__INITIAL_DATA__)\\s*=\\s*(\\{.*?\\})\\s*;?</script>"
+    },
+    {
+      "field": "ld_json",
+      "type": "regex",
+      "expr": "<script[^>]*application/ld\\+json[^>]*>(.*?)</script>"
+    }
+  ],
+  "output": {
+    "format": "json",
+    "path": "artifacts/exports/api-bootstrap-http.json"
+  },
+  "policy": {
+    "respect_robots_txt": true,
+    "same_domain_only": true,
+    "budget": {
+      "requests": 8
+    }
+  },
+  "metadata": {
+    "crawler_type": "api_bootstrap",
+    "notes": "Prefer bootstrap JSON and schema blocks before adding browser rendering."
+  }
+}

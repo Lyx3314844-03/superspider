@@ -218,6 +218,9 @@ def test_scrapy_plan_ai_writes_plan_files(tmp_path):
     payload = json.loads(buffer.getvalue())
     assert payload["command"] == "scrapy plan-ai"
     assert payload["spider_name"] == "planned_ai"
+    assert payload["page_profile"]["crawler_type"] == "static_detail"
+    assert payload["blueprint"]["crawler_type"] == "static_detail"
+    assert payload["blueprint"]["job_templates"]
     assert "blueprint" in payload
 
 
