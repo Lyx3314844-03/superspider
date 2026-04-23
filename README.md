@@ -416,7 +416,7 @@ bash scripts/macos/install-javaspider.sh
 | [`docs/CRAWLER_TYPE_PLAYBOOK.md`](docs/CRAWLER_TYPE_PLAYBOOK.md) | Shared crawler types, runner-order guidance, and JobSpec template mapping |
 | [`docs/SITE_PRESET_PLAYBOOK.md`](docs/SITE_PRESET_PLAYBOOK.md) | Site-family starter presets for major marketplace and social-commerce domains |
 | [`examples/class-kits/README.md`](examples/class-kits/README.md) | Reusable spider class templates for all four runtimes |
-| [`docs/SUPERSPIDER_INSTALLS.md`](docs/SUPERSPIDER_INSTALLS.md) | Install instructions for all three OS |
+| [`docs/SUPERSPIDER_INSTALLS.md`](docs/SUPERSPIDER_INSTALLS.md) | Install instructions for Windows, Linux, and macOS |
 | [`MEDIA_PARITY_REPORT.md`](MEDIA_PARITY_REPORT.md) | Media platform coverage evidence |
 | [`ADVANCED_USAGE_GUIDE.md`](ADVANCED_USAGE_GUIDE.md) | Advanced crawling scenarios |
 | [`ENCRYPTED_SITE_CRAWLING_GUIDE.md`](ENCRYPTED_SITE_CRAWLING_GUIDE.md) | JS-encrypted site crawling |

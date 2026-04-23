@@ -14,7 +14,7 @@ JavaSpider is the SuperSpider runtime for Java. It ships as more than a Maven cr
 
 ### Unified Runtime Surface
 
-- Unified CLI commands include `config`, `crawl`, `browser`, `ai`, `doctor`, `preflight`, `export`, `curl`, `jobdir`, `http-cache`, `console`, `audit`, `node-reverse`, `web`, `run`, `research`, `workflow`, `media`, `job`, `async-job`, and `capabilities`.
+- Unified CLI commands include `config`, `crawl`, `browser`, `ai`, `doctor`, `preflight`, `export`, `curl`, `jobdir`, `http-cache`, `console`, `audit`, `node-reverse`, `web`, `run`, `research`, `workflow`, `media`, `job`, `async-job`, `sitemap-discover`, `plugins`, `selector-studio`, `scrapy`, `profile-site`, `anti-bot`, `capabilities`, `version`, and `help`.
 - Browser tooling includes `fetch`, `trace`, `mock`, and `codegen`.
 - `run` and `job` provide normalized runtime dispatch instead of only framework-native spider classes.
 - `research` exposes sync and async analysis flows in addition to crawling.
