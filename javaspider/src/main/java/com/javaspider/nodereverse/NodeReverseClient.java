@@ -41,6 +41,12 @@ public class NodeReverseClient {
     public NodeReverseClient(String baseUrl) {
         this.baseUrl = baseUrl;
         this.httpClient = new OkHttpClient.Builder()
+                .dispatcher(new Dispatcher(java.util.concurrent.Executors.newCachedThreadPool(r -> {
+                    Thread thread = new Thread(r, "node-reverse-okhttp");
+                    thread.setDaemon(true);
+                    return thread;
+                })))
+                .connectionPool(new ConnectionPool(0, 1, TimeUnit.SECONDS))
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)
@@ -53,13 +59,14 @@ public class NodeReverseClient {
      */
     public JsonNode analyzeCrypto(String code) throws IOException {
         JsonNode local = localCryptoAnalysis(code);
+        // 本地分析已经可用时直接返回，远端 Node 服务只作为无法判定时的增强路径。
+        if (local.path("success").asBoolean(false)) {
+            return local;
+        }
         try {
             JsonNode remote = doPost("/api/crypto/analyze", Map.of("code", code));
             return mergeCryptoAnalysis(remote, local);
         } catch (IOException error) {
-            if (local.path("success").asBoolean(false)) {
-                return local;
-            }
             throw error;
         }
     }
@@ -422,7 +429,8 @@ public class NodeReverseClient {
     }
 
     private JsonNode localCryptoAnalysis(String code) {
-        String lowered = code == null ? "" : code.toLowerCase();
+        String sourceCode = code == null ? "" : code;
+        String lowered = sourceCode.toLowerCase();
         Map<String, List<String>> libraries = new LinkedHashMap<>();
         libraries.put("CryptoJS", List.of("cryptojs."));
         libraries.put("NodeCrypto", List.of("require('crypto')", "require(\"crypto\")", "createcipheriv", "createhmac", "createhash"));
@@ -612,7 +620,7 @@ public class NodeReverseClient {
         });
         ArrayNode keyFlowCandidates = objectMapper.createArrayNode();
         Pattern assignmentPattern = Pattern.compile(
-            "(?i)(?:const|let|var)?\\s*([A-Za-z_$][\\w$]*(?:key|iv|nonce|salt|secret|token)[A-Za-z0-9_$]*)\\s*[:=]\\s*([^;\\n]+)"
+            "(?im)^\\s*(?:(?:const|let|var)\\s+)?([A-Za-z_$][\\w$]*(?:key|iv|nonce|salt|secret|token)[A-Za-z0-9_$]*)\\s*[:=]\\s*([^;\\r\\n]+)"
         );
         Map<String, List<String>> sourceDetailTokens = new LinkedHashMap<>();
         sourceDetailTokens.put("storage.localStorage", List.of("localstorage"));
@@ -633,7 +641,7 @@ public class NodeReverseClient {
         sourceDetailTokens.put("dom.querySelector", List.of("queryselector(", "queryselectorall("));
         sourceDetailTokens.put("dom.getElementById", List.of("getelementbyid("));
         sourceDetailTokens.put("url.searchParams", List.of("urlsearchparams", "searchparams.get("));
-        Matcher assignmentMatcher = assignmentPattern.matcher(code == null ? "" : code);
+        Matcher assignmentMatcher = assignmentPattern.matcher(sourceCode);
         while (assignmentMatcher.find()) {
             String variable = assignmentMatcher.group(1).trim();
             String expression = assignmentMatcher.group(2).trim();
@@ -661,11 +669,11 @@ public class NodeReverseClient {
         derivationTokens.put("concat", List.of("concat(", "+", "join("));
         derivationTokens.put("json", List.of("json.stringify", "json.parse"));
         derivationTokens.put("url", List.of("encodeuricomponent", "decodeuricomponent", "urlsearchparams"));
-        Matcher chainMatcher = assignmentPattern.matcher(code == null ? "" : code);
-        List<String> codeLines = List.of((code == null ? "" : code).split("\\R"));
-        while (assignmentMatcher.reset().find()) {
-            String seedVariable = assignmentMatcher.group(1).trim();
-            String seedExpression = assignmentMatcher.group(2).trim();
+        List<String> codeLines = List.of(sourceCode.split("\\R"));
+        Matcher seedMatcher = assignmentPattern.matcher(sourceCode);
+        while (seedMatcher.find()) {
+            String seedVariable = seedMatcher.group(1).trim();
+            String seedExpression = seedMatcher.group(2).trim();
             ArrayNode sourceKinds = objectMapper.createArrayNode();
             sourceDetailTokens.forEach((source, tokens) -> {
                 if (tokens.stream().anyMatch(seedExpression.toLowerCase()::contains)) {
@@ -678,6 +686,7 @@ public class NodeReverseClient {
             java.util.Set<String> tracked = new java.util.LinkedHashSet<>();
             tracked.add(seedVariable);
             ArrayNode derivationsNode = objectMapper.createArrayNode();
+            Matcher chainMatcher = assignmentPattern.matcher(sourceCode);
             chainMatcher.reset();
             while (chainMatcher.find()) {
                 String targetVar = chainMatcher.group(1).trim();
@@ -685,9 +694,7 @@ public class NodeReverseClient {
                 if (tracked.contains(targetVar)) {
                     continue;
                 }
-                boolean referencesTracked = tracked.stream().anyMatch(variable ->
-                    Pattern.compile("\\b" + Pattern.quote(variable) + "\\b").matcher(expression).find()
-                );
+                boolean referencesTracked = tracked.stream().anyMatch(variable -> containsIdentifier(expression, variable));
                 if (!referencesTracked) {
                     continue;
                 }
@@ -712,9 +719,7 @@ public class NodeReverseClient {
                     if (markers.stream().noneMatch(lowerLine::contains)) {
                         return false;
                     }
-                    return tracked.stream().anyMatch(variable ->
-                        Pattern.compile("\\b" + Pattern.quote(variable) + "\\b").matcher(line).find()
-                    );
+                    return tracked.stream().anyMatch(variable -> containsIdentifier(line, variable));
                 });
                 if (matched) {
                     sinksNode.add(sink);
@@ -885,6 +890,28 @@ public class NodeReverseClient {
             }
         }
         return total;
+    }
+
+    private boolean containsIdentifier(String text, String identifier) {
+        if (text == null || identifier == null || identifier.isBlank()) {
+            return false;
+        }
+        int index = text.indexOf(identifier);
+        while (index >= 0) {
+            int before = index - 1;
+            int after = index + identifier.length();
+            boolean leftBoundary = before < 0 || !isIdentifierPart(text.charAt(before));
+            boolean rightBoundary = after >= text.length() || !isIdentifierPart(text.charAt(after));
+            if (leftBoundary && rightBoundary) {
+                return true;
+            }
+            index = text.indexOf(identifier, index + 1);
+        }
+        return false;
+    }
+
+    private boolean isIdentifierPart(char value) {
+        return Character.isLetterOrDigit(value) || value == '_' || value == '$';
     }
 
     private ArrayNode valuesArray(String code, String regex) {

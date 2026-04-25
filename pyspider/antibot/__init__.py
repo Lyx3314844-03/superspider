@@ -468,3 +468,6 @@ def generate_random_headers(browser: str = "chrome") -> Dict[str, str]:
     """生成随机请求头"""
     generator = RequestHeadersGenerator()
     return generator.generate_headers(browser)
+
+
+from .friction import AccessFrictionReport, analyze_access_friction

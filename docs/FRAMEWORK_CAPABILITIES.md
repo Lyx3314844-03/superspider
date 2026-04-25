@@ -1,6 +1,6 @@
 # SuperSpider Framework Capabilities
 
-Updated: 2026-04-23
+Updated: 2026-04-24
 
 This is the canonical source-aligned capability summary for the GitHub-facing docs.
 
@@ -20,7 +20,8 @@ The four runtimes all implement the following broad areas:
 - HTTP plus browser crawling
 - shared config scaffolding, preflight checks, and runtime capability reporting
 - site profiling, crawler-type hints, site-family presets, and reusable starter assets
-- anti-bot helpers, captcha-related utilities, and SSRF protection
+- class-based ecommerce crawler entrypoints plus browser capture companions in the four runtimes
+- access-friction classification, challenge handoff, anti-bot helpers, captcha-related utilities, and SSRF protection
 - media parsing/downloading for mainstream video formats
 - NodeReverse integration for crypto, anti-bot, and browser-emulation workflows
 - distributed or queue-backed execution paths
@@ -46,10 +47,13 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 - Scrapy-style project flows including `demo`, `run`, `export`, `profile`, `doctor`, `bench`, `shell`, `list`, `validate`, `plan-ai`, `sync-ai`, `auth-validate`, `auth-capture`, `scaffold-ai`, `genspider`, `init`, and `contracts`
 - `profile-site`, `scrapy plan-ai`, and `scrapy scaffold-ai` emit `crawler_type`, `site_family`, `runner_order`, `strategy_hints`, and `job_templates`
 - Shared starter assets under `examples/crawler-types/`, `examples/site-presets/`, and `examples/class-kits/`, plus native ecommerce examples under `pyspider/examples/`
+- Native ecommerce crawler classes under `pyspider/examples/`, `gospider/examples/ecommerce/`, `rustspider/examples/ecommerce/`, and `com.javaspider.examples.ecommerce`
 - CookieJar with persistence, Netscape export/import, expiry cleanup, and domain-aware matching
 - Graph extraction, graph artifacts, dataset writing, audit sinks, runtime notebook output, and control-plane files
 - Artifact-driven media parsing from browser HTML, network, and HAR outputs
 - Feature gates for `ai`, `browser`, `distributed`, `media`, `workflow`, and `crawlee`
+- Shared access-friction reporting via `pyspider.antibot.friction.analyze_access_friction`, including `challenge_handoff` and `capability_plan` for rate limits, WAF pages, CAPTCHA/login challenges, browser upgrade, session persistence, and stop conditions
+- HTTP downloader responses expose the report at `Response.meta["access_friction"]`
 
 ### Conditional
 
@@ -83,12 +87,16 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 - Browser tooling subcommands `fetch`, `trace`, `mock`, and `codegen`
 - `config`, `profile-site`, `sitemap-discover`, `selector-studio`, `plugins`, `jobdir`, `http-cache`, `console`, and `audit` are documented operator/control-plane tools rather than internal helpers
 - Browser runtime artifact capture for HTML, DOM, screenshot, console, network JSON, HAR, and realtime WebSocket/SSE messages
+- Native ecommerce crawler class wrapper plus browser capture companion for static/detail/review flows
 - Browser layer support for upload-input handling, same-origin iframe helper operations, and open Shadow DOM helper paths
 - JobSpec/workflow actions including `goto`, `wait`, `click`, `type`, `scroll`, `select`, `hover`, `eval`, `screenshot`, and `listen_network`
 - Shared starter assets under the repo-level `examples/` tree, plus native ecommerce examples under `gospider/examples/ecommerce/`
+- Native ecommerce crawler class wrapper plus `RunBrowser()` companion in `gospider/examples/ecommerce/`
 - Storage backends for file, process, and SQL result/dataset stores
 - Research runtime with `run`, `async`, `soak`, and notebook-style output
 - Queue bridge support, native queue client construction, and scrapy-style runtime plugins/middlewares/browser fetch hooks
+- Shared access-friction reporting via `antibot.AnalyzeAccessFriction`, including `challenge_handoff` and `capability_plan` for rate limits, WAF pages, CAPTCHA/login challenges, browser upgrade, session persistence, and stop conditions
+- HTTP downloader responses expose the report at `Response.AccessFriction`
 
 ### Conditional
 
@@ -122,11 +130,14 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 - Browser tooling subcommands `fetch`, `trace`, `mock`, and `codegen`
 - Site profiling, sitemap discovery, selector debugging, plugin execution, and shared control-plane tooling are public entrypoints now
 - Shared starter assets under the repo-level `examples/` tree, plus native ecommerce examples under `rustspider/examples/ecommerce/`
+- Native ecommerce crawler class wrapper plus browser capture companion under `rustspider/examples/ecommerce_browser_capture.rs`
 - Browser manager support for upload-input handling, explicit frame switching, open Shadow DOM helper paths, and in-page WebSocket/EventSource collection
 - Token-protected Web/API surfaces with task, artifact, log, graph, and research endpoints
 - Advanced captcha recovery logic in ultimate paths, including challenge-field extraction
 - Artifact store, audit trail, event bus, cookie jar, checkpoint manager, queue backends, and Redis lease handling
 - Standalone preflight binary surface
+- Shared access-friction reporting via `rustspider::antibot::friction::analyze_access_friction`, including `challenge_handoff` and `capability_plan` for rate limits, WAF pages, CAPTCHA/login challenges, browser upgrade, session persistence, and stop conditions
+- HTTP downloader responses expose the report at `Response.access_friction`
 
 ### Conditional
 
@@ -159,6 +170,7 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 - Browser tooling subcommands `fetch`, `trace`, `mock`, and `codegen`
 - Shared config generation, cache/jobdir management, console/audit views, site profiling, and selector debugging are part of the documented public surface
 - Shared starter assets under the repo-level `examples/` tree, plus native ecommerce examples under `com.javaspider.examples.ecommerce`
+- Native ecommerce crawler class wrapper plus Selenium browser capture companion under `com.javaspider.examples.ecommerce`
 - Selenium-backed workflow engine with network listening, extraction, screenshots, download steps, and captcha-aware context helpers
 - Workflow replay and graph reconstruction
 - Research runtime with sync and async modes
@@ -166,6 +178,8 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 - Performance modules for virtual-thread execution, connection pooling, adaptive throttling, and circuit breaking
 - Distributed node discovery across env, file, DNS SRV, Consul, and Etcd
 - NodeReverse plus Crawlee bridge integration
+- Shared access-friction reporting via `com.javaspider.antibot.AccessFrictionAnalyzer`, including `challenge_handoff` and `capability_plan` for rate limits, WAF pages, CAPTCHA/login challenges, browser upgrade, session persistence, and stop conditions
+- HTTP downloader pages expose the report at `Page.getField("access_friction")`
 
 ### Conditional
 
@@ -181,6 +195,7 @@ What is not shared equally is maturity. Several capabilities exist in every runt
 - `com.javaspider.AntiBot` is only a lightweight proxy/UA helper; the richer anti-bot surface is the `antibot/` package
 - `CaptchaSolver` mixes `null` returns and exceptions across failure paths
 - Some ultimate browser-simulation flows are reverse-assisted emulation rather than real browser sessions
+- None of the runtimes should be documented as automatically bypassing CAPTCHA or risk-control decisions; current shared policy is detection, compliant slowdown, browser artifact capture, authorized human handoff, session persistence, and explicit stop conditions
 
 ---
 
@@ -207,6 +222,7 @@ Important boundary:
 For related docs, use:
 
 - [`FRAMEWORK_CAPABILITY_MATRIX.md`](FRAMEWORK_CAPABILITY_MATRIX.md)
+- [`ACCESS_FRICTION_PLAYBOOK.md`](ACCESS_FRICTION_PLAYBOOK.md)
 - [`CRAWL_SCENARIO_GAP_MATRIX.md`](CRAWL_SCENARIO_GAP_MATRIX.md)
 - [`LATEST_SCENARIO_CASES.md`](LATEST_SCENARIO_CASES.md)
 - [`CRAWLER_TYPE_PLAYBOOK.md`](CRAWLER_TYPE_PLAYBOOK.md)

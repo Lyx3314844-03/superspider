@@ -7,20 +7,32 @@ from pyspider.spider.spider import CrawlerProcess, FeedExporter, Item, Request, 
 from ecommerce_site_profile import (
     DEFAULT_SITE_FAMILY,
     best_title,
+    build_api_job_templates,
     build_jd_price_api_url,
+    build_network_replay_job_templates,
     collect_image_links,
     collect_matches,
     collect_product_links,
     collect_video_links,
+    extract_bootstrap_products,
     extract_api_candidates,
     extract_embedded_json_blocks,
     extract_jd_catalog_products,
     extract_json_ld_products,
+    extract_network_api_candidates,
+    extract_image_gallery,
+    extract_parameter_table,
+    detect_coupons_promotions,
+    extract_stock_status,
     first_link_with_keywords,
     first_match,
     get_profile,
+    get_response_network_artifact,
+    merge_api_job_templates,
+    normalize_network_entries,
     safe_json_loads,
     text_excerpt,
+    append_unique_strings,
 )
 
 
@@ -61,6 +73,15 @@ class EcommerceCatalogSpider(Spider):
         selector = page.response.selector
         html = page.response.text
         links = selector.css_attr("a", "href")
+        network_artifact = get_response_network_artifact(page.response)
+        network_entries = normalize_network_entries(network_artifact)
+        network_api_candidates = extract_network_api_candidates(network_entries)
+        api_candidates = append_unique_strings(extract_api_candidates(html), network_api_candidates)
+        network_replay_templates = build_network_replay_job_templates(
+            page.response.url,
+            family,
+            network_entries,
+        )
         summary_item = Item(
             kind=f"{family}_catalog_page" if family == "jd" else "ecommerce_catalog_page",
             site_family=family,
@@ -77,11 +98,27 @@ class EcommerceCatalogSpider(Spider):
                 selector.css_attr("video", "src") + selector.css_attr("source", "src"),
             ),
             script_sources=selector.css_attr("script", "src"),
-            api_candidates=extract_api_candidates(html),
+            api_candidates=api_candidates,
+            network_entries=network_entries,
+            network_api_candidates=network_api_candidates,
+            network_replay_job_templates=network_replay_templates,
             embedded_json_blocks=extract_embedded_json_blocks(html),
             json_ld_products=extract_json_ld_products(html),
+            bootstrap_products=extract_bootstrap_products(html),
             page_excerpt=text_excerpt(html),
+            coupons_promotions=detect_coupons_promotions(html),
+            stock_status=extract_stock_status(html),
+            parameter_table=extract_parameter_table(html),
             note="Public universal ecommerce catalog page extraction.",
+        )
+        summary_item["api_job_templates"] = merge_api_job_templates(
+            build_api_job_templates(
+                page.response.url,
+                family,
+                summary_item.get("api_candidates", []),
+                item_ids=summary_item.get("sku_candidates", []),
+            ),
+            network_replay_templates,
         )
 
         if family == "jd":
@@ -103,12 +140,13 @@ class EcommerceCatalogSpider(Spider):
                 )
                 return
 
-        if family in self.FAST_PATH_FAMILIES and summary_item.get("json_ld_products"):
+        structured_products = summary_item.get("json_ld_products") or summary_item.get("bootstrap_products")
+        if family != "jd" and structured_products:
             yield summary_item
             fallback_links = summary_item.get("product_link_candidates", [])
-            for index, product in enumerate(summary_item.get("json_ld_products", [])):
+            for index, product in enumerate(structured_products):
                 yield Item(
-                    kind=f"{family}_catalog_product",
+                    kind=f"{family}_catalog_product" if family != "generic" else "ecommerce_catalog_product",
                     site_family=family,
                     source_url=page.response.url,
                     product_id=product.get("sku", "") or (summary_item.get("sku_candidates", [""])[:1] or [""])[0],
@@ -121,6 +159,19 @@ class EcommerceCatalogSpider(Spider):
                     currency=product.get("currency", ""),
                     rating=product.get("rating", ""),
                     review_count=product.get("review_count", ""),
+                    shop=product.get("shop", ""),
+                    network_entries=network_entries,
+                    network_api_candidates=network_api_candidates,
+                    network_replay_job_templates=network_replay_templates,
+                    api_job_templates=merge_api_job_templates(
+                        build_api_job_templates(
+                            page.response.url,
+                            family,
+                            summary_item.get("api_candidates", []),
+                            item_ids=[product.get("sku", "")],
+                        ),
+                        network_replay_templates,
+                    ),
                 )
             return
 

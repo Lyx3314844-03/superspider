@@ -15,6 +15,10 @@ java -jar javaspider/target/javaspider-*.jar capabilities
 
 - `DistributedExample.java`
 - `ScrapyStyleDemo.java`
+- `ecommerce/EcommerceCrawler.java`
+- `ecommerce/EcommerceSeleniumCrawler.java`
+- `ecommerce/UniversalEcommerceDetector.java`
+- `ecommerce/EcommerceSiteProfiles.java`
 - `ecommerce/EcommerceCatalogSpider.java`
 - `ecommerce/EcommerceDetailSpider.java`
 - `ecommerce/EcommerceReviewSpider.java`
@@ -28,16 +32,25 @@ The `examples/ecommerce` package exposes native catalog/detail/review crawlers w
 - a `generic` fallback for unknown storefronts
 - broader public-data extraction for images, videos, embedded JSON, and API candidates
 
+The preferred class-style entrypoint is `com.javaspider.examples.ecommerce.EcommerceCrawler`. It unifies catalog/detail/review modes and can hand off to `EcommerceSeleniumCrawler` when rendered-page capture is needed.
+
 Suggested entrypoint:
 
-- `com.javaspider.examples.ecommerce.EcommerceExampleRunner`
+- `com.javaspider.examples.ecommerce.EcommerceCrawler`
 
-Supported built-in site families: `jd`, `taobao`, `tmall`, `pinduoduo`, `amazon`, `generic`.
+```java
+EcommerceCrawler crawler = new EcommerceCrawler("jd");
+crawler.run("catalog");
+crawler.runBrowser("catalog");
+```
+
+Supported built-in site families: `jd`, `taobao`, `tmall`, `pinduoduo`, `amazon`, `xiaohongshu`, `douyin-shop`, `generic`.
 
 Fast-path coverage:
 
 - `jd`: SKU + price API + review JSON
 - `taobao`, `tmall`, `pinduoduo`, `amazon`: JSON-LD product / rating fast paths when available
+- `xiaohongshu`, `douyin-shop`: browser-oriented public-data profiles with generic extraction heuristics
 
 These examples target publicly accessible product data only.
 

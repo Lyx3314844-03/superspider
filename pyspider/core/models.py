@@ -59,6 +59,7 @@ class Response:
     request: Optional[Request] = None
     duration: float = 0.0
     error: Optional[Exception] = None
+    meta: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

@@ -1,17 +1,14 @@
 //! HLS/DASH 视频流下载器
 //! 支持 M3U8 播放列表解析、TS 分片下载、视频合并
 
+use futures::stream::{self, StreamExt};
+use regex::Regex;
 use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
-use regex::Regex;
 use url::Url;
-use tokio::sync::Semaphore;
-use tokio::task;
-use futures::stream::{self, StreamExt};
 
 /// 媒体分片
 #[derive(Debug, Clone)]
@@ -60,7 +57,11 @@ impl HlsDownloader {
     }
 
     /// 下载 HLS 视频
-    pub async fn download(&self, m3u8_url: &str, output_name: &str) -> Result<bool, Box<dyn Error>> {
+    pub async fn download(
+        &self,
+        m3u8_url: &str,
+        output_name: &str,
+    ) -> Result<bool, Box<dyn Error>> {
         println!("开始下载 HLS: {}", m3u8_url);
 
         // 1. 下载播放列表
@@ -70,13 +71,19 @@ impl HlsDownloader {
         let base_url = Self::get_base_url(m3u8_url);
         let playlist = self.parse_media_playlist(&playlist_content, &base_url)?;
 
-        println!("解析到 {} 个分片，总时长 {:.1}秒", playlist.segments.len(), playlist.total_duration);
+        println!(
+            "解析到 {} 个分片，总时长 {:.1}秒",
+            playlist.segments.len(),
+            playlist.total_duration
+        );
 
         // 3. 下载分片
         let temp_dir = self.output_dir.join(format!("{}_temp", output_name));
         fs::create_dir_all(&temp_dir)?;
 
-        let success = self.download_segments(&playlist.segments, &temp_dir).await?;
+        let success = self
+            .download_segments(&playlist.segments, &temp_dir)
+            .await?;
 
         if success {
             // 4. 合并分片
@@ -101,7 +108,11 @@ impl HlsDownloader {
     }
 
     /// 解析媒体播放列表
-    fn parse_media_playlist(&self, content: &str, base_url: &str) -> Result<MediaPlaylist, Box<dyn Error>> {
+    fn parse_media_playlist(
+        &self,
+        content: &str,
+        base_url: &str,
+    ) -> Result<MediaPlaylist, Box<dyn Error>> {
         let mut playlist = MediaPlaylist {
             target_duration: 0.0,
             media_sequence: 0,
@@ -117,11 +128,19 @@ impl HlsDownloader {
             let line = line.trim();
 
             if line.starts_with("#EXT-X-TARGETDURATION:") {
-                if let Ok(val) = line.strip_prefix("#EXT-X-TARGETDURATION:").unwrap_or("").parse() {
+                if let Ok(val) = line
+                    .strip_prefix("#EXT-X-TARGETDURATION:")
+                    .unwrap_or("")
+                    .parse()
+                {
                     playlist.target_duration = val;
                 }
             } else if line.starts_with("#EXT-X-MEDIA-SEQUENCE:") {
-                if let Ok(val) = line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:").unwrap_or("").parse() {
+                if let Ok(val) = line
+                    .strip_prefix("#EXT-X-MEDIA-SEQUENCE:")
+                    .unwrap_or("")
+                    .parse()
+                {
                     playlist.media_sequence = val;
                 }
             } else if line.starts_with("#EXT-X-ENDLIST") {
@@ -129,7 +148,10 @@ impl HlsDownloader {
             } else if line.starts_with("#EXTINF:") {
                 // 解析分片信息
                 if let Some(caps) = Regex::new(r"#EXTINF:([\d.]+),\s*(.*)")?.captures(line) {
-                    let duration = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                    let duration = caps
+                        .get(1)
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0.0);
                     let title = caps.get(2).map(|m| m.as_str().to_string());
 
                     current_segment = Some(MediaSegment {
@@ -159,25 +181,20 @@ impl HlsDownloader {
         segments: &[MediaSegment],
         output_dir: &Path,
     ) -> Result<bool, Box<dyn Error>> {
-        let semaphore = Arc::new(Semaphore::new(self.max_workers));
-        let mut tasks = Vec::new();
-
-        for segment in segments {
-            let sem = Arc::clone(&semaphore);
-            let client = self.client.clone();
-            let output_dir = output_dir.to_path_buf();
-            let segment = segment.clone();
-
-            let task = task::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
-                Self::download_segment(client, &segment, &output_dir).await
-            });
-
-            tasks.push(task);
-        }
-
-        let results = futures::future::join_all(tasks).await;
-        let success_count = results.iter().filter(|r| r.as_ref().ok().copied().unwrap_or(false)).count();
+        let success_count = stream::iter(segments.iter().cloned())
+            .map(|segment| {
+                let client = self.client.clone();
+                let output_dir = output_dir.to_path_buf();
+                async move {
+                    Self::download_segment(client, &segment, &output_dir)
+                        .await
+                        .unwrap_or(false)
+                }
+            })
+            .buffer_unordered(self.max_workers)
+            .filter(|success| futures::future::ready(*success))
+            .count()
+            .await;
 
         println!(
             "分片下载完成：成功 {}/{}, 成功率 {:.1}%",
@@ -242,7 +259,12 @@ impl HlsDownloader {
     fn get_base_url(url: &str) -> String {
         if let Ok(parsed) = Url::parse(url) {
             if let Some(base) = parsed.path().rsplit_once('/') {
-                return format!("{}://{}{}", parsed.scheme(), parsed.host_str().unwrap_or(""), base.0);
+                return format!(
+                    "{}://{}{}",
+                    parsed.scheme(),
+                    parsed.host_str().unwrap_or(""),
+                    base.0
+                );
             }
         }
         String::new()
@@ -250,7 +272,7 @@ impl HlsDownloader {
 
     fn resolve_url(url: &str, base_url: &str) -> String {
         if url.starts_with("http://") || url.starts_with("https://") {
-            url.to_string()
+            return url.to_string();
         } else if let Ok(base) = Url::parse(base_url) {
             if let Ok(resolved) = base.join(url) {
                 return resolved.to_string();
@@ -322,12 +344,16 @@ impl DashDownloader {
         Ok(resp.text().await?)
     }
 
-    fn extract_video_urls(&self, mpd_content: &str, base_url: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    fn extract_video_urls(
+        &self,
+        mpd_content: &str,
+        base_url: &str,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
         let mut urls = Vec::new();
 
         // 简化实现：提取 BaseURL 和 SegmentURL
         let baseurl_re = Regex::new(r"<BaseURL>([^<]+)</BaseURL>")?;
-        let segmenturl_re = Regex::new(r"<SegmentURL media=\"([^\"]+)\"")?;
+        let segmenturl_re = Regex::new(r#"<SegmentURL media="([^"]+)""#)?;
 
         let base_url_from_mpd = baseurl_re
             .captures(mpd_content)
@@ -381,7 +407,7 @@ mod tests {
     #[tokio::test]
     async fn test_hls_downloader() {
         let downloader = HlsDownloader::new("test_downloads", 5).unwrap();
-        
+
         // 注意：这是一个示例测试，需要有效的 M3U8 URL
         // let success = downloader.download("https://example.com/video.m3u8", "test").await;
         // assert!(success.is_ok());

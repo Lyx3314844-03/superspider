@@ -13,13 +13,25 @@ func newEcommerceReviewSpider(siteFamily string) *scrapy.Spider {
 		family := siteFamilyFromResponse(response)
 		current := profileForFamily(family)
 		jsonLDProducts := extractJSONLDProducts(response.Text, 1)
+		bootstrapProducts := extractBootstrapProducts(response.Text, 1)
+		networkArtifact := networkArtifactFromResponse(response)
+		networkEntries := normalizeNetworkEntries(networkArtifact, 50)
+		networkAPICandidates := extractNetworkAPICandidates(networkEntries, 20)
+		apiCandidates := appendUniqueStrings(20, extractAPICandidates(response.Text, 20), networkAPICandidates)
+		networkReplayTemplates := buildNetworkReplayJobTemplates(response.URL, family, networkEntries, 10)
 		universalFields := map[string]any{
-			"embedded_json_blocks": extractEmbeddedJSONBlocks(response.Text, 5, 2000),
-			"api_candidates":       extractAPICandidates(response.Text, 20),
-			"script_sources":       response.XPath("//script/@src").GetAll(),
-			"json_ld_products":     jsonLDProducts,
-			"video_candidates":     collectVideoLinks(response.URL, append(response.XPath("//video/@src").GetAll(), response.XPath("//source/@src").GetAll()...), 10),
-			"excerpt":              excerpt(response.Text, 800),
+			"coupons_promotions":           DetectCouponsPromotions(response.Text),
+			"stock_status":                 ExtractStockStatus(response.Text),
+			"embedded_json_blocks":         extractEmbeddedJSONBlocks(response.Text, 5, 2000),
+			"api_candidates":               apiCandidates,
+			"network_entries":              networkEntries,
+			"network_api_candidates":       networkAPICandidates,
+			"network_replay_job_templates": networkReplayTemplates,
+			"script_sources":               response.XPath("//script/@src").GetAll(),
+			"json_ld_products":             jsonLDProducts,
+			"bootstrap_products":           bootstrapProducts,
+			"video_candidates":             collectVideoLinks(response.URL, append(response.XPath("//video/@src").GetAll(), response.XPath("//source/@src").GetAll()...), 10),
+			"excerpt":                      excerpt(response.Text, 800),
 		}
 
 		if family == "jd" {
@@ -58,19 +70,40 @@ func newEcommerceReviewSpider(siteFamily string) *scrapy.Spider {
 					Set("comments_preview", commentsPreview).
 					Set("embedded_json_blocks", universalFields["embedded_json_blocks"]).
 					Set("api_candidates", universalFields["api_candidates"]).
+					Set("network_entries", universalFields["network_entries"]).
+					Set("network_api_candidates", universalFields["network_api_candidates"]).
+					Set("network_replay_job_templates", universalFields["network_replay_job_templates"]).
 					Set("script_sources", universalFields["script_sources"]).
 					Set("json_ld_products", universalFields["json_ld_products"]).
 					Set("video_candidates", universalFields["video_candidates"]).
 					Set("excerpt", universalFields["excerpt"]).
+					Set(
+						"api_job_templates",
+						mergeAPIJobTemplates(
+							20,
+							buildAPIJobTemplates(
+								response.URL,
+								family,
+								apiCandidates,
+								[]string{itemID},
+								10,
+							),
+							networkReplayTemplates,
+						),
+					).
 					Set("note", "Public universal ecommerce review extraction with JD review fast path."),
 			}, nil
 		}
 
-		if family != "jd" && family != "generic" && len(jsonLDProducts) > 0 {
-			product := jsonLDProducts[0]
+		structuredProducts := jsonLDProducts
+		if len(structuredProducts) == 0 {
+			structuredProducts = bootstrapProducts
+		}
+		if family != "jd" && len(structuredProducts) > 0 {
+			product := structuredProducts[0]
 			return []any{
 				scrapy.NewItem().
-					Set("kind", fmt.Sprintf("%s_review_summary", family)).
+					Set("kind", map[bool]string{true: "ecommerce_review_summary", false: fmt.Sprintf("%s_review_summary", family)}[family == "generic"]).
 					Set("site_family", family).
 					Set("url", response.URL).
 					Set("item_id", fallbackString(product["sku"], firstRegexMatch(response.Text, current.ItemIDPatterns))).
@@ -78,13 +111,32 @@ func newEcommerceReviewSpider(siteFamily string) *scrapy.Spider {
 					Set("review_count", fallbackString(product["review_count"], firstRegexMatch(response.Text, current.ReviewCountPatterns))).
 					Set("brand", product["brand"]).
 					Set("category", product["category"]).
+					Set("shop", product["shop"]).
 					Set("embedded_json_blocks", universalFields["embedded_json_blocks"]).
 					Set("api_candidates", universalFields["api_candidates"]).
+					Set("network_entries", universalFields["network_entries"]).
+					Set("network_api_candidates", universalFields["network_api_candidates"]).
+					Set("network_replay_job_templates", universalFields["network_replay_job_templates"]).
 					Set("script_sources", universalFields["script_sources"]).
 					Set("json_ld_products", universalFields["json_ld_products"]).
+					Set("bootstrap_products", universalFields["bootstrap_products"]).
 					Set("video_candidates", universalFields["video_candidates"]).
 					Set("excerpt", universalFields["excerpt"]).
-					Set("note", "Public ecommerce review fast path via JSON-LD aggregate rating extraction."),
+					Set(
+						"api_job_templates",
+						mergeAPIJobTemplates(
+							20,
+							buildAPIJobTemplates(
+								response.URL,
+								family,
+								apiCandidates,
+								[]string{fallbackString(product["sku"], firstRegexMatch(response.Text, current.ItemIDPatterns))},
+								10,
+							),
+							networkReplayTemplates,
+						),
+					).
+					Set("note", "Public ecommerce review fast path via structured bootstrap/JSON-LD extraction."),
 			}, nil
 		}
 
@@ -99,10 +151,28 @@ func newEcommerceReviewSpider(siteFamily string) *scrapy.Spider {
 				Set("review_id_candidates", collectRegexMatches(response.Text, []string{`(?:commentId|reviewId|id)["'=:\s]+([A-Za-z0-9_-]+)`}, 10)).
 				Set("embedded_json_blocks", universalFields["embedded_json_blocks"]).
 				Set("api_candidates", universalFields["api_candidates"]).
+				Set("network_entries", universalFields["network_entries"]).
+				Set("network_api_candidates", universalFields["network_api_candidates"]).
+				Set("network_replay_job_templates", universalFields["network_replay_job_templates"]).
 				Set("script_sources", universalFields["script_sources"]).
 				Set("json_ld_products", universalFields["json_ld_products"]).
+				Set("bootstrap_products", universalFields["bootstrap_products"]).
 				Set("video_candidates", universalFields["video_candidates"]).
 				Set("excerpt", universalFields["excerpt"]).
+				Set(
+					"api_job_templates",
+					mergeAPIJobTemplates(
+						20,
+						buildAPIJobTemplates(
+							response.URL,
+							family,
+							apiCandidates,
+							[]string{firstRegexMatch(response.Text, current.ItemIDPatterns)},
+							10,
+						),
+						networkReplayTemplates,
+					),
+				).
 				Set("note", "Public universal ecommerce review extraction."),
 		}, nil
 	}).

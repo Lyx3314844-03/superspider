@@ -13,6 +13,8 @@ from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import time
 
+from pyspider.llm_output import html_to_markdown, sse_markdown_events
+
 logger = logging.getLogger(__name__)
 
 
@@ -95,6 +97,10 @@ class SpiderAPI:
         self.app.route("/api/v1/stats", methods=["GET"])(self.get_stats)
         self.app.route("/api/v1/graph/extract", methods=["POST"])(self.extract_graph)
         self.app.route("/api/graph/extract", methods=["POST"])(self.extract_graph)
+        self.app.route("/api/v1/llm/markdown", methods=["POST"])(self.llm_markdown)
+        self.app.route("/api/v1/llm/markdown/stream", methods=["POST"])(
+            self.llm_markdown_stream
+        )
 
         # 错误处理
         self.app.errorhandler(404)(self.not_found)
@@ -445,6 +451,43 @@ class SpiderAPI:
                 "success": True,
                 "data": self._build_graph_payload(html),
             }
+        )
+
+    def llm_markdown(self) -> Response:
+        """Convert provided HTML into compact Markdown for AI CLI contexts."""
+        data = request.get_json() or {}
+        html = str(data.get("html") or "")
+        if not html:
+            return jsonify({"success": False, "error": "html is required"}), 400
+        max_chars = int(data.get("max_chars") or 12000)
+        markdown = html_to_markdown(
+            html,
+            base_url=str(data.get("url") or ""),
+            max_chars=max_chars,
+        )
+        return jsonify(
+            {
+                "success": True,
+                "markdown": markdown,
+                "truncated": markdown.endswith("[truncated]"),
+            }
+        )
+
+    def llm_markdown_stream(self) -> Response:
+        """Stream Markdown chunks as server-sent events."""
+        data = request.get_json() or {}
+        html = str(data.get("html") or "")
+        if not html:
+            return jsonify({"success": False, "error": "html is required"}), 400
+        markdown = html_to_markdown(
+            html,
+            base_url=str(data.get("url") or ""),
+            max_chars=int(data.get("max_chars") or 12000),
+        )
+        chunk_size = int(data.get("chunk_size") or 2048)
+        return Response(
+            sse_markdown_events(markdown, chunk_size=chunk_size),
+            mimetype="text/event-stream",
         )
 
     # ============ 错误处理 ============

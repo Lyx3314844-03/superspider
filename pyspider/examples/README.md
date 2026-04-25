@@ -21,6 +21,12 @@ python -m pyspider capabilities
   - project-style / scrapy-like usage
 - `enhanced_features_demo.py`
   - broader runtime feature surface
+- `ecommerce_crawler.py`
+  - unified ecommerce crawler wrapper for catalog/detail/review and browser-backed capture
+- `ecommerce_browser_spider.py`
+  - Playwright-backed ecommerce capture and artifact export
+- `universal_ecommerce_detector.py`
+  - shared ecommerce site-family detector
 - `custom_spider_template.py`
   - template for new project spiders
 
@@ -30,6 +36,8 @@ python -m pyspider capabilities
 python examples/simple_spider.py
 python examples/scrapy_style_demo.py
 python examples/enhanced_features_demo.py
+python examples/ecommerce_crawler.py catalog jd
+python examples/ecommerce_browser_spider.py jd catalog
 ```
 
 ## Shared Starter Assets
@@ -42,6 +50,13 @@ The repo now ships shared starter assets that pair directly with `python -m pysp
   - site-family starters for JD, Taobao, Tmall, Pinduoduo, Xiaohongshu, and Douyin Shop
 - `examples/class-kits/`
   - reusable spider class templates for search, detail, API bootstrap, infinite scroll, login session, social feed, and ecommerce flows
+
+The newer ecommerce path is split into a reusable wrapper plus a browser companion:
+
+- `EcommerceCrawler`
+  - unified catalog/detail/review entrypoint
+- `EcommerceBrowserSpider`
+  - rendered-page capture, storage-state export, and browser artifact export
 
 Recommended order:
 
@@ -58,6 +73,9 @@ Recommended order:
 - `ecommerce_catalog_spider.py`
 - `ecommerce_detail_spider.py`
 - `ecommerce_review_spider.py`
+- `ecommerce_crawler.py`
+- `ecommerce_browser_spider.py`
+- `universal_ecommerce_detector.py`
 - `tiktok_spider.py`
 
 ## E-commerce Coverage
@@ -69,6 +87,8 @@ The `ecommerce_*` examples are public-data crawlers with:
 - a `generic` fallback for unknown storefronts
 - broader extraction for images, videos, embedded JSON, and API candidates
 
+`ecommerce_crawler.py` is the preferred unified wrapper when you want one class that can switch between catalog/detail/review and browser-backed capture modes. `ecommerce_browser_spider.py` is the browser companion when you need rendered HTML, storage state, and network artifacts.
+
 Suggested runs:
 
 ```bash
@@ -77,7 +97,9 @@ python examples/ecommerce_detail_spider.py taobao
 python examples/ecommerce_review_spider.py generic
 ```
 
-Supported built-in site families: `jd`, `taobao`, `tmall`, `pinduoduo`, `amazon`, `generic`.
+Supported built-in site families: `jd`, `taobao`, `tmall`, `pinduoduo`, `amazon`, `xiaohongshu`, `douyin-shop`, `generic`.
+
+`xiaohongshu` and `douyin-shop` currently use browser-oriented public-data profiles rather than site-specific API fast paths.
 
 These examples target publicly accessible product data. They are not a promise of universal access to login-gated or private commerce data.
 

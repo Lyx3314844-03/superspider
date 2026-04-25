@@ -8,6 +8,7 @@ import com.javaspider.core.Page;
 import com.javaspider.core.Site;
 import com.javaspider.core.Spider;
 import com.javaspider.graph.GraphBuilder;
+import com.javaspider.llm.LlmNativeOutput;
 import com.javaspider.processor.PageProcessor;
 import com.javaspider.research.AsyncResearchConfig;
 import com.javaspider.research.AsyncResearchResult;
@@ -76,6 +77,8 @@ public class SpiderController {
         server.createContext("/api/stats", withApiAuth(new StatsHandler()));
         server.createContext("/api/graph/extract", withApiAuth(new GraphExtractHandler()));
         server.createContext("/api/v1/graph/extract", withApiAuth(new GraphExtractHandler()));
+        server.createContext("/api/v1/llm/markdown", withApiAuth(new LlmMarkdownHandler(false)));
+        server.createContext("/api/v1/llm/markdown/stream", withApiAuth(new LlmMarkdownHandler(true)));
         server.createContext("/api/research", withApiAuth(new ResearchHandler()));
         server.createContext("/api/research/", withApiAuth(new ResearchHandler()));
         server.createContext("/api/v1/research", withApiAuth(new ResearchHandler()));
@@ -749,6 +752,44 @@ https://example.com/list</textarea>
                 sendResponse(exchange, 200, toJson(response), "application/json");
             } catch (IllegalArgumentException e) {
                 sendError(exchange, 400, e.getMessage());
+            }
+        }
+    }
+
+    private class LlmMarkdownHandler implements HttpHandler {
+        private final boolean stream;
+
+        private LlmMarkdownHandler(boolean stream) {
+            this.stream = stream;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendError(exchange, 405, "Method not allowed");
+                return;
+            }
+            Map<String, Object> payload = parseJson(readBody(exchange));
+            String html = rawStringValue(payload.get("html"));
+            if (html.isBlank()) {
+                sendError(exchange, 400, "html is required");
+                return;
+            }
+            String baseUrl = rawStringValue(payload.get("url"));
+            int maxChars = intValue(payload.get("max_chars"), 12000);
+            if (!stream) {
+                sendResponse(exchange, 200, toJson(LlmNativeOutput.markdownPayload(html, baseUrl, maxChars)), "application/json");
+                return;
+            }
+            String markdown = LlmNativeOutput.htmlToMarkdown(html, baseUrl, maxChars);
+            exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
+            exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream output = exchange.getResponseBody()) {
+                for (String event : LlmNativeOutput.sseMarkdownEvents(markdown, intValue(payload.get("chunk_size"), 2048))) {
+                    output.write(event.getBytes(StandardCharsets.UTF_8));
+                    output.flush();
+                }
             }
         }
     }

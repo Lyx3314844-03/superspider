@@ -2,6 +2,8 @@ package com.javaspider.selector;
 
 import org.junit.jupiter.api.Test;
 
+import com.javaspider.extractor.SelectorExtractor;
+
 import java.util.List;
 import java.util.Map;
 
@@ -33,6 +35,80 @@ class HtmlSelectorContractTest {
 
         assertNull(html.jsonPath("$.data.title").get());
         assertEquals(List.of(), html.jsonPath("$.data.title").all());
+    }
+
+    @Test
+    void htmlXPathUsesRealXPathEvaluation() {
+        Html html = new Html("<html><body><div><span>One</span><span>Two</span></div></body></html>");
+
+        assertEquals("Two", html.xpath("//div/span[2]/text()").get());
+    }
+
+    @Test
+    void selectorExtractorSupportsComplexCssAndXpathRules() {
+        String html = """
+            <html><body>
+              <article class="product" data-sku="A1"><h2><span>Alpha</span></h2><a class="buy" href="/alpha">Buy</a></article>
+              <article class="product featured" data-sku="B2"><h2><span>Beta</span></h2><a class="buy" href="/beta">Buy</a></article>
+            </body></html>
+            """;
+
+        Map<String, Object> extracted = new SelectorExtractor().extract(html, List.of(
+            SelectorExtractor.Rule.cssAll("names", "article.product > h2 span::text"),
+            SelectorExtractor.Rule.xpath("featured_sku", "//article[contains(@class, 'featured')]/@data-sku"),
+            new SelectorExtractor.Rule("links", "css", "article.product a.buy::attr(href)", null, true, false)
+        ));
+
+        assertEquals(List.of("Alpha", "Beta"), extracted.get("names"));
+        assertEquals("B2", extracted.get("featured_sku"));
+        assertEquals(List.of("/alpha", "/beta"), extracted.get("links"));
+    }
+
+    @Test
+    void locatorAnalyzerBuildsCssAndXpathCandidates() {
+        String html = """
+            <html><body><form>
+              <input id="search-box" name="q" placeholder="Search products">
+              <button data-testid="submit-search">Search</button>
+            </form></body></html>
+            """;
+
+        LocatorAnalyzer.LocatorPlan plan = new LocatorAnalyzer().analyze(
+            html,
+            LocatorAnalyzer.LocatorTarget.forField("q")
+        );
+
+        java.util.Set<String> expressions = plan.candidates().stream()
+            .map(candidate -> candidate.kind() + " " + candidate.expr())
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertEquals(true, expressions.contains("css #search-box"));
+        assertEquals(true, expressions.contains("xpath //input[@name='q']"));
+    }
+
+    @Test
+    void devToolsAnalyzerSnapshotsElementsAndSelectsNodeReverseRoute() {
+        String html = """
+            <html><body>
+              <input id="kw" name="q">
+              <script src="/static/app.js"></script>
+              <script>const token = CryptoJS.MD5(window.navigator.userAgent).toString();</script>
+            </body></html>
+            """;
+
+        DevToolsAnalyzer.DevToolsReport report = new DevToolsAnalyzer().analyze(
+            html,
+            List.of(new DevToolsAnalyzer.DevToolsNetworkArtifact(
+                "https://example.com/api/search?sign=abc",
+                "GET",
+                200,
+                "xhr"
+            )),
+            List.of()
+        );
+
+        assertEquals(true, report.elements().size() >= 3);
+        assertEquals("analyze_crypto", report.bestReverseRoute().kind());
     }
 
     @Test

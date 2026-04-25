@@ -1,5 +1,4 @@
 package com.javaspider.research;
-
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -152,6 +151,37 @@ class ResearchRuntimeTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> jsonExtract = (Map<String, Object>) jsonResult.get("extract");
         assertEquals("Capsule", jsonExtract.get("name"));
+    }
+
+    @Test
+    void ecommerceProfileBuildsNetworkReplayTemplates() {
+        String artifact = """
+            {"network_events":[
+              {"url":"https://shop.example.com/_next/static/app.js","method":"GET","status":200,"resource_type":"script"},
+              {"url":"https://shop.example.com/api/item/detail?id=1","method":"POST","status":200,"resource_type":"fetch","request_headers":{"Content-Type":"application/json","Cookie":"session=secret"},"post_data":"{\\"sku\\":\\"SKU-1\\"}","response_headers":{"content-type":"application/json"}}
+            ]}
+            """;
+
+        List<Map<String, Object>> entries = ResearchNetworkArtifacts.normalizeNetworkEntries(artifact, 10);
+        assertEquals(2, entries.size());
+        assertEquals(
+            List.of("https://shop.example.com/api/item/detail?id=1"),
+            ResearchNetworkArtifacts.extractNetworkApiCandidates(artifact, 10)
+        );
+        List<Map<String, Object>> templates = ResearchNetworkArtifacts.buildNetworkReplayJobTemplates(
+            "https://shop.example.com/item/sku-1",
+            "generic",
+            artifact,
+            10
+        );
+        assertEquals(1, templates.size());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> target = (Map<String, Object>) templates.get(0).get("target");
+        assertEquals("POST", target.get("method"));
+        assertEquals("{\"sku\":\"SKU-1\"}", target.get("body"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> headers = (Map<String, Object>) target.get("headers");
+        assertFalse(headers.containsKey("Cookie"));
     }
 
     @Test

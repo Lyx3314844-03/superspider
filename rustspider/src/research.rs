@@ -209,9 +209,15 @@ pub fn profile_site(url: &str, content: &str) -> SiteProfile {
     ]);
     let crawler_type = resolve_crawler_type(&signals, "");
     let page_type = match crawler_type.as_str() {
-        "static_listing" | "search_results" | "ecommerce_search" | "infinite_scroll_listing" => "list",
+        "static_listing" | "search_results" | "ecommerce_search" | "infinite_scroll_listing" => {
+            "list"
+        }
         "static_detail" | "ecommerce_detail" => "detail",
-        _ if *signals.get("has_list").unwrap_or(&false) && !*signals.get("has_detail").unwrap_or(&false) => "list",
+        _ if *signals.get("has_list").unwrap_or(&false)
+            && !*signals.get("has_detail").unwrap_or(&false) =>
+        {
+            "list"
+        }
         _ if *signals.get("has_detail").unwrap_or(&false) => "detail",
         _ => "generic",
     };
@@ -297,11 +303,13 @@ fn resolve_site_family(url_lower: &str) -> String {
 }
 
 fn resolve_crawler_type(signals: &BTreeMap<String, bool>, path: &str) -> String {
-    if *signals.get("has_login").unwrap_or(&false) && !*signals.get("has_detail").unwrap_or(&false) {
+    if *signals.get("has_login").unwrap_or(&false) && !*signals.get("has_detail").unwrap_or(&false)
+    {
         return "login_session".to_string();
     }
     if *signals.get("has_infinite_scroll").unwrap_or(&false)
-        && (*signals.get("has_list").unwrap_or(&false) || *signals.get("has_search").unwrap_or(&false))
+        && (*signals.get("has_list").unwrap_or(&false)
+            || *signals.get("has_search").unwrap_or(&false))
     {
         return "infinite_scroll_listing".to_string();
     }
@@ -409,8 +417,12 @@ fn resolve_strategy_hints(crawler_type: &str, runner_order: &[String]) -> Vec<St
 fn resolve_job_templates(crawler_type: &str, url_lower: &str) -> Vec<String> {
     let mut templates = match crawler_type {
         "hydrated_spa" => vec!["examples/crawler-types/hydrated-spa-browser.json".to_string()],
-        "infinite_scroll_listing" => vec!["examples/crawler-types/infinite-scroll-browser.json".to_string()],
-        "ecommerce_search" => vec!["examples/crawler-types/ecommerce-search-browser.json".to_string()],
+        "infinite_scroll_listing" => {
+            vec!["examples/crawler-types/infinite-scroll-browser.json".to_string()]
+        }
+        "ecommerce_search" => {
+            vec!["examples/crawler-types/ecommerce-search-browser.json".to_string()]
+        }
         "ecommerce_detail" => vec![
             "examples/crawler-types/ecommerce-search-browser.json".to_string(),
             "examples/crawler-types/api-bootstrap-http.json".to_string(),
@@ -428,9 +440,15 @@ fn resolve_job_templates(crawler_type: &str, url_lower: &str) -> Vec<String> {
         "jd" => templates.push("examples/site-presets/jd-search-browser.json".to_string()),
         "taobao" => templates.push("examples/site-presets/taobao-search-browser.json".to_string()),
         "tmall" => templates.push("examples/site-presets/tmall-search-browser.json".to_string()),
-        "pinduoduo" => templates.push("examples/site-presets/pinduoduo-search-browser.json".to_string()),
-        "xiaohongshu" => templates.push("examples/site-presets/xiaohongshu-feed-browser.json".to_string()),
-        "douyin-shop" => templates.push("examples/site-presets/douyin-shop-browser.json".to_string()),
+        "pinduoduo" => {
+            templates.push("examples/site-presets/pinduoduo-search-browser.json".to_string())
+        }
+        "xiaohongshu" => {
+            templates.push("examples/site-presets/xiaohongshu-feed-browser.json".to_string())
+        }
+        "douyin-shop" => {
+            templates.push("examples/site-presets/douyin-shop-browser.json".to_string())
+        }
         _ => {}
     }
     templates.sort();

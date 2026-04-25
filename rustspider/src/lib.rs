@@ -15,6 +15,7 @@ pub mod behavior;
 pub mod browser;
 pub mod connector;
 pub mod cookie;
+pub mod crawler_selector;
 pub mod dedup;
 pub mod downloader;
 pub mod dynamic;
@@ -25,8 +26,10 @@ pub mod events;
 pub mod exporter;
 pub mod feature_gates;
 pub mod graph;
+pub mod llm_output;
 pub mod media;
 pub mod models;
+pub mod network;
 pub mod node_discovery;
 pub mod notebook_output;
 pub mod parser;
@@ -98,7 +101,10 @@ pub use async_runtime::{DedupQueue, Error as AsyncError, PriorityQueue, Request 
 pub use audit::{AuditEvent, AuditTrail, CompositeAuditTrail, FileAuditTrail, MemoryAuditTrail};
 
 #[cfg(feature = "browser")]
-pub use browser::{BrowserBuilder, BrowserConfig, BrowserError, BrowserManager, FormHandler};
+pub use browser::{
+    BrowserBuilder, BrowserConfig, BrowserError, BrowserManager, FormHandler, PlaywrightBrowser,
+    PlaywrightConfig, PlaywrightFetchResult,
+};
 
 pub use ai::entity_extractor::{EntityExtractionResult, EntityExtractor};
 pub use ai::sentiment::{SentimentAnalyzer, SentimentResult};
@@ -116,6 +122,7 @@ pub use contracts::{
     RequestFingerprint, RuntimeSession, SessionPool,
 };
 pub use cookie::{Cookie, CookieJar};
+pub use crawler_selector::{CrawlerSelection, CrawlerSelectionRequest, CrawlerSelector};
 pub use dedup::{FingerprintIndex, FingerprintRecord};
 pub use distributed::node_discovery::{
     discover_nodes_from_dns_srv, discover_nodes_from_dns_srv_records, discover_nodes_from_env,
@@ -140,7 +147,11 @@ pub use feature_gates::catalog as feature_gate_catalog;
 pub use graph::{Edge, GraphBuilder, Node};
 pub use incremental::{IncrementalCrawler, PageCacheEntry};
 pub use models::{Page, Request, Response};
-pub use parser::{HTMLParser, JSONParser};
+pub use parser::{
+    DevToolsAnalyzer, DevToolsNetworkArtifact, DevToolsReport, ElementSnapshot, ExtractRule,
+    HTMLParser, JSONParser, LocatorAnalyzer, LocatorCandidate, LocatorPlan, LocatorTarget,
+    ReverseRecommendation, SelectorExtractor,
+};
 pub use performance::{
     AdaptiveRateLimiter, CircuitBreaker, CircuitState, ContentFingerprinter, RateLimiter,
 };

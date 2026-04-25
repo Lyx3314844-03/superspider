@@ -2,6 +2,7 @@ package com.javaspider.selector;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.jsoup.parser.Parser;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
@@ -27,7 +28,7 @@ public class XPathSelector implements Selector {
         }
         
         try {
-            Document document = Jsoup.parse(text);
+            Document document = Jsoup.parse(text, "", Parser.xmlParser());
             org.jsoup.helper.W3CDom w3CDom = new org.jsoup.helper.W3CDom();
             org.w3c.dom.Document w3cDoc = w3CDom.fromJsoup(document);
             
@@ -45,7 +46,7 @@ public class XPathSelector implements Selector {
             }
             
             Node node = nodeList.item(0);
-            return node.getTextContent();
+            return nodeValue(node);
             
         } catch (Exception e) {
             throw new RuntimeException("XPath evaluation error", e);
@@ -61,7 +62,7 @@ public class XPathSelector implements Selector {
         }
         
         try {
-            Document document = Jsoup.parse(text);
+            Document document = Jsoup.parse(text, "", Parser.xmlParser());
             org.jsoup.helper.W3CDom w3CDom = new org.jsoup.helper.W3CDom();
             org.w3c.dom.Document w3cDoc = w3CDom.fromJsoup(document);
             
@@ -76,7 +77,7 @@ public class XPathSelector implements Selector {
             
             for (int i = 0; i < nodeList.getLength(); i++) {
                 Node node = nodeList.item(i);
-                String value = node.getTextContent();
+                String value = nodeValue(node);
                 if (value != null && !value.isEmpty()) {
                     results.add(value);
                 }
@@ -91,5 +92,13 @@ public class XPathSelector implements Selector {
     
     public static XPathSelector of(String xpath) {
         return new XPathSelector(xpath);
+    }
+
+    private String nodeValue(Node node) {
+        if (node == null) {
+            return null;
+        }
+        String value = node.getNodeType() == Node.ATTRIBUTE_NODE ? node.getNodeValue() : node.getTextContent();
+        return value == null ? null : value.trim();
     }
 }

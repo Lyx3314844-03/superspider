@@ -1,0 +1,39 @@
+{
+  "scenario": "ecommerce_listing",
+  "crawler_type": "ecommerce_search",
+  "recommended_runner": "browser",
+  "runner_order": ["browser", "http"],
+  "site_family": "generic",
+  "risk_level": "medium",
+  "capabilities": [
+    "http_fetch",
+    "browser_rendering",
+    "network_or_bootstrap_json",
+    "commerce_fields",
+    "listing_extraction"
+  ],
+  "strategy_hints": [
+    "start with browser rendering, capture HTML and network payloads, then promote stable fields into HTTP follow-up jobs",
+    "split listing fields from detail fields so sku/price/image can be validated independently"
+  ],
+  "job_templates": ["examples/crawler-types/ecommerce-search-browser.json"],
+  "fallback_plan": [
+    "render with browser and save DOM, screenshot, and network artifacts",
+    "promote stable JSON/API responses into HTTP replay jobs",
+    "fall back to DOM selectors only after bootstrap/network data is empty"
+  ],
+  "stop_conditions": [
+    "stop when next-page URL repeats or disappears",
+    "stop when item URLs no longer add new fingerprints",
+    "respect configured max pages/items/time budget"
+  ],
+  "confidence": 0.75,
+  "reason_codes": [
+    "crawler_type:ecommerce_search",
+    "page_type:list",
+    "site_family:generic",
+    "risk:medium",
+    "signal:has_price"
+  ],
+  "profile": {}
+}

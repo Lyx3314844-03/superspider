@@ -3,6 +3,7 @@ package com.javaspider.browser;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.chromium.ChromiumDriver;
 import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.firefox.FirefoxOptions;
 import org.openqa.selenium.interactions.Actions;
@@ -11,8 +12,14 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.javaspider.antibot.AccessFrictionAnalyzer;
+import com.javaspider.selector.DevToolsAnalyzer;
+import com.javaspider.selector.LocatorAnalyzer;
+
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
@@ -34,6 +41,8 @@ public class BrowserManager {
     private final boolean incognito;
     private final String customUserAgent;
     private final String proxyServer;
+    private final String userDataDir;
+    private final List<String> extraArguments;
     private WebDriverWait wait;
     private boolean isInitialized = false;
 
@@ -53,11 +62,25 @@ public class BrowserManager {
     }
 
     public BrowserManager(BrowserType browserType, boolean headless, boolean incognito, String customUserAgent, String proxyServer) {
+        this(browserType, headless, incognito, customUserAgent, proxyServer, "", List.of());
+    }
+
+    public BrowserManager(
+        BrowserType browserType,
+        boolean headless,
+        boolean incognito,
+        String customUserAgent,
+        String proxyServer,
+        String userDataDir,
+        List<String> extraArguments
+    ) {
         this.browserType = browserType;
         this.headless = headless;
         this.incognito = incognito;
         this.customUserAgent = customUserAgent == null ? "" : customUserAgent;
         this.proxyServer = proxyServer == null ? "" : proxyServer;
+        this.userDataDir = userDataDir == null ? "" : userDataDir;
+        this.extraArguments = extraArguments == null ? List.of() : List.copyOf(extraArguments);
     }
 
     private static void suppressSeleniumWarnings() {
@@ -106,33 +129,43 @@ public class BrowserManager {
      */
     private WebDriver createChromeDriver() {
         ChromeOptions options = new ChromeOptions();
-        
+
         if (headless) {
             options.addArguments("--headless=new");
         }
-        
+
         if (incognito) {
             options.addArguments("--incognito");
         }
-        
+
         options.addArguments("--disable-gpu");
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
         options.addArguments("--window-size=1920,1080");
+        options.addArguments("--no-first-run");
+        options.addArguments("--no-default-browser-check");
         if (!proxyServer.isBlank()) {
             options.addArguments("--proxy-server=" + proxyServer);
         }
-        
+        if (!userDataDir.isBlank()) {
+            options.addArguments("--user-data-dir=" + userDataDir);
+        }
+        for (String argument : extraArguments) {
+            if (argument != null && !argument.isBlank()) {
+                options.addArguments(argument);
+            }
+        }
+
         // 禁用自动化特征检测
         options.addArguments("--disable-blink-features=AutomationControlled");
         options.setExperimentalOption("excludeSwitches", new String[]{"enable-automation"});
         options.setExperimentalOption("useAutomationExtension", false);
-        
+
         // 设置 User-Agent
         Map<String, Object> prefs = new HashMap<>();
         prefs.put("profile.default_content_setting_values.notifications", 2);
         options.setExperimentalOption("prefs", prefs);
-        
+
         String userAgent = customUserAgent.isBlank()
             ? "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             : customUserAgent;
@@ -146,15 +179,15 @@ public class BrowserManager {
      */
     private WebDriver createFirefoxDriver() {
         FirefoxOptions options = new FirefoxOptions();
-        
+
         if (headless) {
             options.addArguments("--headless");
         }
-        
+
         if (incognito) {
             options.addArguments("-private");
         }
-        
+
         options.addArguments("--width=1920");
         options.addArguments("--height=1080");
 
@@ -170,6 +203,46 @@ public class BrowserManager {
         }
         driver.get(url);
         logger.debug("Navigated to: {}", url);
+    }
+
+    public void applyEcommerceRuntimeProfile(String userAgent) {
+        executeCdpCommand("Page.addScriptToEvaluateOnNewDocument", Map.of("source", ecommerceRuntimeScript()));
+        if (userAgent != null && !userAgent.isBlank()) {
+            executeCdpCommand("Network.setUserAgentOverride", Map.of(
+                "userAgent", userAgent,
+                "platform", "Windows"
+            ));
+        }
+        executeCdpCommand("Emulation.setTimezoneOverride", Map.of("timezoneId", "Asia/Shanghai"));
+        executeCdpCommand("Emulation.setLocaleOverride", Map.of("locale", "zh-CN"));
+    }
+
+    public Object executeCdpCommand(String command, Map<String, Object> params) {
+        if (!isInitialized) {
+            init();
+        }
+        try {
+            if (driver instanceof ChromiumDriver chromiumDriver) {
+                return chromiumDriver.executeCdpCommand(command, params == null ? Map.of() : params);
+            }
+        } catch (Exception e) {
+            logger.debug("CDP command failed: {}", command, e);
+        }
+        return null;
+    }
+
+    public void warmup(String url) {
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        try {
+            navigate(url);
+            waitForPageLoad();
+            sleepJitter(600, 1200);
+            executeScript("window.scrollBy(0, Math.floor((window.innerHeight || 800) * 0.5));");
+            sleepJitter(300, 900);
+        } catch (Exception ignored) {
+        }
     }
 
     /**
@@ -218,6 +291,37 @@ public class BrowserManager {
         logger.debug("Humanized click: {}", selector);
     }
 
+    public LocatorAnalyzer.LocatorPlan analyzeLocators(LocatorAnalyzer.LocatorTarget target) {
+        return new LocatorAnalyzer().analyze(getPageSource(), target);
+    }
+
+    public DevToolsAnalyzer.DevToolsReport analyzeDevTools() {
+        return new DevToolsAnalyzer().analyze(
+            getPageSource(),
+            currentPerformanceNetwork(),
+            List.of()
+        );
+    }
+
+    public DevToolsAnalyzer.DevToolsReport devToolsAnalyze() {
+        return analyzeDevTools();
+    }
+
+    public LocatorAnalyzer.LocatorCandidate autoClick(LocatorAnalyzer.LocatorTarget target) {
+        LocatorAnalyzer.LocatorPlan plan = analyzeLocators(target);
+        RuntimeException last = null;
+        for (LocatorAnalyzer.LocatorCandidate candidate : plan.candidates()) {
+            try {
+                WebElement element = wait.until(ExpectedConditions.elementToBeClickable(locatorBy(candidate)));
+                element.click();
+                return candidate;
+            } catch (RuntimeException error) {
+                last = error;
+            }
+        }
+        throw new IllegalArgumentException("autoClick target not found", last);
+    }
+
     /**
      * 输入文本
      */
@@ -238,6 +342,22 @@ public class BrowserManager {
         logger.debug("Humanized type into: {}", selector);
     }
 
+    public LocatorAnalyzer.LocatorCandidate autoType(LocatorAnalyzer.LocatorTarget target, String text) {
+        LocatorAnalyzer.LocatorPlan plan = analyzeLocators(target);
+        RuntimeException last = null;
+        for (LocatorAnalyzer.LocatorCandidate candidate : plan.candidates()) {
+            try {
+                WebElement element = wait.until(ExpectedConditions.presenceOfElementLocated(locatorBy(candidate)));
+                element.clear();
+                element.sendKeys(text);
+                return candidate;
+            } catch (RuntimeException error) {
+                last = error;
+            }
+        }
+        throw new IllegalArgumentException("autoType target not found", last);
+    }
+
     /**
      * 提交表单
      */
@@ -252,6 +372,51 @@ public class BrowserManager {
      */
     public String getPageSource() {
         return driver.getPageSource();
+    }
+
+    private By locatorBy(LocatorAnalyzer.LocatorCandidate candidate) {
+        if ("xpath".equalsIgnoreCase(candidate.kind())) {
+            return By.xpath(candidate.expr());
+        }
+        return By.cssSelector(candidate.expr());
+    }
+
+    private List<DevToolsAnalyzer.DevToolsNetworkArtifact> currentPerformanceNetwork() {
+        Object value;
+        try {
+            value = executeScript("""
+                return performance.getEntriesByType('resource').map(function(item) {
+                  return {
+                    url: item.name || '',
+                    method: 'GET',
+                    status: 0,
+                    resourceType: item.initiatorType || ''
+                  };
+                });
+                """);
+        } catch (RuntimeException error) {
+            return List.of();
+        }
+        if (!(value instanceof List<?> rows)) {
+            return List.of();
+        }
+        List<DevToolsAnalyzer.DevToolsNetworkArtifact> result = new ArrayList<>();
+        for (Object row : rows) {
+            if (!(row instanceof Map<?, ?> map)) {
+                continue;
+            }
+            result.add(new DevToolsAnalyzer.DevToolsNetworkArtifact(
+                stringValue(map.get("url")),
+                stringValue(map.get("method")),
+                0,
+                stringValue(map.get("resourceType"))
+            ));
+        }
+        return result;
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     /**
@@ -339,6 +504,41 @@ public class BrowserManager {
         }
     }
 
+    public Map<String, Object> detectAccessChallenge() {
+        Map<String, Object> result = new HashMap<>();
+        String html = "";
+        try {
+            html = getPageSource();
+        } catch (Exception ignored) {
+        }
+        AccessFrictionAnalyzer.AccessFrictionReport report = AccessFrictionAnalyzer.analyze(
+            200,
+            Map.of(),
+            getTitle() + "\n" + html,
+            getCurrentUrl()
+        );
+        result.put("blocked", report.blocked());
+        result.put("signals", report.signals());
+        result.put("url", getCurrentUrl());
+        result.put("title", getTitle());
+        result.put("friction_profile", report.toMap());
+        return result;
+    }
+
+    public void waitForManualAccess(Duration timeout) {
+        if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+            return;
+        }
+        long deadline = System.currentTimeMillis() + timeout.toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            Object blocked = detectAccessChallenge().get("blocked");
+            if (Boolean.FALSE.equals(blocked)) {
+                return;
+            }
+            sleepJitter(2500, 3500);
+        }
+    }
+
     /**
      * 滚动到页面顶部
      */
@@ -377,6 +577,18 @@ public class BrowserManager {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private static String ecommerceRuntimeScript() {
+        return """
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+            Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+            window.chrome = window.chrome || { runtime: {} };
+            """;
     }
 
     /**

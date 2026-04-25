@@ -1,6 +1,6 @@
 # Latest Scenario Cases
 
-Updated: 2026-04-21
+Updated: 2026-04-24
 
 This document gives source-aligned, practical cases for how the repository should be used today.
 
@@ -76,20 +76,21 @@ The goal is not to promise universal support. The goal is to show the best curre
 
 ### Best Current Path
 
-1. Run `scrapy auth-capture`
-2. Use the auth flow with captcha/TOTP-oriented action templates
-3. Persist storage state and cookies
-4. Validate with `auth-validate`
-5. Crawl with saved assets
+1. Run the target through the shared access-friction analyzer.
+2. If `capability_plan.transport_order` recommends `browser-render`, run browser fetch with HTML, screenshot, storage, and network-summary artifacts enabled.
+3. If `challenge_handoff.required` is true, pause for authorized human access instead of attempting automated bypass.
+4. Persist storage state and cookies only after the challenge is cleared.
+5. Validate with `auth-validate`.
+6. Crawl with saved assets and the plan's throttle/retry budget.
 
 ### Best Runtime
 
-- RustSpider has the strongest current challenge-field and Turnstile recovery logic
-- PySpider, GoSpider, and JavaSpider remain workable for simpler challenge flows
+- All four runtimes now expose the same access-friction report, challenge handoff, and capability plan.
+- RustSpider still has the deepest challenge-field extraction in ultimate paths.
 
 ### Why It Works
 
-- Rust source shows the deepest current extraction of Turnstile parameters and captcha recovery support
+- The shared report prevents blind retry loops and turns high-friction pages into a browser/artifact/session workflow with explicit stop conditions.
 
 ---
 
@@ -228,7 +229,7 @@ The best currently validated scenario families are:
 
 - logged-in crawl with persisted session assets
 - protected SPA/API discovery via browser artifacts + reverse tooling
-- challenge-heavy login with Rust-forward recovery
+- challenge-heavy login with shared access-friction handoff and Rust-forward challenge-field extraction
 - dynamic media extraction via browser artifacts
 
 The clearest remaining hard gaps are:
@@ -236,11 +237,12 @@ The clearest remaining hard gaps are:
 - Shadow DOM
 - generic iframe scenario normalization
 - WebSocket/SSE capture
- - WebAuthn / passkey login handling
+- WebAuthn / passkey login handling
 
 ## Related Docs
 
 - [`CRAWL_SCENARIO_GAP_MATRIX.md`](CRAWL_SCENARIO_GAP_MATRIX.md)
+- [`ACCESS_FRICTION_PLAYBOOK.md`](ACCESS_FRICTION_PLAYBOOK.md)
 - [`FRAMEWORK_CAPABILITIES.md`](FRAMEWORK_CAPABILITIES.md)
 - [`CRAWLER_TYPE_PLAYBOOK.md`](CRAWLER_TYPE_PLAYBOOK.md)
 - [`SITE_PRESET_PLAYBOOK.md`](SITE_PRESET_PLAYBOOK.md)

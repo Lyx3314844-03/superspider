@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time::sleep;
 
+use crate::antibot::friction::analyze_access_friction;
 use crate::async_runtime::{Error, Request as AsyncRequest};
 use crate::contracts::{
     AutoscaledFrontier, FileArtifactStore, FrontierConfig, ObservabilityCollector,
@@ -214,17 +215,75 @@ impl SpiderEngine {
                         Ok(response) => {
                             println!("Worker {} got response: {}", i, response.status());
                             let status = response.status().as_u16();
+                            let headers = response
+                                .headers()
+                                .iter()
+                                .map(|(key, value)| {
+                                    (
+                                        key.to_string(),
+                                        value.to_str().unwrap_or_default().to_string(),
+                                    )
+                                })
+                                .collect::<HashMap<_, _>>();
 
                             // 读取响应 Body 以释放连接
-                            if let Err(e) = response.bytes().await {
-                                eprintln!("Worker {} failed to read response body: {}", i, e);
+                            let bytes = match response.bytes().await {
+                                Ok(bytes) => bytes,
+                                Err(e) => {
+                                    eprintln!("Worker {} failed to read response body: {}", i, e);
+                                    {
+                                        let mut frontier = frontier.lock().unwrap();
+                                        frontier.ack(
+                                            &core_request_from_async(&request),
+                                            false,
+                                            started_at.elapsed().as_millis() as f64,
+                                            Some(&e.to_string()),
+                                            Some(status),
+                                            3,
+                                        );
+                                    }
+                                    {
+                                        let mut collector = observability.lock().unwrap();
+                                        collector.record_result(
+                                            Some(&core_request_from_async(&request)),
+                                            started_at.elapsed().as_millis() as f64,
+                                            Some(status),
+                                            Some(&e.to_string()),
+                                            Some(trace_id.clone()),
+                                        );
+                                        collector.end_trace(
+                                            &trace_id,
+                                            std::collections::BTreeMap::from([(
+                                                "status".to_string(),
+                                                serde_json::Value::String("failed".to_string()),
+                                            )]),
+                                        );
+                                    }
+                                    *failed.lock().unwrap() += 1;
+                                    *requested.lock().unwrap() += 1;
+                                    continue;
+                                }
+                            };
+                            let text = String::from_utf8_lossy(&bytes).to_string();
+                            let friction =
+                                analyze_access_friction(status, &headers, &text, &request.url);
+                            if friction.blocked || status >= 400 {
+                                let error = if friction.blocked {
+                                    format!(
+                                        "access friction {}: {}",
+                                        friction.level,
+                                        friction.signals.join(",")
+                                    )
+                                } else {
+                                    format!("HTTP {status}")
+                                };
                                 {
                                     let mut frontier = frontier.lock().unwrap();
                                     frontier.ack(
                                         &core_request_from_async(&request),
                                         false,
                                         started_at.elapsed().as_millis() as f64,
-                                        Some(&e.to_string()),
+                                        Some(&error),
                                         Some(status),
                                         3,
                                     );
@@ -235,15 +294,22 @@ impl SpiderEngine {
                                         Some(&core_request_from_async(&request)),
                                         started_at.elapsed().as_millis() as f64,
                                         Some(status),
-                                        Some(&e.to_string()),
+                                        Some(&error),
                                         Some(trace_id.clone()),
                                     );
                                     collector.end_trace(
                                         &trace_id,
-                                        std::collections::BTreeMap::from([(
-                                            "status".to_string(),
-                                            serde_json::Value::String("failed".to_string()),
-                                        )]),
+                                        std::collections::BTreeMap::from([
+                                            (
+                                                "status".to_string(),
+                                                serde_json::Value::String("failed".to_string()),
+                                            ),
+                                            (
+                                                "access_friction".to_string(),
+                                                serde_json::to_value(&friction.signals)
+                                                    .unwrap_or(serde_json::Value::Null),
+                                            ),
+                                        ]),
                                     );
                                 }
                                 *failed.lock().unwrap() += 1;
@@ -651,5 +717,40 @@ mod tests {
 
         let result = spider.crawl("https://example.com").await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn spider_engine_marks_access_friction_as_failed() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buffer = [0u8; 1024];
+                let _ = std::io::Read::read(&mut stream, &mut buffer);
+                let body = "<html>hcaptcha security check</html>";
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = std::io::Write::write_all(&mut stream, response.as_bytes());
+            }
+        });
+
+        let config = SpiderConfig {
+            name: "friction-test".to_string(),
+            concurrency: 1,
+            max_requests: 1,
+            delay: Duration::from_millis(0),
+            ..Default::default()
+        };
+        let engine = SpiderEngine::new(config).expect("engine");
+        engine.add_url(&format!("http://{addr}")).expect("url");
+
+        engine.run().await.expect("run");
+
+        let stats = engine.get_stats();
+        assert_eq!(stats.handled, 0);
+        assert_eq!(stats.failed, 1);
     }
 }

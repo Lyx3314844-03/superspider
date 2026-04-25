@@ -387,6 +387,30 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
                 return;
             }
 
+            if (isAccessFrictionBlocked(page)) {
+                RuntimeException error = new RuntimeException("access friction blocked");
+                failedRequests.incrementAndGet();
+                acknowledgeRequest(
+                    request,
+                    false,
+                    System.currentTimeMillis() - startedAt,
+                    error,
+                    page.getStatusCode() > 0 ? page.getStatusCode() : null
+                );
+                observabilityCollector.recordResult(
+                    request,
+                    System.currentTimeMillis() - startedAt,
+                    page.getStatusCode() > 0 ? page.getStatusCode() : null,
+                    error,
+                    traceId
+                );
+                observabilityCollector.endTrace(traceId, Map.of(
+                    "status", "failed",
+                    "access_friction", page.getField("access_friction")
+                ));
+                return;
+            }
+
             // 执行处理器
             if (processor != null) {
                 processor.process(page);
@@ -433,6 +457,17 @@ public class SpiderEnhanced implements Runnable, AutoCloseable {
             }
             inFlightRequests.decrementAndGet();
         }
+    }
+
+    private boolean isAccessFrictionBlocked(Page page) {
+        if (page == null) {
+            return false;
+        }
+        Object report = page.getField("access_friction");
+        if (!(report instanceof Map<?, ?> friction)) {
+            return false;
+        }
+        return Boolean.TRUE.equals(friction.get("blocked"));
     }
 
     private Thread startLeaseHeartbeat(Request request, AtomicBoolean stopHeartbeat) {

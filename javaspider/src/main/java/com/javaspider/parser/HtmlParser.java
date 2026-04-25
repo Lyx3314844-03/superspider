@@ -40,9 +40,13 @@ public class HtmlParser {
      */
     public List<String> css(String selector) {
         List<String> results = new ArrayList<>();
-        Elements elements = document.select(selector);
+        CssQuery query = parseCssQuery(selector);
+        Elements elements = document.select(query.selector());
         for (Element element : elements) {
-            results.add(element.text());
+            String value = cssValue(element, query);
+            if (value != null && !value.isBlank()) {
+                results.add(value);
+            }
         }
         return results;
     }
@@ -51,8 +55,9 @@ public class HtmlParser {
      * 使用 CSS 选择器提取第一个匹配的元素文本
      */
     public String cssFirst(String selector) {
-        Element element = document.selectFirst(selector);
-        return element != null ? element.text() : null;
+        CssQuery query = parseCssQuery(selector);
+        Element element = document.selectFirst(query.selector());
+        return element != null ? cssValue(element, query) : null;
     }
 
     /**
@@ -80,10 +85,15 @@ public class HtmlParser {
      */
     public List<String> cssAttr(String selector, String attribute) {
         List<String> results = new ArrayList<>();
-        Elements elements = document.select(selector);
+        CssQuery query = parseCssQuery(selector);
+        String attr = query.attribute() != null ? query.attribute() : attribute;
+        Elements elements = document.select(query.selector());
         for (Element element : elements) {
-            if (element.hasAttr(attribute)) {
-                results.add(element.attr(attribute));
+            if (element.hasAttr(attr)) {
+                String value = element.attr(attr);
+                if (value != null && !value.isBlank()) {
+                    results.add(value.trim());
+                }
             }
         }
         return results;
@@ -93,8 +103,10 @@ public class HtmlParser {
      * 使用 CSS 选择器提取第一个匹配元素的属性
      */
     public String cssAttrFirst(String selector, String attribute) {
-        Element element = document.selectFirst(selector);
-        return element != null && element.hasAttr(attribute) ? element.attr(attribute) : null;
+        CssQuery query = parseCssQuery(selector);
+        String attr = query.attribute() != null ? query.attribute() : attribute;
+        Element element = document.selectFirst(query.selector());
+        return element != null && element.hasAttr(attr) ? element.attr(attr).trim() : null;
     }
 
     /**
@@ -373,6 +385,36 @@ public class HtmlParser {
      */
     public int count(String selector) {
         return document.select(selector).size();
+    }
+
+    private CssQuery parseCssQuery(String selector) {
+        String query = selector == null ? "" : selector.trim();
+        java.util.regex.Matcher attrMatcher = java.util.regex.Pattern
+            .compile("(?i)::attr\\(([^)]+)\\)\\s*$")
+            .matcher(query);
+        if (attrMatcher.find()) {
+            return new CssQuery(query.substring(0, attrMatcher.start()).trim(), "attr", attrMatcher.group(1).trim());
+        }
+        if (query.toLowerCase(java.util.Locale.ROOT).endsWith("::text")) {
+            return new CssQuery(query.substring(0, query.length() - "::text".length()).trim(), "text", null);
+        }
+        if (query.toLowerCase(java.util.Locale.ROOT).endsWith("::html")) {
+            return new CssQuery(query.substring(0, query.length() - "::html".length()).trim(), "html", null);
+        }
+        return new CssQuery(query, "text", null);
+    }
+
+    private String cssValue(Element element, CssQuery query) {
+        if ("attr".equals(query.mode()) && query.attribute() != null) {
+            return element.attr(query.attribute()).trim();
+        }
+        if ("html".equals(query.mode())) {
+            return element.html().trim();
+        }
+        return element.text().trim();
+    }
+
+    private record CssQuery(String selector, String mode, String attribute) {
     }
 
     /**

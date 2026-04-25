@@ -17,8 +17,10 @@ cargo build --release
   - minimal runtime entry
 - `scrapy_style.rs`
   - typed project-style crawling
-- `ecommerce/`
-  - native catalog/detail/review ecommerce spiders with JD fast path and generic fallback
+- `ecommerce/main.rs`
+  - unified ecommerce crawler wrapper for catalog/detail/review and browser-backed capture
+- `ecommerce_browser_capture.rs`
+  - browser capture companion for rendered HTML and artifact export
 - `playwright_example.rs`
   - browser automation entry
 - `youku_video_downloader.rs`
@@ -35,16 +37,20 @@ cargo run --example ecommerce -- catalog jd
 cargo run --example ecommerce -- detail amazon
 cargo run --example ecommerce -- review generic
 cargo run --example playwright_example
+cargo run --example ecommerce_browser_capture --features browser -- jd catalog
 ```
 
-Supported built-in site families: `jd`, `taobao`, `tmall`, `pinduoduo`, `amazon`, `generic`.
+Supported built-in site families: `jd`, `taobao`, `tmall`, `pinduoduo`, `amazon`, `xiaohongshu`, `douyin-shop`, `generic`.
 
 Fast-path coverage:
 
 - `jd`: SKU + price API + review JSON
 - `taobao`, `tmall`, `pinduoduo`, `amazon`: JSON-LD product / rating fast paths when available
+- `xiaohongshu`, `douyin-shop`: browser-oriented public-data profiles with generic extraction heuristics
 
 The ecommerce example is a high-coverage public-data crawler. It expands extraction to images, videos, embedded JSON, and API candidates, but it is not a claim of universal access to private marketplace data.
+
+`EcommerceCrawler` is the preferred class-style entrypoint for static catalog/detail/review runs. Use the browser capture companion when you need rendered HTML, storage state, or network artifacts.
 
 ## Shared Starter Assets
 
@@ -56,6 +62,8 @@ The root `examples/` assets are first-class RustSpider starters now.
   - domain starters for major marketplace and social-commerce families
 - `examples/class-kits/`
   - reusable spider class templates that mirror the public runtime surface
+- `examples/ecommerce/`
+  - native ecommerce crawler wrapper and browser capture companion
 
 Recommended order:
 

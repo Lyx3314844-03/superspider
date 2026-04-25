@@ -1,5 +1,6 @@
 //! HTTP 下载器
 
+use crate::antibot::friction::analyze_access_friction;
 use crate::models::{Request, Response};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -58,6 +59,8 @@ impl HTTPDownloader {
 
                 let bytes = resp.bytes().unwrap_or_default();
                 let text = String::from_utf8_lossy(&bytes).to_string();
+                let access_friction =
+                    analyze_access_friction(status_code, &headers, &text, &req.url);
 
                 Response {
                     url: req.url.clone(),
@@ -67,6 +70,7 @@ impl HTTPDownloader {
                     bytes: bytes.to_vec(),
                     duration: start.elapsed(),
                     error: None,
+                    access_friction: Some(access_friction),
                 }
             }
             Err(e) => Response {
@@ -77,6 +81,7 @@ impl HTTPDownloader {
                 bytes: Vec::new(),
                 duration: start.elapsed(),
                 error: Some(e.to_string()),
+                access_friction: None,
             },
         }
     }

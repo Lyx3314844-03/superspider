@@ -7,18 +7,31 @@ from pyspider.spider.spider import CrawlerProcess, FeedExporter, Item, Request, 
 from ecommerce_site_profile import (
     DEFAULT_SITE_FAMILY,
     best_title,
+    build_api_job_templates,
     build_jd_price_api_url,
+    build_network_replay_job_templates,
     collect_image_links,
     collect_video_links,
+    extract_bootstrap_products,
     extract_jd_item_id,
     extract_api_candidates,
     extract_embedded_json_blocks,
     extract_json_ld_products,
+    extract_network_api_candidates,
+    extract_sku_variants,
+    extract_image_gallery,
+    extract_parameter_table,
+    detect_coupons_promotions,
+    extract_stock_status,
     first_link_with_keywords,
     first_match,
     get_profile,
+    get_response_network_artifact,
+    merge_api_job_templates,
+    normalize_network_entries,
     safe_json_loads,
     text_excerpt,
+    append_unique_strings,
 )
 
 
@@ -59,10 +72,23 @@ class EcommerceDetailSpider(Spider):
         selector = page.response.selector
         html = page.response.text
         links = selector.css_attr("a", "href")
+        network_artifact = get_response_network_artifact(page.response)
+        network_entries = normalize_network_entries(network_artifact)
+        network_api_candidates = extract_network_api_candidates(network_entries)
+        api_candidates = append_unique_strings(extract_api_candidates(html), network_api_candidates)
+        network_replay_templates = build_network_replay_job_templates(
+            page.response.url,
+            family,
+            network_entries,
+        )
         universal_fields = {
             "embedded_json_blocks": extract_embedded_json_blocks(html),
             "json_ld_products": extract_json_ld_products(html),
-            "api_candidates": extract_api_candidates(html),
+            "bootstrap_products": extract_bootstrap_products(html),
+            "api_candidates": api_candidates,
+            "network_entries": network_entries,
+            "network_api_candidates": network_api_candidates,
+            "network_replay_job_templates": network_replay_templates,
             "image_candidates": collect_image_links(page.response.url, selector.css_attr("img", "src")),
             "video_candidates": collect_video_links(
                 page.response.url,
@@ -70,6 +96,11 @@ class EcommerceDetailSpider(Spider):
             ),
             "script_sources": selector.css_attr("script", "src"),
             "html_excerpt": text_excerpt(html),
+            "sku_variants": extract_sku_variants(html),
+            "image_gallery": extract_image_gallery(page.response.url, selector.css_attr("img", "src")),
+            "parameter_table": extract_parameter_table(html),
+            "coupons_promotions": detect_coupons_promotions(html),
+            "stock_status": extract_stock_status(html),
         }
 
         if family == "jd":
@@ -84,6 +115,15 @@ class EcommerceDetailSpider(Spider):
                 "review_count": first_match(html, profile["review_count_patterns"]),
                 "review_url": first_link_with_keywords(page.response.url, links, profile["review_link_keywords"]),
                 **universal_fields,
+                "api_job_templates": merge_api_job_templates(
+                    build_api_job_templates(
+                        page.response.url,
+                        family,
+                        universal_fields["api_candidates"],
+                        item_ids=[item_id] if item_id else [],
+                    ),
+                    network_replay_templates,
+                ),
                 "note": "Public universal ecommerce detail extraction with JD price fast path.",
             }
             if item_id:
@@ -100,10 +140,11 @@ class EcommerceDetailSpider(Spider):
             yield Item(**detail)
             return
 
-        if family in self.FAST_PATH_FAMILIES and universal_fields["json_ld_products"]:
-            product = universal_fields["json_ld_products"][0]
+        structured_products = universal_fields["json_ld_products"] or universal_fields["bootstrap_products"]
+        if family != "jd" and structured_products:
+            product = structured_products[0]
             yield Item(
-                kind=f"{family}_detail_product",
+                kind=f"{family}_detail_product" if family != "generic" else "ecommerce_detail_product",
                 site_family=family,
                 title=product.get("name", "") or best_title(selector),
                 url=product.get("url", "") or page.response.url,
@@ -114,10 +155,19 @@ class EcommerceDetailSpider(Spider):
                 category=product.get("category", ""),
                 rating=product.get("rating", "") or first_match(html, profile["rating_patterns"]),
                 review_count=product.get("review_count", "") or first_match(html, profile["review_count_patterns"]),
-                shop=first_match(html, profile["shop_patterns"]),
+                shop=product.get("shop", "") or first_match(html, profile["shop_patterns"]),
                 review_url=first_link_with_keywords(page.response.url, links, profile["review_link_keywords"]),
                 **universal_fields,
-                note="Public ecommerce detail fast path via JSON-LD product extraction.",
+                api_job_templates=merge_api_job_templates(
+                    build_api_job_templates(
+                        page.response.url,
+                        family,
+                        universal_fields["api_candidates"],
+                        item_ids=[product.get("sku", "") or first_match(html, profile["item_id_patterns"])],
+                    ),
+                    network_replay_templates,
+                ),
+                note="Public ecommerce detail fast path via structured bootstrap/JSON-LD extraction.",
             )
             return
 
@@ -132,6 +182,15 @@ class EcommerceDetailSpider(Spider):
             review_count=first_match(html, profile["review_count_patterns"]),
             review_url=first_link_with_keywords(page.response.url, links, profile["review_link_keywords"]),
             **universal_fields,
+            api_job_templates=merge_api_job_templates(
+                build_api_job_templates(
+                    page.response.url,
+                    family,
+                    universal_fields["api_candidates"],
+                    item_ids=[first_match(html, profile["item_id_patterns"])],
+                ),
+                network_replay_templates,
+            ),
             note="Public universal ecommerce detail extraction.",
         )
 

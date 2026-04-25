@@ -274,12 +274,25 @@ mod tests {
             while !flag.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
                         let mut request_bytes = Vec::new();
                         let mut buffer = [0_u8; 4096];
                         let mut expected_total = None;
 
                         loop {
-                            let size = stream.read(&mut buffer).unwrap_or(0);
+                            let size = match stream.read(&mut buffer) {
+                                Ok(size) => size,
+                                Err(err)
+                                    if err.kind() == std::io::ErrorKind::WouldBlock
+                                        || err.kind() == std::io::ErrorKind::TimedOut =>
+                                {
+                                    if expected_total.is_some() {
+                                        continue;
+                                    }
+                                    break;
+                                }
+                                Err(_) => break,
+                            };
                             if size == 0 {
                                 break;
                             }
@@ -293,7 +306,9 @@ mod tests {
                                         .find_map(|line| {
                                             line.strip_prefix("Content-Length:")
                                                 .or_else(|| line.strip_prefix("content-length:"))
-                                                .map(|value| value.trim().parse::<usize>().unwrap_or(0))
+                                                .map(|value| {
+                                                    value.trim().parse::<usize>().unwrap_or(0)
+                                                })
                                         })
                                         .unwrap_or(0);
                                     expected_total = Some(header_end + 4 + content_length);
@@ -305,6 +320,9 @@ mod tests {
                                     break;
                                 }
                             }
+                        }
+                        if request_bytes.is_empty() {
+                            continue;
                         }
 
                         let request = String::from_utf8_lossy(&request_bytes).to_string();

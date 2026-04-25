@@ -1,3 +1,3 @@
-from .studio import ExtractionStudio
+from .studio import ExtractionRule, ExtractionStudio, SelectorExtractor
 
-__all__ = ["ExtractionStudio"]
+__all__ = ["ExtractionRule", "ExtractionStudio", "SelectorExtractor"]

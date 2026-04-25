@@ -39,6 +39,7 @@ SuperSpider is a **multi-language web crawler framework** that ships four produc
 - **Crawler type templates** — hydrated SPA, bootstrap JSON, infinite scroll, login session, and e-commerce search JobSpec starters
 - **Site presets** — JD, Taobao, Tmall, Pinduoduo, Xiaohongshu, and Douyin Shop starter JobSpec templates
 - **Spider class kits** — reusable spider class templates for PySpider, GoSpider, RustSpider, and JavaSpider
+- **Native ecommerce crawler classes** — catalog/detail/review wrappers in all four runtimes, with browser-backed capture companions where the runtime supports them
 - **Native ecommerce examples** — catalog/detail/review examples in all four runtimes with a JD fast path plus a `generic` fallback for unknown storefronts
 - Proxy pool with health checking and automatic rotation
 - Rate limiting, circuit breaker, deduplication
@@ -89,17 +90,19 @@ All four runtimes can download from:
 ### 🛡️ Anti-Bot
 - TLS fingerprint rotation (JA3/JA4 mimicry)
 - Browser behavior simulation (mouse movement, scroll, reading pace)
-- WAF bypass techniques
+- WAF and access-friction detection with compliant browser upgrade paths
 - Night mode (reduced crawl rate during off-hours)
-- **Captcha solving**: 2captcha, Anti-Captcha, reCAPTCHA v2/v3, hCaptcha, image captcha
-- **Cloudflare bypass**: challenge solving, stealth headers, Sec-CH-UA rotation
-- **Akamai bypass**: specialized header profiles for Akamai-protected sites
+- **Access friction classifier**: shared `level`, `signals`, `recommended_actions`, `challenge_handoff`, and `capability_plan` across all four runtimes
+- **HTTP response diagnostics**: PySpider `Response.meta["access_friction"]`, GoSpider `Response.AccessFriction`, RustSpider `Response.access_friction`, and JavaSpider `Page.getField("access_friction")`
+- **Captcha and login challenge handling**: detect CAPTCHA/auth/risk-control pages, pause for authorized human access, persist session assets, and resume only after validation
+- **Cloudflare/Akamai handling**: vendor profiling, browser-render recommendation, artifact capture, and stop conditions when access is denied
 - **Browser fingerprint management**: Canvas, WebGL, font fingerprint generation with session persistence
 - **Smart delay strategy**: adaptive frequency-based delay adjustment with human-like jitter
 - **Cookie management**: per-domain cookie jar with automatic rotation
 - SSRF protection (blocks internal network access, cloud metadata endpoints)
 - **Input sanitization**: XSS prevention, HTML cleaning, dangerous character filtering
 - **Block detection**: keyword-based block/ban detection with automatic proxy switching
+- **Compliance boundary**: the framework does not promise automated CAPTCHA cracking, forced risk-control bypass, or access to private/login-gated data without authorization
 
 ### 🔒 Security & Reliability
 - **SSRF protection**: blocks requests to private IPs, cloud metadata (169.254.169.254), loopback, multicast
@@ -169,7 +172,7 @@ Many modern sites protect their APIs with JavaScript-generated signatures. Super
 
 ## Public E-commerce Scope
 
-The native ecommerce examples and class kits are built for publicly accessible marketplace data.
+The native ecommerce examples, crawler classes, and class kits are built for publicly accessible marketplace data.
 
 They currently aim for:
 
@@ -184,6 +187,8 @@ Current fast paths:
 - `jd`: SKU extraction plus price/review public APIs
 - `taobao`, `tmall`, `pinduoduo`, `amazon`: JSON-LD product / aggregate-rating fast paths when present
 - `generic`: fallback public-data extraction for unknown storefronts
+
+Each runtime now exposes a unified ecommerce crawler class style entrypoint, plus a browser-backed companion in the runtimes that support full browser capture. The naming is intentionally consistent so the examples can be lifted into a project with minimal translation.
 
 They do not guarantee universal extraction across every storefront and they do not imply access to login-gated, private, or user-owned commerce data.
 
@@ -220,6 +225,12 @@ They do not guarantee universal extraction across every storefront and they do n
 
 ### Install
 ```bash
+# Install all four runtimes
+scripts\windows\install-superspider.bat
+bash scripts/linux/install-superspider.sh
+bash scripts/macos/install-superspider.sh
+
+# Install only PySpider
 # Windows
 scripts\windows\install-pyspider.bat
 
@@ -370,10 +381,12 @@ bash scripts/macos/install-javaspider.sh
 
 | Framework | Required |
 | --- | --- |
-| 🐍 PySpider | Python 3.8+, pip, venv |
-| 🐹 GoSpider | Go 1.20+ |
-| 🦀 RustSpider | Rust 1.70+, Cargo |
-| ☕ JavaSpider | Java 17+, Maven 3.8+ |
+| 🐍 PySpider | Python 3.10+ recommended, pip, venv |
+| 🐹 GoSpider | Go 1.24+ |
+| 🦀 RustSpider | Rust 1.70+ recommended, Cargo |
+| ☕ JavaSpider | Java 17 target, Maven 3.8+ |
+
+Supported installer operating systems: Windows 10/11 or Windows Server 2022+, Ubuntu/Debian/RHEL-compatible Linux, and macOS 13+. The current Windows verification host is Microsoft Windows 11 Pro 10.0.28000, 64-bit.
 
 ---
 
@@ -411,12 +424,14 @@ bash scripts/macos/install-javaspider.sh
 | [`docs/DOCS_INDEX.md`](docs/DOCS_INDEX.md) | Canonical documentation index and recommended reading order |
 | [`docs/FRAMEWORK_CAPABILITIES.md`](docs/FRAMEWORK_CAPABILITIES.md) | Detailed per-framework capability descriptions |
 | [`docs/FRAMEWORK_CAPABILITY_MATRIX.md`](docs/FRAMEWORK_CAPABILITY_MATRIX.md) | Full capability comparison tables |
+| [`docs/ACCESS_FRICTION_PLAYBOOK.md`](docs/ACCESS_FRICTION_PLAYBOOK.md) | High-friction crawl model, challenge handoff, and compliant recovery policy |
 | [`docs/CRAWL_SCENARIO_GAP_MATRIX.md`](docs/CRAWL_SCENARIO_GAP_MATRIX.md) | Real crawling scenarios that are still partial or missing across the four runtimes |
 | [`docs/LATEST_SCENARIO_CASES.md`](docs/LATEST_SCENARIO_CASES.md) | Latest practical scenario playbooks and recommended runtime choices |
 | [`docs/CRAWLER_TYPE_PLAYBOOK.md`](docs/CRAWLER_TYPE_PLAYBOOK.md) | Shared crawler types, runner-order guidance, and JobSpec template mapping |
 | [`docs/SITE_PRESET_PLAYBOOK.md`](docs/SITE_PRESET_PLAYBOOK.md) | Site-family starter presets for major marketplace and social-commerce domains |
 | [`examples/class-kits/README.md`](examples/class-kits/README.md) | Reusable spider class templates for all four runtimes |
 | [`docs/SUPERSPIDER_INSTALLS.md`](docs/SUPERSPIDER_INSTALLS.md) | Install instructions for Windows, Linux, and macOS |
+| [`docs/FOUR_RUNTIME_HEALTH_REPORT.md`](docs/FOUR_RUNTIME_HEALTH_REPORT.md) | Current compile, dependency, and test status for all four runtimes |
 | [`MEDIA_PARITY_REPORT.md`](MEDIA_PARITY_REPORT.md) | Media platform coverage evidence |
 | [`ADVANCED_USAGE_GUIDE.md`](ADVANCED_USAGE_GUIDE.md) | Advanced crawling scenarios |
 | [`ENCRYPTED_SITE_CRAWLING_GUIDE.md`](ENCRYPTED_SITE_CRAWLING_GUIDE.md) | JS-encrypted site crawling |
@@ -430,19 +445,19 @@ bash scripts/macos/install-javaspider.sh
 
 ## ✅ Verification Snapshot
 
-Checked against the current workspace on **2026-04-23**:
+Checked against the current workspace on **2026-04-25**:
 
 | Runtime | Verified command(s) | Current result |
 | --- | --- | --- |
-| 🐍 PySpider | `pytest -q tests/test_smoke.py tests/test_dependencies.py tests/test_cli.py -x` | Pass |
+| 🐍 PySpider | `python -m pytest tests\test_access_friction.py tests\test_locator_analyzer.py tests\test_super_framework.py tests\test_api_server.py tests\test_core_spider.py tests\test_downloader.py -q` | Pass, 40 tests |
 | 🐹 GoSpider | `go test ./...` | Pass |
-| 🦀 RustSpider | `cargo test --quiet --lib`, `cargo test --quiet --test readme_scorecard`, `cargo test --quiet --test preflight_scorecard` | Pass on checked slices; full suite is heavy and should be run in CI with a longer timeout window |
-| ☕ JavaSpider | `mvn -q -DskipTests package`, `mvn -q "-Dtest=SpiderRuntimeContractsTest,HtmlParserXPathContractTest,ReadmeContractTest" test` | Pass |
+| 🦀 RustSpider | `cargo test --quiet --lib`, `cargo test --quiet --test access_friction` | Pass on checked slices; full suite is heavy and should be run in CI with a longer timeout window |
+| ☕ JavaSpider | `mvn -q test`, `mvn -q -Dtest=HtmlSelectorContractTest test` | Pass |
 
 Notes:
 
-- Rust had a real XPath-helper failure and an Anthropic mock-server race during this review; both were fixed in the current workspace.
-- PySpider had a real `scrapy run --project` export-path regression and a dependency-list drift (`requirements.txt` missing parser deps); both were fixed in the current workspace.
+- The four runtimes now share access-friction detection for high-risk pages, browser-upgrade planning, XPath/CSS locator helpers, and browser/devtools-oriented element analysis.
+- PySpider full-suite success is not claimed here because an earlier broad `pytest -q` run exceeded the local timeout window; use CI with longer timeouts for unrestricted release coverage.
 
 ---
 

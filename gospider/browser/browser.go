@@ -11,9 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	cdpnetwork "github.com/chromedp/cdproto/network"
 	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	"gospider/parser"
 )
 
 // BrowserConfig 浏览器配置
@@ -141,6 +143,9 @@ func (b *Browser) Start() error {
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("no-sandbox", true),
 	}
+	if b.config.Proxy != "" {
+		opts = append(opts, chromedp.ProxyServer(b.config.Proxy))
+	}
 
 	// 隐身模式选项
 	if b.config.Stealth {
@@ -164,6 +169,13 @@ func (b *Browser) Start() error {
 		allocCancel()
 		taskCancel()
 		return err
+	}
+	if len(b.config.BlockResources) > 0 {
+		if err := chromedp.Run(taskCtx, cdpnetwork.SetBlockedURLS(b.config.BlockResources)); err != nil {
+			allocCancel()
+			taskCancel()
+			return err
+		}
 	}
 	if len(b.config.ExtraHeaders) > 0 {
 		headers := cdpnetwork.Headers{}
@@ -237,6 +249,18 @@ func (b *Browser) GetTitle() (string, error) {
 	return title, err
 }
 
+// GetURL returns the current page URL.
+func (b *Browser) GetURL() (string, error) {
+	value, err := b.Evaluate("window.location.href")
+	if err != nil {
+		return "", err
+	}
+	if current, ok := value.(string); ok {
+		return current, nil
+	}
+	return fmt.Sprint(value), nil
+}
+
 // GetContent 获取页面内容
 func (b *Browser) GetContent() (string, error) {
 	if !b.isStarted {
@@ -286,6 +310,61 @@ func (b *Browser) Click(selector string) error {
 	)
 }
 
+func (b *Browser) AnalyzeLocators(target parser.LocatorTarget) (*parser.LocatorPlan, error) {
+	html, err := b.GetContent()
+	if err != nil {
+		return nil, err
+	}
+	return parser.NewLocatorAnalyzer().Analyze(html, target)
+}
+
+func (b *Browser) AnalyzeDevTools() (*parser.DevToolsReport, error) {
+	html, err := b.GetContent()
+	if err != nil {
+		return nil, err
+	}
+	network := make([]parser.DevToolsNetworkArtifact, 0, len(b.GetNetworkEntries()))
+	for _, entry := range b.GetNetworkEntries() {
+		network = append(network, parser.DevToolsNetworkArtifact{
+			URL:          entry.URL,
+			Method:       entry.Method,
+			Status:       int(entry.Status),
+			ResourceType: strings.ToLower(entry.ResourceType),
+		})
+	}
+	console := make([]map[string]string, 0, len(b.GetConsoleEntries()))
+	for _, entry := range b.GetConsoleEntries() {
+		console = append(console, map[string]string{
+			"type": entry.Type,
+			"text": entry.Text,
+		})
+	}
+	return parser.NewDevToolsAnalyzer().Analyze(html, network, console)
+}
+
+func (b *Browser) DevToolsAnalyze() (*parser.DevToolsReport, error) {
+	return b.AnalyzeDevTools()
+}
+
+func (b *Browser) AutoClick(target parser.LocatorTarget) (*parser.LocatorCandidate, error) {
+	if !b.isStarted {
+		return nil, fmt.Errorf("浏览器未启动")
+	}
+	plan, err := b.AnalyzeLocators(target)
+	if err != nil {
+		return nil, err
+	}
+	var lastErr error
+	for _, candidate := range plan.Candidates {
+		if err := b.clickCandidate(candidate); err == nil {
+			return &candidate, nil
+		} else {
+			lastErr = err
+		}
+	}
+	return nil, fmt.Errorf("auto click target not found: %w", lastErr)
+}
+
 // Fill 输入文本
 func (b *Browser) Fill(selector, value string) error {
 	if !b.isStarted {
@@ -299,6 +378,56 @@ func (b *Browser) Fill(selector, value string) error {
 	return chromedp.Run(ctx,
 		chromedp.SendKeys(selector, value, chromedp.ByQuery),
 	)
+}
+
+func (b *Browser) AutoFill(target parser.LocatorTarget, value string) (*parser.LocatorCandidate, error) {
+	if !b.isStarted {
+		return nil, fmt.Errorf("浏览器未启动")
+	}
+	plan, err := b.AnalyzeLocators(target)
+	if err != nil {
+		return nil, err
+	}
+	var lastErr error
+	for _, candidate := range plan.Candidates {
+		if err := b.fillCandidate(candidate, value); err == nil {
+			return &candidate, nil
+		} else {
+			lastErr = err
+		}
+	}
+	return nil, fmt.Errorf("auto fill target not found: %w", lastErr)
+}
+
+func (b *Browser) clickCandidate(candidate parser.LocatorCandidate) error {
+	ctx, cancel := context.WithTimeout(b.ctx, b.config.Timeout)
+	defer cancel()
+	if candidate.Kind == "xpath" {
+		expr, _ := json.Marshal(candidate.Expr)
+		return chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`(() => {
+			const node = document.evaluate(%s, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+			if (!node) throw new Error("xpath not found");
+			node.click();
+		})()`, expr), nil))
+	}
+	return chromedp.Run(ctx, chromedp.Click(candidate.Expr, chromedp.ByQuery))
+}
+
+func (b *Browser) fillCandidate(candidate parser.LocatorCandidate, value string) error {
+	ctx, cancel := context.WithTimeout(b.ctx, b.config.Timeout)
+	defer cancel()
+	if candidate.Kind == "xpath" {
+		expr, _ := json.Marshal(candidate.Expr)
+		valueJSON, _ := json.Marshal(value)
+		return chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`(() => {
+			const node = document.evaluate(%s, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+			if (!node) throw new Error("xpath not found");
+			node.value = %s;
+			node.dispatchEvent(new Event("input", {bubbles: true}));
+			node.dispatchEvent(new Event("change", {bubbles: true}));
+		})()`, expr, valueJSON), nil))
+	}
+	return chromedp.Run(ctx, chromedp.SendKeys(candidate.Expr, value, chromedp.ByQuery))
 }
 
 // UploadFile uploads one or more files through an <input type="file"> element.
@@ -513,8 +642,17 @@ func (b *Browser) ExportCookies() ([]map[string]interface{}, error) {
 		return nil, fmt.Errorf("浏览器未启动")
 	}
 
-	// 简化实现，实际使用需要从 JavaScript 获取
-	cookies := make([]map[string]interface{}, 0)
+	ctx, cancel := context.WithTimeout(b.ctx, b.config.Timeout)
+	defer cancel()
+
+	cdpCookies, err := cdpnetwork.GetCookies().Do(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cookies := make([]map[string]interface{}, 0, len(cdpCookies))
+	for _, cookie := range cdpCookies {
+		cookies = append(cookies, cookieToMap(cookie))
+	}
 
 	return cookies, nil
 }
@@ -569,6 +707,21 @@ func (b *Browser) LoadCookiesFromFile(path string) error {
 	var cookies []map[string]interface{}
 	if err := json.Unmarshal(data, &cookies); err != nil {
 		return err
+	}
+	params := make([]*cdpnetwork.CookieParam, 0, len(cookies))
+	for _, cookie := range cookies {
+		param, err := cookieParamFromMap(cookie)
+		if err != nil {
+			return err
+		}
+		params = append(params, param)
+	}
+	if len(params) > 0 {
+		ctx, cancel := context.WithTimeout(b.ctx, b.config.Timeout)
+		defer cancel()
+		if err := cdpnetwork.SetCookies(params).Do(ctx); err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("✓ Cookie 已从文件加载：%s\n", path)
@@ -965,6 +1118,75 @@ func normalizeUploadPaths(paths []string) ([]string, error) {
 		normalized = append(normalized, absolute)
 	}
 	return normalized, nil
+}
+
+func cookieToMap(cookie *cdpnetwork.Cookie) map[string]interface{} {
+	if cookie == nil {
+		return map[string]interface{}{}
+	}
+	return map[string]interface{}{
+		"name":       cookie.Name,
+		"value":      cookie.Value,
+		"domain":     cookie.Domain,
+		"path":       cookie.Path,
+		"expires":    cookie.Expires,
+		"httpOnly":   cookie.HTTPOnly,
+		"secure":     cookie.Secure,
+		"sameSite":   cookie.SameSite.String(),
+		"session":    cookie.Session,
+		"sourcePort": cookie.SourcePort,
+	}
+}
+
+func cookieParamFromMap(cookie map[string]interface{}) (*cdpnetwork.CookieParam, error) {
+	name, _ := cookie["name"].(string)
+	value, _ := cookie["value"].(string)
+	if strings.TrimSpace(name) == "" {
+		return nil, fmt.Errorf("Cookie name cannot be empty")
+	}
+	param := &cdpnetwork.CookieParam{
+		Name:  name,
+		Value: value,
+	}
+	if url, _ := cookie["url"].(string); strings.TrimSpace(url) != "" {
+		param.URL = url
+	}
+	if domain, _ := cookie["domain"].(string); strings.TrimSpace(domain) != "" {
+		param.Domain = domain
+	}
+	if path, _ := cookie["path"].(string); strings.TrimSpace(path) != "" {
+		param.Path = path
+	}
+	if secure, ok := cookie["secure"].(bool); ok {
+		param.Secure = secure
+	}
+	if httpOnly, ok := cookie["httpOnly"].(bool); ok {
+		param.HTTPOnly = httpOnly
+	}
+	if sameSite, _ := cookie["sameSite"].(string); sameSite != "" {
+		param.SameSite = cdpnetwork.CookieSameSite(sameSite)
+	}
+	if expires, ok := numberFromCookie(cookie["expires"]); ok && expires > 0 {
+		ts := cdp.TimeSinceEpoch(time.Unix(int64(expires), 0))
+		param.Expires = &ts
+	}
+	return param, nil
+}
+
+func numberFromCookie(value interface{}) (float64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, true
+	case int:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case json.Number:
+		parsed, err := typed.Float64()
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func normalizeShadowPath(selectors []string) ([]string, error) {

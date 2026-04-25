@@ -5,10 +5,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.javaspider.ai.AIExtractor;
 import com.javaspider.ai.SchemaNormalizer;
 import org.jsoup.Jsoup;
+import org.jsoup.helper.W3CDom;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.parser.Parser;
 import org.jsoup.select.Elements;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathFactory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -40,11 +47,12 @@ public class Html {
     }
     
     public Selectable $(String cssSelector) {
-        Elements elements = document.select(cssSelector);
+        CssQuery query = parseCssQuery(cssSelector);
+        Elements elements = document.select(query.selector());
         if (elements.isEmpty()) {
             return new Selectable((String) null);
         }
-        return new Selectable(elements.first().text());
+        return new Selectable(cssValue(elements.first(), query));
     }
 
     public Selectable css(String cssSelector) {
@@ -52,17 +60,38 @@ public class Html {
     }
 
     public List<Selectable> $$(String cssSelector) {
-        Elements elements = document.select(cssSelector);
+        CssQuery query = parseCssQuery(cssSelector);
+        Elements elements = document.select(query.selector());
         List<Selectable> result = new ArrayList<>();
         for (Element element : elements) {
-            result.add(new Selectable(element.text()));
+            result.add(new Selectable(cssValue(element, query)));
         }
         return result;
     }
     
     public Selectable xpath(String xpath) {
-        // 简单实现，实际应该用 XPath
-        return new Selectable(document.text());
+        if (xpath == null || xpath.isBlank()) {
+            return new Selectable((String) null);
+        }
+        try {
+            org.w3c.dom.Document w3cDoc = new W3CDom().fromJsoup(Jsoup.parse(rawContent == null ? "" : rawContent, "", Parser.xmlParser()));
+            XPath xPath = XPathFactory.newInstance().newXPath();
+            NodeList nodeList = (NodeList) xPath.evaluate(xpath, w3cDoc, XPathConstants.NODESET);
+            List<String> values = new ArrayList<>();
+            for (int index = 0; index < nodeList.getLength(); index++) {
+                String value = xpathNodeValue(nodeList.item(index));
+                if (value != null && !value.isBlank()) {
+                    values.add(value.trim());
+                }
+            }
+            if (!values.isEmpty()) {
+                return new Selectable(values);
+            }
+            String value = (String) xPath.evaluate(xpath, w3cDoc, XPathConstants.STRING);
+            return value == null || value.isBlank() ? new Selectable((String) null) : new Selectable(value.trim());
+        } catch (Exception e) {
+            throw new IllegalArgumentException("XPath evaluation error: " + xpath, e);
+        }
     }
     
     public Selectable jsonPath(String jsonPath) {
@@ -299,6 +328,43 @@ public class Html {
         return document.text();
     }
 
+    private CssQuery parseCssQuery(String selector) {
+        String query = selector == null ? "" : selector.trim();
+        java.util.regex.Matcher attrMatcher = java.util.regex.Pattern
+            .compile("(?i)::attr\\(([^)]+)\\)\\s*$")
+            .matcher(query);
+        if (attrMatcher.find()) {
+            return new CssQuery(query.substring(0, attrMatcher.start()).trim(), "attr", attrMatcher.group(1).trim());
+        }
+        if (query.toLowerCase(Locale.ROOT).endsWith("::text")) {
+            return new CssQuery(query.substring(0, query.length() - "::text".length()).trim(), "text", null);
+        }
+        if (query.toLowerCase(Locale.ROOT).endsWith("::html")) {
+            return new CssQuery(query.substring(0, query.length() - "::html".length()).trim(), "html", null);
+        }
+        return new CssQuery(query, "text", null);
+    }
+
+    private String cssValue(Element element, CssQuery query) {
+        if ("attr".equals(query.mode()) && query.attribute() != null) {
+            return element.attr(query.attribute()).trim();
+        }
+        if ("html".equals(query.mode())) {
+            return element.html().trim();
+        }
+        return element.text().trim();
+    }
+
+    private String xpathNodeValue(Node node) {
+        if (node == null) {
+            return null;
+        }
+        if (node.getNodeType() == Node.ATTRIBUTE_NODE) {
+            return node.getNodeValue();
+        }
+        return node.getTextContent();
+    }
+
     private Selectable tryAiExtract(String prompt) {
         if (AI_RESPONDER_USES_DEFAULT) {
             String apiKey = firstConfiguredApiKey();
@@ -510,6 +576,9 @@ public class Html {
         FIELD,
         INDEX,
         WILDCARD,
+    }
+
+    private record CssQuery(String selector, String mode, String attribute) {
     }
 
     @FunctionalInterface

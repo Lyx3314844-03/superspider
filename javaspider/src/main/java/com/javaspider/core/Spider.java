@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -390,6 +391,17 @@ public class Spider implements Runnable {
                 return;
             }
 
+            if (isAccessFrictionBlocked(page)) {
+                failedRequests.incrementAndGet();
+                scheduler.ack(request, false);
+                log.warn(
+                    "Access friction blocked request: {} {}",
+                    request.getUrl(),
+                    page.getField("access_friction")
+                );
+                return;
+            }
+
             // 处理页面
             processor.process(page);
 
@@ -439,6 +451,17 @@ public class Spider implements Runnable {
                 }
             }
         }
+    }
+
+    private boolean isAccessFrictionBlocked(Page page) {
+        if (page == null) {
+            return false;
+        }
+        Object report = page.getField("access_friction");
+        if (!(report instanceof Map<?, ?> friction)) {
+            return false;
+        }
+        return Boolean.TRUE.equals(friction.get("blocked"));
     }
 
     private Thread startLeaseHeartbeat(Request request, AtomicBoolean stopHeartbeat) {

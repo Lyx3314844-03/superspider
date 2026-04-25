@@ -70,6 +70,7 @@ pub struct Response {
     pub bytes: Vec<u8>,
     pub duration: Duration,
     pub error: Option<String>,
+    pub access_friction: Option<crate::antibot::friction::AccessFrictionReport>,
 }
 
 /// 页面对象

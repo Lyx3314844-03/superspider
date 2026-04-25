@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -40,10 +41,10 @@ func TestCompatibilityBridgeReportsAdapterEngine(t *testing.T) {
 	if !bridge.Supported {
 		t.Fatal("expected compatibility bridge to be supported")
 	}
-	if bridge.Mode != "compatibility-bridge" {
+	if bridge.Mode != "native-process" {
 		t.Fatalf("unexpected bridge mode: %s", bridge.Mode)
 	}
-	if bridge.AdapterEngine != "chromedp" {
+	if bridge.AdapterEngine != "node-playwright" {
 		t.Fatalf("unexpected adapter engine: %s", bridge.AdapterEngine)
 	}
 }
@@ -79,5 +80,30 @@ func TestBrowserPoolShouldRecycleWhenAgeIdleOrRequestLimitExceeded(t *testing.T)
 	}
 	if BrowserPoolShouldRecycle(now, now, 3, time.Hour, time.Hour, 10, now) {
 		t.Fatal("did not expect recycle when limits are not exceeded")
+	}
+}
+
+func TestPlaywrightBrowserBuildsNativeHelperCommand(t *testing.T) {
+	options := DefaultPlaywrightOptions()
+	options.UserAgent = "FixtureBrowser/1.0"
+	browser := &PlaywrightBrowser{
+		options: options,
+		node:    "node",
+		helper:  "tools/playwright_fetch.mjs",
+	}
+
+	args := browser.fetchArgs("https://example.com", "page.png", "page.html")
+	joined := strings.Join(args, " ")
+	for _, expected := range []string{
+		"tools/playwright_fetch.mjs",
+		"--url https://example.com",
+		"--headless",
+		"--user-agent FixtureBrowser/1.0",
+		"--screenshot page.png",
+		"--html page.html",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("expected %q in helper args: %v", expected, args)
+		}
 	}
 }

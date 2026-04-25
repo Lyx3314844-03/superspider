@@ -52,14 +52,15 @@ public class CssSelector implements Selector {
         }
         
         Document document = Jsoup.parse(text);
-        Elements elements = document.select(cssExpression);
+        CssQuery query = parseCssQuery(cssExpression);
+        Elements elements = document.select(query.selector());
         
         if (elements.isEmpty()) {
             return null;
         }
         
         Element element = elements.first();
-        return attributeName != null ? element.attr(attributeName) : element.text();
+        return valueFor(element, query);
     }
     
     @Override
@@ -71,10 +72,11 @@ public class CssSelector implements Selector {
         }
         
         Document document = Jsoup.parse(text);
-        Elements elements = document.select(cssExpression);
+        CssQuery query = parseCssQuery(cssExpression);
+        Elements elements = document.select(query.selector());
         
         for (Element element : elements) {
-            String value = attributeName != null ? element.attr(attributeName) : element.text();
+            String value = valueFor(element, query);
             if (value != null && !value.isEmpty()) {
                 results.add(value);
             }
@@ -100,5 +102,35 @@ public class CssSelector implements Selector {
      */
     public static CssSelector of(String css, String attr) {
         return new CssSelector(css, attr);
+    }
+
+    private CssQuery parseCssQuery(String selector) {
+        String query = selector == null ? "" : selector.trim();
+        java.util.regex.Matcher attrMatcher = java.util.regex.Pattern
+            .compile("(?i)::attr\\(([^)]+)\\)\\s*$")
+            .matcher(query);
+        if (attrMatcher.find()) {
+            return new CssQuery(query.substring(0, attrMatcher.start()).trim(), "attr", attrMatcher.group(1).trim());
+        }
+        if (query.toLowerCase(java.util.Locale.ROOT).endsWith("::html")) {
+            return new CssQuery(query.substring(0, query.length() - "::html".length()).trim(), "html", null);
+        }
+        if (query.toLowerCase(java.util.Locale.ROOT).endsWith("::text")) {
+            return new CssQuery(query.substring(0, query.length() - "::text".length()).trim(), "text", null);
+        }
+        return new CssQuery(query, "text", attributeName);
+    }
+
+    private String valueFor(Element element, CssQuery query) {
+        if ("attr".equals(query.mode()) || query.attribute() != null) {
+            return element.attr(query.attribute()).trim();
+        }
+        if ("html".equals(query.mode())) {
+            return element.html().trim();
+        }
+        return element.text().trim();
+    }
+
+    private record CssQuery(String selector, String mode, String attribute) {
     }
 }

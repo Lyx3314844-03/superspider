@@ -44,3 +44,37 @@ def test_spider_add_request_deduplicates_urls():
     spider.add_request(Request(url="https://example.com"))
 
     assert spider.request_queue.qsize() == 1
+
+
+def test_spider_does_not_process_blocked_access_friction():
+    spider = Spider("blocked-friction", max_retries=0)
+    processed = []
+
+    def fake_download(req):
+        return Response(
+            url=req.url,
+            status_code=200,
+            headers={"Content-Type": "text/html"},
+            content=b"<html>hcaptcha</html>",
+            text="<html>hcaptcha</html>",
+            request=req,
+            duration=0.01,
+            error=None,
+            meta={
+                "access_friction": {
+                    "level": "high",
+                    "signals": ["captcha"],
+                    "blocked": True,
+                    "requires_human_access": True,
+                }
+            },
+        )
+
+    spider.downloader.download = fake_download
+    spider.add_pipeline(lambda page: processed.append(page.response.url))
+
+    result = spider._process_request(Request(url="https://example.com/challenge"))
+
+    assert result is False
+    assert processed == []
+    assert spider.stats.failed_requests == 1

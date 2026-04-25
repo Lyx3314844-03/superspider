@@ -409,11 +409,16 @@ impl UniversalParser {
             .and_then(|re| re.captures(&html))
             .and_then(|caps| caps.get(1))
             .map(|m| m.as_str().to_string());
-        let dash_url = Regex::new(r#""baseUrl"\s*:\s*"(https?://[^"]+)""#)
+        let dash_url = Regex::new(r#""(?:baseUrl|base_url)"\s*:\s*"(https?://[^"]+)""#)
             .ok()
             .and_then(|re| re.captures(&html))
             .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string());
+            .map(|m| {
+                m.as_str()
+                    .replace("\\u002F", "/")
+                    .replace("\\u003A", ":")
+                    .replace("\\/", "/")
+            });
         let description = Regex::new(r#""(?:desc|description)"\s*:\s*"([^"]+)""#)
             .ok()
             .and_then(|re| re.captures(&html))

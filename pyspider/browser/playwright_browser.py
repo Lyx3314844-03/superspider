@@ -26,8 +26,12 @@ PySpider Playwright 浏览器模块
 """
 
 import json
+import os
+import random
+import time
 from typing import Dict, List, Optional, Any
 from pathlib import Path
+from urllib.parse import urlparse
 
 try:
     from playwright.sync_api import (
@@ -57,6 +61,9 @@ class PlaywrightBrowser:
         viewport_height: int = 1080,
         ignore_https_errors: bool = True,
         storage_state: Optional[str] = None,
+        user_data_dir: Optional[str] = None,
+        locale: str = "zh-CN",
+        timezone_id: str = "Asia/Shanghai",
     ):
         """
         初始化浏览器
@@ -82,12 +89,16 @@ class PlaywrightBrowser:
         self.viewport_height = viewport_height
         self.ignore_https_errors = ignore_https_errors
         self.storage_state = storage_state
+        self.user_data_dir = user_data_dir
+        self.locale = locale
+        self.timezone_id = timezone_id
 
         # Playwright 实例
         self.playwright: Optional[Playwright] = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
+        self.network_events: List[Dict[str, Any]] = []
 
         self.is_started = False
 
@@ -109,24 +120,49 @@ class PlaywrightBrowser:
             # 创建 Playwright 实例
             self.playwright = sync_playwright().start()
 
-            # 启动浏览器
-            self.browser = self.playwright.chromium.launch(
-                headless=self.headless,
-                timeout=self.timeout,
-            )
+            launch_args = [
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--no-first-run",
+                "--no-default-browser-check",
+            ]
+            if self.user_data_dir:
+                Path(self.user_data_dir).mkdir(parents=True, exist_ok=True)
+                self.context = self.playwright.chromium.launch_persistent_context(
+                    user_data_dir=self.user_data_dir,
+                    headless=self.headless,
+                    timeout=self.timeout,
+                    user_agent=self.user_agent,
+                    viewport={"width": self.viewport_width, "height": self.viewport_height},
+                    ignore_https_errors=self.ignore_https_errors,
+                    locale=self.locale,
+                    timezone_id=self.timezone_id,
+                    args=launch_args,
+                )
+            else:
+                # 启动浏览器
+                self.browser = self.playwright.chromium.launch(
+                    headless=self.headless,
+                    timeout=self.timeout,
+                    args=launch_args,
+                )
 
-            # 创建浏览器上下文
-            self.context = self.browser.new_context(
-                user_agent=self.user_agent,
-                viewport={"width": self.viewport_width, "height": self.viewport_height},
-                ignore_https_errors=self.ignore_https_errors,
-                storage_state=self.storage_state if self.storage_state else None,
-            )
+                # 创建浏览器上下文
+                self.context = self.browser.new_context(
+                    user_agent=self.user_agent,
+                    viewport={"width": self.viewport_width, "height": self.viewport_height},
+                    ignore_https_errors=self.ignore_https_errors,
+                    storage_state=self.storage_state if self.storage_state else None,
+                    locale=self.locale,
+                    timezone_id=self.timezone_id,
+                )
 
             # 创建页面
-            self.page = self.context.new_page()
+            self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
             self.page.set_default_timeout(self.timeout)
             self.page.set_default_navigation_timeout(self.timeout)
+            self._install_stealth_scripts()
+            self._install_network_capture()
 
             self.is_started = True
             print("✓ 浏览器启动成功")
@@ -162,15 +198,230 @@ class PlaywrightBrowser:
             print(f"❌ 导航失败：{e}")
             raise
 
+    def ecommerce_capture(
+        self,
+        url: str,
+        wait_until: str = "domcontentloaded",
+        wait_selectors: Optional[List[str]] = None,
+        scroll_rounds: int = 6,
+        settle_ms: int = 800,
+        screenshot_path: Optional[str] = None,
+        manual_access_timeout: int = 0,
+        warmup_url: Optional[str] = None,
+        attempts: int = 1,
+        retry_backoff_seconds: float = 3.0,
+    ) -> Dict[str, Any]:
+        """Render an e-commerce page and return browser artifacts."""
+        self.network_events.clear()
+        warmup_url = warmup_url or self._origin_url(url)
+        last_error = ""
+        challenge: Dict[str, Any] = {"blocked": False, "signals": [], "url": "", "title": ""}
+        for attempt in range(1, max(1, attempts) + 1):
+            try:
+                if warmup_url:
+                    self.warmup_site(warmup_url)
+                self.navigate(url, wait_until=wait_until)
+                self.wait_for_ecommerce_ready(wait_selectors=wait_selectors, scroll_rounds=scroll_rounds, settle_ms=settle_ms)
+                challenge = self.detect_access_challenge()
+                if not challenge["blocked"]:
+                    break
+                if challenge["blocked"] and manual_access_timeout > 0:
+                    self.wait_for_manual_access(timeout_seconds=manual_access_timeout)
+                    self.wait_for_ecommerce_ready(wait_selectors=wait_selectors, scroll_rounds=max(2, scroll_rounds // 2), settle_ms=settle_ms)
+                    challenge = self.detect_access_challenge()
+                    if not challenge["blocked"]:
+                        break
+            except Exception as exc:
+                last_error = str(exc)
+                if attempt >= max(1, attempts):
+                    raise
+            if attempt < max(1, attempts):
+                time.sleep(retry_backoff_seconds * attempt)
+        if screenshot_path:
+            self.screenshot(screenshot_path)
+        return {
+            "url": self.get_url(),
+            "title": self.get_title(),
+            "html": self.get_content(),
+            "network_events": list(self.network_events),
+            "cookies": self.get_cookies(),
+            "access_challenge": challenge,
+            "runtime": self.get_runtime_diagnostics(last_error=last_error),
+            "screenshot": screenshot_path or "",
+        }
+
+    def warmup_site(self, url: str):
+        """Visit the same origin before the target page so persisted sessions can settle."""
+        self._ensure_started()
+        try:
+            self.page.goto(url, wait_until="domcontentloaded", timeout=min(self.timeout, 30000))
+            self.page.wait_for_timeout(random.randint(600, 1400))
+            self.evaluate("() => window.scrollBy(0, Math.floor((window.innerHeight || 800) * 0.5))")
+            self.page.wait_for_timeout(random.randint(300, 900))
+        except Exception:
+            pass
+
+    def wait_for_ecommerce_ready(
+        self,
+        wait_selectors: Optional[List[str]] = None,
+        scroll_rounds: int = 6,
+        settle_ms: int = 800,
+    ):
+        """Wait for common product/listing signals, lazy-load content, and network quiet."""
+        self._ensure_started()
+        selectors = wait_selectors or [
+            "[data-sku]",
+            "[data-product-id]",
+            ".gl-item",
+            ".product",
+            ".product-item",
+            "[itemtype*='Product']",
+            "script[type='application/ld+json']",
+        ]
+        for selector in selectors:
+            try:
+                self.page.wait_for_selector(selector, timeout=min(self.timeout, 5000))
+                break
+            except Exception:
+                continue
+
+        last_height = 0
+        stable_rounds = 0
+        rounds = max(1, scroll_rounds)
+        for _ in range(rounds):
+            height = self.evaluate("() => document.body ? document.body.scrollHeight : 0") or 0
+            self.evaluate("(step) => window.scrollBy(0, step)", 700)
+            self.page.wait_for_timeout(settle_ms)
+            if height == last_height:
+                stable_rounds += 1
+                if stable_rounds >= 2:
+                    break
+            else:
+                stable_rounds = 0
+                last_height = height
+
+        try:
+            self.page.wait_for_load_state("networkidle", timeout=min(self.timeout, 10000))
+        except Exception:
+            pass
+
+    def detect_access_challenge(self) -> Dict[str, Any]:
+        """Detect login, CAPTCHA, or risk-control interstitials without trying to bypass them."""
+        self._ensure_started()
+        url = self.get_url()
+        title = self.get_title()
+        text = ""
+        try:
+            text = self.evaluate("() => document.body ? document.body.innerText.slice(0, 4000) : ''") or ""
+        except Exception:
+            text = ""
+        from pyspider.antibot.friction import analyze_access_friction
+
+        report = analyze_access_friction(
+            html=f"{title}\n{text}",
+            status_code=200,
+            headers={},
+            url=url,
+        )
+        return {
+            "blocked": report.blocked,
+            "signals": report.signals[:8],
+            "url": url,
+            "title": title,
+            "friction_profile": report.to_dict(),
+        }
+
+    def wait_for_manual_access(self, timeout_seconds: int = 180):
+        """Pause for human login/CAPTCHA handling in a headed persistent browser."""
+        if self.headless:
+            return
+        deadline = time.time() + max(1, timeout_seconds)
+        print(f"检测到登录/验证页，保留浏览器 {timeout_seconds}s 供人工处理。完成后页面会自动继续检测。")
+        while time.time() < deadline:
+            if not self.detect_access_challenge()["blocked"]:
+                return
+            self.page.wait_for_timeout(3000)
+
+    def get_runtime_diagnostics(self, last_error: str = "") -> Dict[str, Any]:
+        self._ensure_started()
+        metrics: Dict[str, Any] = {}
+        try:
+            metrics = self.evaluate(
+                """() => ({
+                    webdriver: navigator.webdriver,
+                    platform: navigator.platform,
+                    language: navigator.language,
+                    languages: navigator.languages,
+                    cookieEnabled: navigator.cookieEnabled,
+                    hardwareConcurrency: navigator.hardwareConcurrency,
+                    deviceMemory: navigator.deviceMemory || null,
+                    viewport: { width: window.innerWidth, height: window.innerHeight },
+                    readyState: document.readyState,
+                    localStorageKeys: Object.keys(window.localStorage || {}).slice(0, 20)
+                })"""
+            ) or {}
+        except Exception:
+            pass
+        return {
+            "headless": self.headless,
+            "user_data_dir": self.user_data_dir or "",
+            "network_event_count": len(self.network_events),
+            "last_error": last_error,
+            "browser_metrics": metrics,
+        }
+
     def click(self, selector: str):
         """点击元素"""
         self._ensure_started()
         self.page.click(selector)
 
+    def auto_click(self, target):
+        """根据当前 DOM 自动分析并点击匹配元素。"""
+        self._ensure_started()
+        from pyspider.browser.locator_analyzer import LocatorAnalyzer, LocatorTarget
+
+        locator_target = target if isinstance(target, LocatorTarget) else LocatorTarget.for_text(str(target))
+        plan = LocatorAnalyzer().analyze(self.page.content(), locator_target)
+        last_error = None
+        for candidate in plan.candidates:
+            try:
+                self.page.click(candidate.playwright_selector())
+                return candidate
+            except Exception as exc:
+                last_error = exc
+        raise RuntimeError(f"auto_click could not locate target: {target}") from last_error
+
     def fill(self, selector: str, value: str):
         """输入文本"""
         self._ensure_started()
         self.page.fill(selector, value)
+
+    def auto_fill(self, target, value: str):
+        """根据当前 DOM 自动分析并填写匹配输入元素。"""
+        self._ensure_started()
+        from pyspider.browser.locator_analyzer import LocatorAnalyzer, LocatorTarget
+
+        locator_target = target if isinstance(target, LocatorTarget) else LocatorTarget.for_field(str(target))
+        plan = LocatorAnalyzer().analyze(self.page.content(), locator_target)
+        last_error = None
+        for candidate in plan.candidates:
+            try:
+                self.page.fill(candidate.playwright_selector(), value)
+                return candidate
+            except Exception as exc:
+                last_error = exc
+        raise RuntimeError(f"auto_fill could not locate target: {target}") from last_error
+
+    def analyze_devtools(self):
+        """分析当前 F12/DevTools 视角的 DOM、脚本、网络线索并选择 Node.js 逆向路线。"""
+        self._ensure_started()
+        from pyspider.browser.devtools_analyzer import DevToolsAnalyzer
+
+        return DevToolsAnalyzer().analyze(
+            self.page.content(),
+            network_events=self.network_events,
+            console_events=[],
+        )
 
     def get_text(self, selector: str) -> str:
         """获取元素文本"""
@@ -304,6 +555,13 @@ class PlaywrightBrowser:
         self._ensure_started()
         return self.context.cookies()
 
+    def save_network_events(self, path: str):
+        """Save captured request/response events."""
+        self._ensure_started()
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(self.network_events, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def clear_cookies(self):
         """清除 Cookie"""
         self._ensure_started()
@@ -402,6 +660,70 @@ class PlaywrightBrowser:
         if self.page:
             self.page.set_default_timeout(timeout)
             self.page.set_default_navigation_timeout(timeout)
+
+    def _install_stealth_scripts(self):
+        if not self.context:
+            return
+        self.context.add_init_script(
+            """
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+            Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+            window.chrome = window.chrome || { runtime: {} };
+            const originalQuery = window.navigator.permissions && window.navigator.permissions.query;
+            if (originalQuery) {
+                window.navigator.permissions.query = (parameters) => (
+                    parameters && parameters.name === 'notifications'
+                        ? Promise.resolve({ state: Notification.permission })
+                        : originalQuery.call(window.navigator.permissions, parameters)
+                );
+            }
+            """
+        )
+
+    @staticmethod
+    def _origin_url(url: str) -> str:
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return ""
+        return f"{parsed.scheme}://{parsed.netloc}/"
+
+    def _install_network_capture(self):
+        if not self.page:
+            return
+
+        def on_request(request):
+            self.network_events.append(
+                {
+                    "ts": time.time(),
+                    "phase": "request",
+                    "method": request.method,
+                    "url": request.url,
+                    "resource_type": request.resource_type,
+                    "headers": dict(request.headers),
+                    "post_data": request.post_data or "",
+                }
+            )
+
+        def on_response(response):
+            request = response.request
+            self.network_events.append(
+                {
+                    "ts": time.time(),
+                    "phase": "response",
+                    "method": request.method,
+                    "url": response.url,
+                    "status": response.status,
+                    "resource_type": request.resource_type,
+                    "headers": dict(response.headers),
+                }
+            )
+
+        self.page.on("request", on_request)
+        self.page.on("response", on_response)
 
     def select_option(self, selector: str, value: str) -> List[str]:
         """选择下拉框选项"""

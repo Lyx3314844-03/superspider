@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *$py.class
 *.so
@@ -44,6 +45,9 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+chromedriver-win64/
+chromedriver.zip
+replays/
 
 # Test data and build artifacts
 test_*.db

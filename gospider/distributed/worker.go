@@ -361,13 +361,13 @@ func (e *workerMediaExecutor) Execute(_ context.Context, job core.JobSpec) (*cor
 			result.Error = "media download returned no result"
 			result.FinishedAt = time.Now()
 			result.Finalize()
-			return result, fmt.Errorf(result.Error)
+			return result, fmt.Errorf("%s", result.Error)
 		}
 		if !download.Success {
 			result.Error = download.Error
 			result.FinishedAt = time.Now()
 			result.Finalize()
-			return result, fmt.Errorf(download.Error)
+			return result, fmt.Errorf("%s", download.Error)
 		}
 
 		result.State = core.StateSucceeded
@@ -384,7 +384,7 @@ func (e *workerMediaExecutor) Execute(_ context.Context, job core.JobSpec) (*cor
 		result.Error = fmt.Sprintf("unsupported media type %q", mediaType)
 		result.FinishedAt = time.Now()
 		result.Finalize()
-		return result, fmt.Errorf(result.Error)
+		return result, fmt.Errorf("%s", result.Error)
 	}
 }
 

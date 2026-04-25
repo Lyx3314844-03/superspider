@@ -585,6 +585,12 @@ fn run_xpath_all(html: &str, xpath: &str) -> Result<Vec<String>, String> {
 
     let output = child.wait_with_output().map_err(|err| err.to_string())?;
     if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Ok(payload) = serde_json::from_str::<Value>(&stdout) {
+            if let Some(error) = payload.get("error").and_then(|value| value.as_str()) {
+                return Err(error.to_string());
+            }
+        }
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
     let payload: Value = serde_json::from_slice(&output.stdout).map_err(|err| err.to_string())?;

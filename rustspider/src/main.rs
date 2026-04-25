@@ -9449,9 +9449,15 @@ fn local_site_profile_payload(url: &str, html: &str) -> serde_json::Value {
     });
     let crawler_type = resolve_local_crawler_type(&page_signals, &url_lower);
     let page_type = match crawler_type.as_str() {
-        "static_listing" | "search_results" | "ecommerce_search" | "infinite_scroll_listing" => "list",
+        "static_listing" | "search_results" | "ecommerce_search" | "infinite_scroll_listing" => {
+            "list"
+        }
         "static_detail" | "ecommerce_detail" => "detail",
-        _ if page_signals["has_list"].as_bool() == Some(true) && page_signals["has_detail"].as_bool() != Some(true) => "list",
+        _ if page_signals["has_list"].as_bool() == Some(true)
+            && page_signals["has_detail"].as_bool() != Some(true) =>
+        {
+            "list"
+        }
         _ if page_signals["has_detail"].as_bool() == Some(true) => "detail",
         _ => "generic",
     };
@@ -9552,7 +9558,8 @@ fn resolve_local_crawler_type(signals: &serde_json::Value, url_lower: &str) -> S
         return "login_session".to_string();
     }
     if signals["has_infinite_scroll"].as_bool() == Some(true)
-        && (signals["has_list"].as_bool() == Some(true) || signals["has_search"].as_bool() == Some(true))
+        && (signals["has_list"].as_bool() == Some(true)
+            || signals["has_search"].as_bool() == Some(true))
     {
         return "infinite_scroll_listing".to_string();
     }
@@ -9609,10 +9616,7 @@ fn resolve_local_crawler_type(signals: &serde_json::Value, url_lower: &str) -> S
     "generic_http".to_string()
 }
 
-fn resolve_local_runner_order(
-    crawler_type: &str,
-    signals: &serde_json::Value,
-) -> Vec<String> {
+fn resolve_local_runner_order(crawler_type: &str, signals: &serde_json::Value) -> Vec<String> {
     match crawler_type {
         "hydrated_spa" | "infinite_scroll_listing" | "login_session" | "ecommerce_search" => {
             vec!["browser".to_string(), "http".to_string()]
@@ -9661,8 +9665,12 @@ fn resolve_local_strategy_hints(crawler_type: &str) -> Vec<String> {
 fn resolve_local_job_templates(crawler_type: &str, url_lower: &str) -> Vec<String> {
     let mut templates = match crawler_type {
         "hydrated_spa" => vec!["examples/crawler-types/hydrated-spa-browser.json".to_string()],
-        "infinite_scroll_listing" => vec!["examples/crawler-types/infinite-scroll-browser.json".to_string()],
-        "ecommerce_search" => vec!["examples/crawler-types/ecommerce-search-browser.json".to_string()],
+        "infinite_scroll_listing" => {
+            vec!["examples/crawler-types/infinite-scroll-browser.json".to_string()]
+        }
+        "ecommerce_search" => {
+            vec!["examples/crawler-types/ecommerce-search-browser.json".to_string()]
+        }
         "ecommerce_detail" => vec![
             "examples/crawler-types/ecommerce-search-browser.json".to_string(),
             "examples/crawler-types/api-bootstrap-http.json".to_string(),
@@ -9680,9 +9688,15 @@ fn resolve_local_job_templates(crawler_type: &str, url_lower: &str) -> Vec<Strin
         "jd" => templates.push("examples/site-presets/jd-search-browser.json".to_string()),
         "taobao" => templates.push("examples/site-presets/taobao-search-browser.json".to_string()),
         "tmall" => templates.push("examples/site-presets/tmall-search-browser.json".to_string()),
-        "pinduoduo" => templates.push("examples/site-presets/pinduoduo-search-browser.json".to_string()),
-        "xiaohongshu" => templates.push("examples/site-presets/xiaohongshu-feed-browser.json".to_string()),
-        "douyin-shop" => templates.push("examples/site-presets/douyin-shop-browser.json".to_string()),
+        "pinduoduo" => {
+            templates.push("examples/site-presets/pinduoduo-search-browser.json".to_string())
+        }
+        "xiaohongshu" => {
+            templates.push("examples/site-presets/xiaohongshu-feed-browser.json".to_string())
+        }
+        "douyin-shop" => {
+            templates.push("examples/site-presets/douyin-shop-browser.json".to_string())
+        }
         _ => {}
     }
     templates.sort();

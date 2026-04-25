@@ -33,6 +33,7 @@ public final class EcommerceReviewSpider extends Spider {
         String family = EcommerceSiteProfiles.siteFamilyFrom(response);
         EcommerceSiteProfiles.Profile current = EcommerceSiteProfiles.profileFor(family);
         List<Map<String, Object>> jsonLdProducts = EcommerceSiteProfiles.extractJsonLdProducts(response.getBody(), 1);
+        List<Map<String, Object>> bootstrapProducts = EcommerceSiteProfiles.extractBootstrapProducts(response.getBody(), 1);
         List<String> videoCandidates = EcommerceSiteProfiles.collectVideoLinks(
             response.getUrl(),
             merge(response.selector().css("video").attrs("src"), response.selector().css("source").attrs("src")),
@@ -71,13 +72,26 @@ public final class EcommerceReviewSpider extends Spider {
                 .set("json_ld_products", jsonLdProducts)
                 .set("video_candidates", videoCandidates)
                 .set("excerpt", EcommerceSiteProfiles.textExcerpt(response.getBody(), 800))
-                .set("note", "Public universal ecommerce review extraction with JD review fast path."));
+                .set(
+                    "api_job_templates",
+                    EcommerceSiteProfiles.buildApiJobTemplates(
+                        response.getUrl(),
+                        family,
+                        EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20),
+                        List.of(payload.has("productId") ? payload.get("productId").getAsString() : EcommerceSiteProfiles.extractJDItemId(response.getUrl(), response.getBody())),
+                        10
+                    )
+                )
+                .set("coupons_promotions", EcommerceSiteProfiles.detectCouponsPromotions(response.getBody()))
+                .set("stock_status", EcommerceSiteProfiles.extractStockStatus(response.getBody()))
+                .set("note", "Enhanced ecommerce review extraction with JD review fast path (v2.0)."));
         }
 
-        if (!"jd".equals(family) && !"generic".equals(family) && !jsonLdProducts.isEmpty()) {
-            Map<String, Object> product = jsonLdProducts.get(0);
+        List<Map<String, Object>> structuredProducts = !jsonLdProducts.isEmpty() ? jsonLdProducts : bootstrapProducts;
+        if (!"jd".equals(family) && !structuredProducts.isEmpty()) {
+            Map<String, Object> product = structuredProducts.get(0);
             return List.of(new Item()
-                .set("kind", family + "_review_summary")
+                .set("kind", "generic".equals(family) ? "ecommerce_review_summary" : family + "_review_summary")
                 .set("site_family", family)
                 .set("url", response.getUrl())
                 .set("item_id", String.valueOf(product.getOrDefault("sku", "")).isBlank() ? EcommerceSiteProfiles.firstMatch(response.getBody(), current.itemIdPatterns) : product.get("sku"))
@@ -85,13 +99,25 @@ public final class EcommerceReviewSpider extends Spider {
                 .set("review_count", String.valueOf(product.getOrDefault("review_count", "")).isBlank() ? EcommerceSiteProfiles.firstMatch(response.getBody(), current.reviewCountPatterns) : product.get("review_count"))
                 .set("brand", product.get("brand"))
                 .set("category", product.get("category"))
+                .set("shop", product.get("shop"))
                 .set("embedded_json_blocks", EcommerceSiteProfiles.extractEmbeddedJsonBlocks(response.getBody(), 5, 2000))
                 .set("api_candidates", EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20))
                 .set("script_sources", response.selector().css("script").attrs("src"))
                 .set("json_ld_products", jsonLdProducts)
+                .set("bootstrap_products", bootstrapProducts)
                 .set("video_candidates", videoCandidates)
                 .set("excerpt", EcommerceSiteProfiles.textExcerpt(response.getBody(), 800))
-                .set("note", "Public ecommerce review fast path via JSON-LD aggregate rating extraction."));
+                .set(
+                    "api_job_templates",
+                    EcommerceSiteProfiles.buildApiJobTemplates(
+                        response.getUrl(),
+                        family,
+                        EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20),
+                        List.of(String.valueOf(product.getOrDefault("sku", "")).isBlank() ? EcommerceSiteProfiles.firstMatch(response.getBody(), current.itemIdPatterns) : String.valueOf(product.get("sku"))),
+                        10
+                    )
+                )
+                .set("note", "Public ecommerce review fast path via structured bootstrap/JSON-LD extraction."));
         }
 
         return List.of(new Item()
@@ -106,8 +132,19 @@ public final class EcommerceReviewSpider extends Spider {
             .set("api_candidates", EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20))
             .set("script_sources", response.selector().css("script").attrs("src"))
             .set("json_ld_products", jsonLdProducts)
+            .set("bootstrap_products", bootstrapProducts)
             .set("video_candidates", videoCandidates)
             .set("excerpt", EcommerceSiteProfiles.textExcerpt(response.getBody(), 800))
+            .set(
+                "api_job_templates",
+                EcommerceSiteProfiles.buildApiJobTemplates(
+                    response.getUrl(),
+                    family,
+                    EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20),
+                    List.of(EcommerceSiteProfiles.firstMatch(response.getBody(), current.itemIdPatterns)),
+                    10
+                )
+            )
             .set("note", "Public universal ecommerce review extraction."));
     }
 

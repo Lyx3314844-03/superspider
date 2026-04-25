@@ -174,6 +174,45 @@ def test_graph_extract_alias_route_matches_versioned_route():
     assert payload["success"] is True
 
 
+def test_llm_markdown_route_returns_compact_markdown():
+    api = SpiderAPI()
+    client = api.app.test_client()
+
+    response = client.post(
+        "/api/v1/llm/markdown",
+        json={
+            "url": "https://example.com/catalog",
+            "html": "<html><head><title>Py LLM</title><style>.ad{}</style></head><body><h1>商品</h1><p>详情</p><script>ignored()</script></body></html>",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert "# Py LLM" in payload["markdown"]
+    assert "## 商品" in payload["markdown"]
+    assert "ignored" not in payload["markdown"]
+
+
+def test_llm_markdown_stream_route_returns_sse():
+    api = SpiderAPI()
+    client = api.app.test_client()
+
+    response = client.post(
+        "/api/v1/llm/markdown/stream",
+        json={
+            "html": "<html><body><p>商品详情</p></body></html>",
+            "chunk_size": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.content_type.startswith("text/event-stream")
+    body = response.get_data(as_text=True)
+    assert "event: markdown" in body
+    assert "event: done" in body
+
+
 def test_start_spider_returns_without_waiting_for_long_running_start():
     api = SpiderAPI()
     client = api.app.test_client()

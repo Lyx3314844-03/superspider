@@ -1,6 +1,7 @@
 package downloader
 
 import (
+	"gospider/antibot"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -22,14 +23,15 @@ type Request struct {
 
 // Response 响应对象（避免循环依赖）
 type Response struct {
-	URL        string
-	StatusCode int
-	Headers    http.Header
-	Body       []byte
-	Text       string
-	Request    *Request
-	Duration   time.Duration
-	Error      error
+	URL            string
+	StatusCode     int
+	Headers        http.Header
+	Body           []byte
+	Text           string
+	Request        *Request
+	Duration       time.Duration
+	Error          error
+	AccessFriction *antibot.AccessFrictionReport
 }
 
 // HTTPDownloader HTTP 下载器
@@ -89,15 +91,18 @@ func (d *HTTPDownloader) Download(req *Request) *Response {
 		}
 	}
 
+	friction := antibot.AnalyzeAccessFriction(httpResp.StatusCode, httpResp.Header, string(body), req.URL)
+
 	return &Response{
-		URL:        req.URL,
-		StatusCode: httpResp.StatusCode,
-		Headers:    httpResp.Header,
-		Body:       body,
-		Text:       string(body),
-		Request:    req,
-		Duration:   duration,
-		Error:      nil,
+		URL:            req.URL,
+		StatusCode:     httpResp.StatusCode,
+		Headers:        httpResp.Header,
+		Body:           body,
+		Text:           string(body),
+		Request:        req,
+		Duration:       duration,
+		Error:          nil,
+		AccessFriction: &friction,
 	}
 }
 

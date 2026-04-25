@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass, field
 from html import unescape
 from html.parser import HTMLParser as StdHTMLParser
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from bs4 import BeautifulSoup  # type: ignore
@@ -159,26 +159,40 @@ class HTMLParser:
 
     def css(self, selector: str) -> List[str]:
         """CSS 选择器提取"""
+        selector, mode, attr = _normalize_css_selector(selector)
         if self._soup is not None:
-            return [elem.get_text(strip=True) for elem in self._soup.select(selector)]
-        return [node.text_content() for node in self._fallback_nodes(selector)]
+            return [
+                _beautiful_soup_value(elem, mode, attr)
+                for elem in self._soup.select(selector)
+                if _beautiful_soup_value(elem, mode, attr) != ""
+            ]
+        return [
+            _mini_node_value(node, mode, attr)
+            for node in self._fallback_nodes(selector)
+            if _mini_node_value(node, mode, attr) != ""
+        ]
 
     def css_first(self, selector: str) -> Optional[str]:
         """获取第一个匹配"""
+        selector, mode, attr = _normalize_css_selector(selector)
         if self._soup is not None:
             elem = self._soup.select_one(selector)
-            return elem.get_text(strip=True) if elem else None
+            return _beautiful_soup_value(elem, mode, attr) if elem else None
         nodes = self._fallback_nodes(selector)
-        return nodes[0].text_content() if nodes else None
+        return _mini_node_value(nodes[0], mode, attr) if nodes else None
 
     def css_attr(self, selector: str, attr: str) -> List[str]:
         """获取属性"""
+        selector, _, pseudo_attr = _normalize_css_selector(selector)
+        attr = pseudo_attr or attr
         if self._soup is not None:
             return [elem.get(attr, "") for elem in self._soup.select(selector)]
         return [node.attrs.get(attr, "") for node in self._fallback_nodes(selector)]
 
     def css_attr_first(self, selector: str, attr: str) -> Optional[str]:
         """获取第一个属性"""
+        selector, _, pseudo_attr = _normalize_css_selector(selector)
+        attr = pseudo_attr or attr
         if self._soup is not None:
             elem = self._soup.select_one(selector)
             return elem.get(attr) if elem else None
@@ -286,6 +300,31 @@ def _translate_simple_xpath(expr: str) -> Optional[tuple[str, Optional[str]]]:
         return tag_match.group(1), None
 
     return None
+
+
+def _normalize_css_selector(selector: str) -> Tuple[str, str, Optional[str]]:
+    normalized = (selector or "").strip()
+    attr_match = re.search(r"::attr\(([^)]+)\)\s*$", normalized, re.IGNORECASE)
+    if attr_match:
+        return normalized[: attr_match.start()].strip(), "attr", attr_match.group(1).strip()
+    for suffix, mode in (("::text", "text"), ("::html", "html")):
+        if normalized.lower().endswith(suffix):
+            return normalized[: -len(suffix)].strip(), mode, None
+    return normalized, "text", None
+
+
+def _beautiful_soup_value(elem: Any, mode: str, attr: Optional[str]) -> str:
+    if mode == "attr" and attr:
+        return str(elem.get(attr, "")).strip()
+    if mode == "html":
+        return "".join(str(child) for child in elem.contents).strip()
+    return elem.get_text(strip=True)
+
+
+def _mini_node_value(node: _MiniNode, mode: str, attr: Optional[str]) -> str:
+    if mode == "attr" and attr:
+        return node.attrs.get(attr, "").strip()
+    return node.text_content().strip()
 
 
 class JSONParser:

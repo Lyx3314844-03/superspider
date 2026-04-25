@@ -2,12 +2,17 @@
 
 PySpider is the SuperSpider runtime for Python-first authoring, AI-assisted project work, and flexible browser/HTTP orchestration. The repository already includes much more than a Python CLI wrapper: it has a broad command surface, scrapy-style project tooling, AI scaffolding, auth capture flows, graph and audit artifacts, artifact-driven media recovery, and shared runtime contracts.
 
+## Current Verification
+
+As of 2026-04-24, `python -m compileall -q .`, `pytest -q tests/test_smoke.py`, and `pytest -q tests/test_dependencies.py` pass. `pytest -q tests/test_cli.py` timed out at 60 seconds and should be split into narrower groups before the full test suite is considered green.
+
 ## Core Functions
 
 - Python-native CLI: `python -m pyspider`
 - scrapy-style project runtime and authoring flow
 - AI extraction, research, and project scaffolding
 - browser + HTTP hybrid crawling
+- class-based ecommerce crawlers plus browser capture companions
 - anti-bot, captcha, node-reverse, media handling, and dataset output
 
 ## Public Runtime Surface
@@ -27,6 +32,7 @@ PySpider is the SuperSpider runtime for Python-first authoring, AI-assisted proj
 - `profile-site`, `scrapy plan-ai`, and `scrapy scaffold-ai` now emit crawler-type hints, runner order, strategy hints, and shared JobSpec template paths for modern site families.
 - Domain-aware site family hints now cover `jd`, `taobao`, `tmall`, `pinduoduo`, `xiaohongshu`, and `douyin-shop`, pointing to starter presets under `examples/site-presets/`.
 - Reusable multi-class spider templates now live under `examples/class-kits/`, covering search listing, product detail, API bootstrap, infinite scroll, login session, and social feed spiders for all four runtimes.
+- The ecommerce runtime now also exposes reusable `EcommerceCrawler` and browser capture companions in `examples/ecommerce_crawler.py` and `examples/ecommerce_browser_spider.py`.
 - The crawler-type and site-family outputs are now part of the main GitHub-facing docs through `docs/CRAWLER_TYPE_PLAYBOOK.md`, `docs/SITE_PRESET_PLAYBOOK.md`, and the shared `examples/` starter assets.
 
 ### Runtime Artifacts and Control Plane
@@ -44,14 +50,50 @@ PySpider is the SuperSpider runtime for Python-first authoring, AI-assisted proj
 ### Anti-Bot, Captcha, and Reverse
 
 - Advanced anti-bot support includes TLS fingerprinting, browser fingerprint caching, session-scoped headers, cookie automation, proxy failure handling, and captcha detection.
-- Captcha solving covers image captcha, reCAPTCHA, hCaptcha, Turnstile, 2Captcha, Anti-Captcha, and CapMonster paths.
-- NodeReverse tooling includes `health`, `profile`, `detect`, `fingerprint-spoof`, `tls-fingerprint`, `canvas-fingerprint`, `analyze-crypto`, `signature-reverse`, `ast`, `webpack`, `function-call`, and `browser-simulate`.
-- Ultimate runtime integrates reverse fingerprint/TLS/Canvas flows with checkpointed execution.
+- Access-friction reporting is exposed through `pyspider.antibot.friction.analyze_access_friction`, returning `level`, `signals`, `recommended_actions`, `challenge_handoff`, and `capability_plan`.
+- The HTTP downloader attaches the same report to `Response.meta["access_friction"]`.
+- High-friction targets use a compliant plan: single-concurrency throttling, browser-render upgrade, artifact capture, authorized human handoff for CAPTCHA/login/risk-control, persisted session state after validation, and explicit stop conditions.
+- Captcha-related helper paths exist, but PySpider does not promise automated CAPTCHA cracking or forced risk-control bypass.
+- NodeReverse tooling includes `health`, `profile`, `detect`, `analyze-crypto`, `signature-reverse`, `ast`, `webpack`, `function-call`, and `browser-simulate` for diagnostics and compatibility testing.
+- Ultimate runtime integrates reverse-analysis diagnostics with checkpointed execution.
+
+### AI CLI / MCP
+
+- `pyspider/mcp_server.py` exposes a minimal Model Context Protocol stdio server.
+- The MCP tool `run_superspider(url)` fetches an authorized HTTP(S) page, converts HTML to compact Markdown, and returns `access_friction` diagnostics for AI CLI context.
+- CAPTCHA, login, risk-control, explicit denial, and robots restrictions are reported as stop or human-authorization handoff conditions rather than automated bypass tasks.
+
+Example MCP server command:
+
+```bash
+python pyspider/mcp_server.py
+```
 
 ### Browser, Media, and Integration
 
 - Multiple browser implementations are present: Selenium, Playwright, enhanced browser, and advanced browser layers.
 - Video tooling can recover media not only from URLs but also from browser-produced HTML, network, and HAR artifacts.
+- Source-level video download facade: `pyspider.media.VideoDownloader` accepts `VideoDownloadRequest` and returns `VideoDownloadResult`, choosing HLS, DASH, or direct file download from parser results or browser artifacts.
+
+```python
+result = VideoDownloader("downloads").download(
+    VideoDownloadRequest(
+        url="https://example.com/watch/demo",
+        html=rendered_html,
+        prefer="auto",
+    )
+)
+```
+- Source-level crawler selection facade: `pyspider.profiler.CrawlerSelector` turns a URL plus optional HTML into a scenario decision with `recommended_runner`, `runner_order`, capabilities, fallback plan, stop conditions, confidence, and reason codes.
+
+```python
+from pyspider.profiler import CrawlerSelector
+
+selection = CrawlerSelector().select(
+    "https://shop.example.com/search?q=phone",
+    rendered_html,
+)
+```
 - Feature gates exist for `ai`, `browser`, `distributed`, `media`, `workflow`, and `crawlee`.
 - Crawlee bridge support is built in as a dedicated client integration.
 
@@ -60,6 +102,7 @@ PySpider is the SuperSpider runtime for Python-first authoring, AI-assisted proj
 - The `ai` CLI can fall back to local heuristic extraction when no supported AI API key is configured.
 - `advanced.ultimate.simulate_browser()` is not a full browser session; it performs HTTP fetch plus reverse-service simulation.
 - `node_reverse/fetcher.py` contains a minimal compatibility fallback that degrades to plain `requests` when the legacy fetcher stack is missing.
+- Access-friction handling stops on robots disallow, explicit access denial, or missing site permission; it is not a bypass guarantee.
 
 ## Concrete Media Coverage
 
@@ -116,6 +159,9 @@ Source-backed examples live under:
 - `examples/scrapy_style_demo.py`
 - `examples/enhanced_features_demo.py`
 - `examples/youku_video_downloader.py`
+- `examples/ecommerce_crawler.py`
+- `examples/ecommerce_browser_spider.py`
+- `examples/universal_ecommerce_detector.py`
 
 ## Dependency Notes
 

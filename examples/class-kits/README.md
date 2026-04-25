@@ -13,6 +13,8 @@ These class kits provide reusable spider class templates for all four runtimes.
 - `EcommerceCatalogSpider`
 - `EcommerceDetailSpider`
 - `EcommerceReviewSpider`
+- `EcommerceCrawler`
+- browser capture companions for the runtimes that support rendered-page export
 
 ## Runtimes
 
@@ -34,6 +36,7 @@ The kits are not production-ready site implementations. They are reusable class 
 - public e-commerce catalog pages
 - public product detail pages
 - public review/API pages
+- unified ecommerce wrapper classes that can delegate to browser capture companions when a runtime supports them
 
 ## Recommended Use
 

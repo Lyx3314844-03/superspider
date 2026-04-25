@@ -25,6 +25,8 @@ import time
 from io import StringIO
 from pathlib import Path
 from typing import Any, Sequence
+
+from pyspider.core import sync
 import yaml
 import requests
 

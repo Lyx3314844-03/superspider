@@ -1,12 +1,22 @@
 # SuperSpider Install Matrix
 
-Updated: 2026-04-19
+Updated: 2026-04-25
 
-SuperSpider ships four runtimes. Every runtime has dedicated installers for Windows, Linux, and macOS.
+SuperSpider ships four runtimes. Every runtime has dedicated installers for Windows, Linux, and macOS, plus one aggregate installer per operating system.
 
 ---
 
 ## Quick Install Reference
+
+Install everything:
+
+| OS | Aggregate installer |
+| --- | --- |
+| Windows | `scripts\windows\install-superspider.bat` |
+| Linux | `bash scripts/linux/install-superspider.sh` |
+| macOS | `bash scripts/macos/install-superspider.sh` |
+
+Install one runtime:
 
 | Framework | Windows | Linux | macOS | Output |
 | --- | --- | --- | --- | --- |
@@ -19,12 +29,33 @@ SuperSpider ships four runtimes. Every runtime has dedicated installers for Wind
 
 ## Prerequisites
 
+The aggregate installers require all tools listed below. Single-runtime installers require only the matching row.
+
 | Framework | Required tools |
 | --- | --- |
-| PySpider | Python 3.8+, `venv`, `pip` |
-| GoSpider | Go 1.20+ |
+| PySpider | Python 3.10+ recommended, `venv`, `pip` |
+| GoSpider | Go 1.24+ |
 | RustSpider | Rust 1.70+, Cargo |
-| JavaSpider | Java 17+, Maven 3.8+ |
+| JavaSpider | Java 17 target, Maven 3.8+ |
+
+## Supported Operating Systems
+
+| OS family | Supported install baseline | Current verification note |
+| --- | --- | --- |
+| Windows | Windows 10/11 or Windows Server 2022+ | Verified on Microsoft Windows 11 Pro 10.0.28000, 64-bit |
+| Linux | Ubuntu 22.04/24.04, Debian 12, or RHEL/Rocky/AlmaLinux 9+ compatible hosts | Use the Linux shell installers on native Linux CI before release |
+| macOS | macOS 13 Ventura+ on Intel or Apple Silicon | Use the macOS shell installers on native macOS CI before release |
+
+Current local tool versions used during the April 25, 2026 Windows verification:
+
+| Tool | Local version observed |
+| --- | --- |
+| Python | 3.14.3 |
+| Go | 1.26.1 |
+| Rust/Cargo | 1.94.0 |
+| Maven | 3.9.14 |
+| Java for Maven | 17.0.18 |
+| Standalone `java` on PATH | 25.0.2 |
 
 ---
 
@@ -56,7 +87,7 @@ python -m pyspider version
 - Python-native CLI with scrapy-style project runtime
 - AI extraction: LLM (OpenAI + Anthropic/Claude), smart parser, schema-driven output
 - Browser automation: Playwright (native)
-- Anti-bot: WAF bypass, captcha solving (2captcha, Anti-Captcha, reCAPTCHA, hCaptcha)
+- Anti-bot: access-friction classifier, browser upgrade plan, authorized challenge handoff, WAF profiling, and captcha-related helper paths
 - Media download: YouTube, Bilibili, IQIYI, Tencent Video, Youku, Douyin, HLS, DASH, FFmpeg
 - Distributed: Redis, RabbitMQ, Kafka
 - Node-reverse client for JS-encrypted sites
@@ -89,7 +120,7 @@ gospider\gospider.exe --version
 - Compiled Go CLI binary (no runtime dependencies)
 - Concurrent crawling engine with rate limiting and deduplication
 - Browser automation: Playwright + Selenium (native WebDriver client)
-- Anti-bot: WAF bypass, captcha solving (2captcha, Anti-Captcha, reCAPTCHA, hCaptcha)
+- Anti-bot: access-friction classifier, browser upgrade plan, authorized challenge handoff, WAF profiling, and captcha-related helper paths
 - AI extraction: entity, summarizer, sentiment (OpenAI + Anthropic/Claude)
 - Media download: YouTube, Bilibili, IQIYI, Tencent Video, Youku, Douyin (dedicated extractors)
 - Distributed: Redis (native), RabbitMQ (broker-native), Kafka (broker-native)
@@ -124,7 +155,7 @@ rustspider\target\release\rustspider.exe --version
 - Rust release binary with feature-gated modules
 - Typed scrapy-style interface
 - Browser automation: Playwright (node+playwright process) + Selenium (fantoccini facade)
-- Anti-bot: WAF bypass, captcha solving (2captcha, Anti-Captcha, reCAPTCHA, hCaptcha, image captcha)
+- Anti-bot: access-friction classifier, browser upgrade plan, authorized challenge handoff, WAF profiling, and captcha-related helper paths
 - AI extraction: entity, summarizer, sentiment (OpenAI + Anthropic/Claude), few-shot examples
 - Media download: YouTube, Bilibili, IQIYI, Tencent Video, Youku, Douyin
 - Distributed: Redis (native), RabbitMQ (bridge), Kafka (bridge)
@@ -140,7 +171,7 @@ rustspider\target\release\rustspider.exe --version
 ### What the installer does
 
 1. Checks that `java` (17+) and `mvn` are available
-2. Runs `mvn -q -f javaspider/pom.xml -DskipTests package dependency:copy-dependencies`
+2. Runs `mvn -q -f javaspider/pom.xml -DskipTests -Dmaven.javadoc.skip=true package dependency:copy-dependencies`
 3. Verifies the `javaspider/target` directory was produced
 
 ### Verify after install
@@ -175,7 +206,7 @@ mvn -f javaspider/pom.xml -P full -DskipTests package
 
 - Maven / JAR packaging
 - Browser automation: Selenium (native) + Playwright (Java helper)
-- Anti-bot: WAF bypass, captcha solving (2captcha, Anti-Captcha, reCAPTCHA, hCaptcha)
+- Anti-bot: access-friction classifier, browser upgrade plan, authorized challenge handoff, WAF profiling, and captcha-related helper paths
 - AI extraction: entity, summarizer, sentiment (OpenAI + Anthropic/Claude), few-shot examples
 - Media download: YouTube, Bilibili, IQIYI, Tencent Video, Youku, Douyin (generic fallback)
 - Distributed: Redis (native), RabbitMQ (broker-native), Kafka (broker-native)

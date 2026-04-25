@@ -16,6 +16,14 @@ _EXPORTS = {
         "pyspider.browser.enhanced",
         "PlaywrightBrowserEnhanced",
     ),
+    "LocatorAnalyzer": ("pyspider.browser.locator_analyzer", "LocatorAnalyzer"),
+    "LocatorCandidate": ("pyspider.browser.locator_analyzer", "LocatorCandidate"),
+    "LocatorPlan": ("pyspider.browser.locator_analyzer", "LocatorPlan"),
+    "LocatorTarget": ("pyspider.browser.locator_analyzer", "LocatorTarget"),
+    "DevToolsAnalyzer": ("pyspider.browser.devtools_analyzer", "DevToolsAnalyzer"),
+    "DevToolsReport": ("pyspider.browser.devtools_analyzer", "DevToolsReport"),
+    "ElementSnapshot": ("pyspider.browser.devtools_analyzer", "ElementSnapshot"),
+    "ReverseRecommendation": ("pyspider.browser.devtools_analyzer", "ReverseRecommendation"),
 }
 
 __all__ = list(_EXPORTS.keys())

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"gospider/antibot"
 )
 
 type SeleniumConfig struct {
@@ -18,6 +20,9 @@ type SeleniumConfig struct {
 	UserAgent    string
 	Proxy        string
 	Timeout      time.Duration
+	UserDataDir  string
+	WindowSize   string
+	ExtraArgs    []string
 }
 
 type SeleniumClient struct {
@@ -53,10 +58,13 @@ func NewSeleniumClient(config *SeleniumConfig) (*SeleniumClient, error) {
 		},
 	}
 	alwaysMatch := payload["capabilities"].(map[string]any)["alwaysMatch"].(map[string]any)
-	if config.UserAgent != "" || config.Proxy != "" || config.Headless {
+	if config.UserAgent != "" || config.Proxy != "" || config.Headless || config.UserDataDir != "" || len(config.ExtraArgs) > 0 || config.WindowSize != "" {
 		args := []string{}
 		if config.Headless {
 			args = append(args, "--headless=new")
+		}
+		if config.WindowSize != "" {
+			args = append(args, "--window-size="+config.WindowSize)
 		}
 		if config.UserAgent != "" {
 			args = append(args, "--user-agent="+config.UserAgent)
@@ -64,6 +72,10 @@ func NewSeleniumClient(config *SeleniumConfig) (*SeleniumClient, error) {
 		if config.Proxy != "" {
 			args = append(args, "--proxy-server="+config.Proxy)
 		}
+		if config.UserDataDir != "" {
+			args = append(args, "--user-data-dir="+config.UserDataDir)
+		}
+		args = append(args, config.ExtraArgs...)
 		alwaysMatch["goog:chromeOptions"] = map[string]any{
 			"args": args,
 		}
@@ -103,6 +115,143 @@ func NewSeleniumClient(config *SeleniumConfig) (*SeleniumClient, error) {
 
 func (c *SeleniumClient) Navigate(url string) error {
 	return c.postJSON("/url", map[string]any{"url": url}, nil)
+}
+
+func (c *SeleniumClient) ExecuteScript(script string, args ...any) (any, error) {
+	var out map[string]any
+	err := c.postJSON("/execute/sync", map[string]any{
+		"script": script,
+		"args":   args,
+	}, &out)
+	if err != nil {
+		return nil, err
+	}
+	return out["value"], nil
+}
+
+func (c *SeleniumClient) ExecuteCDPCommand(command string, params map[string]any) (any, error) {
+	var out map[string]any
+	err := c.postJSON("/goog/cdp/execute", map[string]any{
+		"cmd":    command,
+		"params": params,
+	}, &out)
+	if err != nil {
+		return nil, err
+	}
+	return out["value"], nil
+}
+
+func (c *SeleniumClient) ApplyEcommerceRuntimeProfile(userAgent string) {
+	_, _ = c.ExecuteCDPCommand("Page.addScriptToEvaluateOnNewDocument", map[string]any{
+		"source": ecommerceRuntimeScript(),
+	})
+	if userAgent != "" {
+		_, _ = c.ExecuteCDPCommand("Network.setUserAgentOverride", map[string]any{
+			"userAgent": userAgent,
+			"platform":  "Windows",
+		})
+	}
+	_, _ = c.ExecuteCDPCommand("Emulation.setTimezoneOverride", map[string]any{"timezoneId": "Asia/Shanghai"})
+	_, _ = c.ExecuteCDPCommand("Emulation.setLocaleOverride", map[string]any{"locale": "zh-CN"})
+}
+
+func (c *SeleniumClient) Warmup(url string) {
+	if strings.TrimSpace(url) == "" {
+		return
+	}
+	_ = c.Navigate(url)
+	_ = c.WaitReady(15 * time.Second)
+	time.Sleep(700 * time.Millisecond)
+	_, _ = c.ExecuteScript("window.scrollBy(0, Math.floor((window.innerHeight || 800) * 0.5)); return true;")
+	time.Sleep(500 * time.Millisecond)
+}
+
+func (c *SeleniumClient) WaitReady(timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		value, err := c.ExecuteScript("return document.readyState")
+		if err == nil && fmt.Sprint(value) == "complete" {
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return fmt.Errorf("selenium document ready timeout after %s", timeout)
+}
+
+func ecommerceRuntimeScript() string {
+	return `
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+window.chrome = window.chrome || { runtime: {} };
+`
+}
+
+func (c *SeleniumClient) ScrollToBottom(rounds int, pause time.Duration) error {
+	if rounds <= 0 {
+		rounds = 6
+	}
+	if pause <= 0 {
+		pause = 800 * time.Millisecond
+	}
+	var lastHeight string
+	stable := 0
+	for i := 0; i < rounds; i++ {
+		height, _ := c.ExecuteScript("return String(document.body ? document.body.scrollHeight : 0)")
+		currentHeight := fmt.Sprint(height)
+		if _, err := c.ExecuteScript("window.scrollBy(0, Math.max(600, window.innerHeight || 800)); return true;"); err != nil {
+			return err
+		}
+		time.Sleep(pause)
+		if currentHeight == lastHeight {
+			stable++
+			if stable >= 2 {
+				break
+			}
+		} else {
+			stable = 0
+			lastHeight = currentHeight
+		}
+	}
+	return nil
+}
+
+func (c *SeleniumClient) DetectAccessChallenge() (map[string]any, error) {
+	html, err := c.HTML()
+	if err != nil {
+		return nil, err
+	}
+	title, _ := c.Title()
+	currentURL, _ := c.CurrentURL()
+	report := antibot.AnalyzeAccessFriction(http.StatusOK, nil, html, currentURL+"\n"+title)
+	return map[string]any{
+		"blocked":          report.Blocked,
+		"signals":          report.Signals,
+		"url":              currentURL,
+		"title":            title,
+		"friction_profile": report,
+	}, nil
+}
+
+func (c *SeleniumClient) WaitForManualAccess(timeout time.Duration) error {
+	if timeout <= 0 {
+		return nil
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		challenge, err := c.DetectAccessChallenge()
+		if err == nil && challenge["blocked"] == false {
+			return nil
+		}
+		time.Sleep(3 * time.Second)
+	}
+	return nil
 }
 
 func (c *SeleniumClient) HTML() (string, error) {

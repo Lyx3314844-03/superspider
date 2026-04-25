@@ -17,7 +17,7 @@ where mvn >nul 2>nul || (
   exit /b 1
 )
 
-mvn -q -f javaspider\pom.xml -DskipTests package dependency:copy-dependencies || exit /b 1
+mvn -q -f javaspider\pom.xml -DskipTests -Dmaven.javadoc.skip=true package dependency:copy-dependencies || exit /b 1
 
 if not exist "javaspider\target" (
   echo [ERROR] Expected build output directory javaspider\target was not produced

@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 
 import requests
 
+from pyspider.antibot.friction import analyze_access_friction
 from pyspider.core.exceptions import DownloadError, TimeoutError as SpiderTimeoutError
 from pyspider.core.models import Request, Response
 
@@ -148,6 +149,7 @@ class HTTPDownloader:
                 request=req,
                 duration=time.time() - start_time,
                 error=PermissionError(f"robots.txt forbids: {req.url}"),
+                meta=self._access_friction_meta(403, {}, "", req.url),
             )
 
         headers = dict(req.headers)
@@ -192,18 +194,25 @@ class HTTPDownloader:
                     else:
                         self._proxy_pool.record_failure(proxy)
 
+                access_friction = analyze_access_friction(
+                    html=resp.text,
+                    status_code=resp.status_code,
+                    headers=dict(resp.headers),
+                    url=req.url,
+                )
+                access_friction_meta = {"access_friction": access_friction.to_dict()}
+
                 if (
                     resp.status_code in self.retry_on_status
-                    and attempt < self.max_retries
+                    and self._should_retry_with_friction(
+                        access_friction.to_dict(), attempt
+                    )
                 ):
                     retry_after = self.retry_delay * (self.backoff_factor**attempt)
-                    if resp.status_code == 429 and "Retry-After" in resp.headers:
-                        try:
-                            retry_after = max(
-                                retry_after, float(resp.headers["Retry-After"])
-                            )
-                        except (TypeError, ValueError):
-                            pass
+                    if access_friction.retry_after_seconds is not None:
+                        retry_after = max(
+                            retry_after, float(access_friction.retry_after_seconds)
+                        )
                     time.sleep(retry_after)
                     continue
 
@@ -221,6 +230,7 @@ class HTTPDownloader:
                         request=req,
                         duration=duration,
                         error=None,
+                        meta=self._access_friction_meta(304, dict(resp.headers), "", req.url),
                     )
 
                 if self._incremental and resp.status_code == 200:
@@ -246,6 +256,7 @@ class HTTPDownloader:
                             url=req.url,
                             status_code=resp.status_code,
                         ),
+                        meta=access_friction_meta,
                     )
 
                 return Response(
@@ -257,6 +268,7 @@ class HTTPDownloader:
                     request=req,
                     duration=duration,
                     error=None,
+                    meta=access_friction_meta,
                 )
             except requests.exceptions.Timeout as exc:
                 last_error = SpiderTimeoutError(f"Request timeout: {exc}", url=req.url)
@@ -286,7 +298,34 @@ class HTTPDownloader:
             request=req,
             duration=time.time() - start_time,
             error=last_error,
+            meta=self._access_friction_meta(0, {}, "", req.url),
         )
+
+    def _access_friction_meta(
+        self, status_code: int, headers: Dict[str, str], text: str, url: str
+    ) -> Dict[str, object]:
+        report = analyze_access_friction(
+            html=text,
+            status_code=status_code,
+            headers=headers,
+            url=url,
+        )
+        return {"access_friction": report.to_dict()}
+
+    def _should_retry_with_friction(
+        self, access_friction: Dict[str, object], attempt: int
+    ) -> bool:
+        if attempt >= self.max_retries:
+            return False
+        if access_friction.get("requires_human_access"):
+            return False
+        capability_plan = access_friction.get("capability_plan")
+        retry_budget = self.max_retries
+        if isinstance(capability_plan, dict):
+            raw_budget = capability_plan.get("retry_budget")
+            if isinstance(raw_budget, int):
+                retry_budget = raw_budget
+        return attempt < min(self.max_retries, retry_budget)
 
     def set_timeout(self, timeout: int) -> None:
         if timeout < 1:

@@ -5,12 +5,17 @@ import com.javaspider.contracts.RequestFingerprint;
 import com.javaspider.contracts.RuntimeArtifactStore;
 import com.javaspider.contracts.RuntimeObservability;
 import com.javaspider.core.IncrementalCrawler;
+import com.javaspider.core.Page;
 import com.javaspider.core.Request;
+import com.javaspider.core.Site;
+import com.javaspider.core.Spider;
+import com.javaspider.processor.PageProcessor;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -105,5 +110,50 @@ class SpiderRuntimeContractsTest {
 
         assertEquals("blocked", classification);
         assertEquals(1, collector.summary().get("traces"));
+    }
+
+    @Test
+    void spiderDoesNotProcessBlockedAccessFrictionPage() {
+        AtomicInteger processed = new AtomicInteger(0);
+        TestSpider spider = new TestSpider(new PageProcessor() {
+            @Override
+            public void process(Page page) {
+                processed.incrementAndGet();
+            }
+
+            @Override
+            public Site getSite() {
+                return new Site();
+            }
+        });
+        spider.downloader((request, site) -> {
+            Page page = new Page();
+            page.setRequest(request);
+            page.setUrl(request.getUrl());
+            page.setStatusCode(200);
+            page.putField("access_friction", Map.of(
+                "level", "high",
+                "signals", java.util.List.of("captcha"),
+                "blocked", true
+            ));
+            return page;
+        });
+
+        spider.process(new Request("https://example.com/challenge"));
+
+        assertEquals(0, processed.get());
+        assertEquals(1, spider.getFailedRequests().get());
+        assertEquals(0, spider.getSuccessRequests().get());
+    }
+
+    private static class TestSpider extends Spider {
+        TestSpider(PageProcessor processor) {
+            super(processor);
+            site(new Site());
+        }
+
+        void process(Request request) {
+            processRequest(request);
+        }
     }
 }

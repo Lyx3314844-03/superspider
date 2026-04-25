@@ -5,14 +5,15 @@ use std::sync::Arc;
 use rustspider::scrapy::{CrawlerProcess, FeedExporter, Item, Output, Request, Spider};
 use serde_json::{Map, Value};
 
+mod detector;
 mod profile;
 
 use profile::{
-    best_title, build_jd_price_api_url, collect_image_links, collect_matches,
-    collect_product_links, collect_video_links, extract_api_candidates,
-    extract_embedded_json_blocks, extract_jd_catalog_products, extract_jd_item_id,
-    extract_json_ld_products, first_link_with_keywords, first_match, profile_for_family,
-    site_family_from_response, text_excerpt, DEFAULT_SITE_FAMILY,
+    best_title, build_api_job_templates, build_jd_price_api_url, collect_image_links,
+    collect_matches, collect_product_links, collect_video_links, extract_api_candidates,
+    extract_bootstrap_products, extract_embedded_json_blocks, extract_jd_catalog_products,
+    extract_jd_item_id, extract_json_ld_products, first_link_with_keywords, first_match,
+    profile_for_family, site_family_from_response, text_excerpt, DEFAULT_SITE_FAMILY,
 };
 
 fn make_ecommerce_catalog_spider(site_family: &str) -> Spider {
@@ -24,6 +25,9 @@ fn make_ecommerce_catalog_spider(site_family: &str) -> Spider {
             let current = profile_for_family(&family);
             let links = response.xpath("//a/@href").get_all();
             let json_ld_products = extract_json_ld_products(&response.text, 5);
+            let bootstrap_products = extract_bootstrap_products(&response.text, 5);
+            let api_candidates = extract_api_candidates(&response.text, 20);
+            let sku_candidates = collect_matches(&response.text, current.item_id_patterns, 10);
             let summary_item = Item::new()
                 .set(
                     "kind",
@@ -70,13 +74,26 @@ fn make_ecommerce_catalog_spider(site_family: &str) -> Spider {
                     ),
                 )
                 .set("script_sources", response.xpath("//script/@src").get_all())
-                .set("api_candidates", extract_api_candidates(&response.text, 20))
+                .set("api_candidates", api_candidates.clone())
                 .set(
                     "embedded_json_blocks",
                     extract_embedded_json_blocks(&response.text, 5, 2000),
                 )
                 .set("json_ld_products", json_ld_products.clone())
+                .set("bootstrap_products", bootstrap_products.clone())
+                .set(
+                    "api_job_templates",
+                    build_api_job_templates(
+                        &response.url,
+                        &family,
+                        &api_candidates,
+                        &sku_candidates,
+                        10,
+                    ),
+                )
                 .set("page_excerpt", text_excerpt(&response.text, 800))
+                .set("coupons_promotions", serde_json::to_value(profile::detect_coupons_promotions(&response.text)).unwrap_or(serde_json::Value::Null))
+                .set("stock_status", serde_json::to_value(profile::extract_stock_status(&response.text)).unwrap_or(serde_json::Value::Null))
                 .set("note", "Public universal ecommerce catalog page extraction.");
 
             if family == "jd" {
@@ -150,12 +167,24 @@ fn make_ecommerce_catalog_spider(site_family: &str) -> Spider {
                 }
             }
 
-            if family != "jd" && family != "generic" && !json_ld_products.is_empty() {
+            let structured_products = if !json_ld_products.is_empty() {
+                json_ld_products.clone()
+            } else {
+                bootstrap_products.clone()
+            };
+            if family != "jd" && !structured_products.is_empty() {
                 let mut results = vec![Output::Item(summary_item)];
-                for product in json_ld_products {
+                for product in structured_products {
                     results.push(Output::Item(
                         Item::new()
-                            .set("kind", format!("{family}_catalog_product"))
+                            .set(
+                                "kind",
+                                if family == "generic" {
+                                    "ecommerce_catalog_product".to_string()
+                                } else {
+                                    format!("{family}_catalog_product")
+                                },
+                            )
                             .set("site_family", family.clone())
                             .set("source_url", response.url.clone())
                             .set("product_id", product.get("sku").cloned().unwrap_or(Value::Null))
@@ -170,6 +199,21 @@ fn make_ecommerce_catalog_spider(site_family: &str) -> Spider {
                             .set(
                                 "review_count",
                                 product.get("review_count").cloned().unwrap_or(Value::Null),
+                            )
+                            .set("shop", product.get("shop").cloned().unwrap_or(Value::Null))
+                            .set(
+                                "api_job_templates",
+                                build_api_job_templates(
+                                    &response.url,
+                                    &family,
+                                    &api_candidates,
+                                    &[product
+                                        .get("sku")
+                                        .and_then(|value| value.as_str())
+                                        .unwrap_or_default()
+                                        .to_string()],
+                                    10,
+                                ),
                             ),
                     ));
                 }
@@ -198,6 +242,8 @@ fn make_ecommerce_detail_spider(site_family: &str) -> Spider {
             let current = profile_for_family(&family);
             let links = response.xpath("//a/@href").get_all();
             let json_ld_products = extract_json_ld_products(&response.text, 1);
+            let bootstrap_products = extract_bootstrap_products(&response.text, 1);
+            let api_candidates = extract_api_candidates(&response.text, 20);
             let universal_fields = BTreeMap::from([
                 (
                     "embedded_json_blocks".to_string(),
@@ -206,7 +252,7 @@ fn make_ecommerce_detail_spider(site_family: &str) -> Spider {
                 ),
                 (
                     "api_candidates".to_string(),
-                    serde_json::to_value(extract_api_candidates(&response.text, 20))
+                    serde_json::to_value(api_candidates.clone())
                         .unwrap_or(Value::Null),
                 ),
                 (
@@ -234,6 +280,10 @@ fn make_ecommerce_detail_spider(site_family: &str) -> Spider {
                 (
                     "json_ld_products".to_string(),
                     serde_json::to_value(json_ld_products.clone()).unwrap_or(Value::Null),
+                ),
+                (
+                    "bootstrap_products".to_string(),
+                    serde_json::to_value(bootstrap_products.clone()).unwrap_or(Value::Null),
                 ),
             ]);
 
@@ -281,6 +331,17 @@ fn make_ecommerce_detail_spider(site_family: &str) -> Spider {
                                 .to_string(),
                         ),
                     ),
+                    (
+                        "api_job_templates".to_string(),
+                        serde_json::to_value(build_api_job_templates(
+                            &response.url,
+                            &family,
+                            &api_candidates,
+                            &[item_id.clone()],
+                            10,
+                        ))
+                        .unwrap_or(Value::Null),
+                    ),
                 ]);
                 detail.extend(universal_fields.clone());
 
@@ -312,12 +373,24 @@ fn make_ecommerce_detail_spider(site_family: &str) -> Spider {
                 return vec![Output::Item(item_from_detail_map(&detail, None, None))];
             }
 
-            if family != "jd" && family != "generic" && !json_ld_products.is_empty() {
-                let product = &json_ld_products[0];
+            let structured_products = if !json_ld_products.is_empty() {
+                json_ld_products.clone()
+            } else {
+                bootstrap_products.clone()
+            };
+            if family != "jd" && !structured_products.is_empty() {
+                let product = &structured_products[0];
                 return vec![Output::Item(
                     Item::new()
-                        .set("kind", format!("{family}_detail_product"))
-                        .set("site_family", family)
+                        .set(
+                            "kind",
+                            if family == "generic" {
+                                "ecommerce_detail_product".to_string()
+                            } else {
+                                format!("{family}_detail_product")
+                            },
+                        )
+                        .set("site_family", family.clone())
                         .set(
                             "title",
                             fallback_value(
@@ -366,7 +439,13 @@ fn make_ecommerce_detail_spider(site_family: &str) -> Spider {
                                 )),
                             ),
                         )
-                        .set("shop", first_match(&response.text, current.shop_patterns))
+                        .set(
+                            "shop",
+                            fallback_value(
+                                product.get("shop").cloned(),
+                                Value::String(first_match(&response.text, current.shop_patterns)),
+                            ),
+                        )
                         .set(
                             "review_url",
                             first_link_with_keywords(
@@ -398,6 +477,13 @@ fn make_ecommerce_detail_spider(site_family: &str) -> Spider {
                                 .unwrap_or(Value::Null),
                         )
                         .set(
+                            "bootstrap_products",
+                            universal_fields
+                                .get("bootstrap_products")
+                                .cloned()
+                                .unwrap_or(Value::Null),
+                        )
+                        .set(
                             "video_candidates",
                             universal_fields.get("video_candidates").cloned().unwrap_or(Value::Null),
                         )
@@ -405,14 +491,54 @@ fn make_ecommerce_detail_spider(site_family: &str) -> Spider {
                             "html_excerpt",
                             universal_fields.get("html_excerpt").cloned().unwrap_or(Value::Null),
                         )
-                        .set("note", "Public ecommerce detail fast path via JSON-LD product extraction."),
+                        .set(
+                            "sku_variants",
+                            serde_json::to_value(profile::extract_sku_variants(&response.text)).unwrap_or(Value::Null),
+                        )
+                        .set(
+                            "image_gallery",
+                            serde_json::to_value(profile::extract_image_gallery(&response.url, &response.xpath("//img/@src").get_all())).unwrap_or(Value::Null),
+                        )
+                        .set(
+                            "parameter_table",
+                            serde_json::to_value(profile::extract_parameter_table(&response.text)).unwrap_or(Value::Null),
+                        )
+                        .set(
+                            "coupons_promotions",
+                            serde_json::to_value(profile::detect_coupons_promotions(&response.text)).unwrap_or(Value::Null),
+                        )
+                        .set(
+                            "stock_status",
+                            serde_json::to_value(profile::extract_stock_status(&response.text)).unwrap_or(Value::Null),
+                        )
+                        .set(
+                            "api_job_templates",
+                            serde_json::to_value(build_api_job_templates(
+                                &response.url,
+                                &family,
+                                &api_candidates,
+                                &[fallback_value(
+                                    product.get("sku").cloned(),
+                                    Value::String(first_match(&response.text, current.item_id_patterns)),
+                                )
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_string()],
+                                10,
+                            ))
+                            .unwrap_or(Value::Null),
+                        )
+                        .set(
+                            "note",
+                            "Public ecommerce detail fast path via structured bootstrap/JSON-LD extraction.",
+                        ),
                 )];
             }
 
             vec![Output::Item(
                 Item::new()
                     .set("kind", "ecommerce_detail")
-                    .set("site_family", family)
+                    .set("site_family", family.clone())
                     .set("title", best_title(response))
                     .set("url", response.url.clone())
                     .set("item_id", first_match(&response.text, current.item_id_patterns))
@@ -461,12 +587,50 @@ fn make_ecommerce_detail_spider(site_family: &str) -> Spider {
                             .unwrap_or(Value::Null),
                     )
                     .set(
+                        "bootstrap_products",
+                        universal_fields
+                            .get("bootstrap_products")
+                            .cloned()
+                            .unwrap_or(Value::Null),
+                    )
+                    .set(
                         "video_candidates",
                         universal_fields.get("video_candidates").cloned().unwrap_or(Value::Null),
                     )
                     .set(
                         "html_excerpt",
                         universal_fields.get("html_excerpt").cloned().unwrap_or(Value::Null),
+                    )
+                    .set(
+                        "sku_variants",
+                        serde_json::to_value(profile::extract_sku_variants(&response.text)).unwrap_or(Value::Null),
+                    )
+                    .set(
+                        "image_gallery",
+                        serde_json::to_value(profile::extract_image_gallery(&response.url, &response.xpath("//img/@src").get_all())).unwrap_or(Value::Null),
+                    )
+                    .set(
+                        "parameter_table",
+                        serde_json::to_value(profile::extract_parameter_table(&response.text)).unwrap_or(Value::Null),
+                    )
+                    .set(
+                        "coupons_promotions",
+                        serde_json::to_value(profile::detect_coupons_promotions(&response.text)).unwrap_or(Value::Null),
+                    )
+                    .set(
+                        "stock_status",
+                        serde_json::to_value(profile::extract_stock_status(&response.text)).unwrap_or(Value::Null),
+                    )
+                    .set(
+                        "api_job_templates",
+                        serde_json::to_value(build_api_job_templates(
+                            &response.url,
+                            &family,
+                            &api_candidates,
+                            &[first_match(&response.text, current.item_id_patterns)],
+                            10,
+                        ))
+                        .unwrap_or(Value::Null),
                     )
                     .set("note", "Public universal ecommerce detail extraction."),
             )]
@@ -490,6 +654,7 @@ fn make_ecommerce_review_spider(site_family: &str) -> Spider {
             let family = site_family_from_response(response);
             let current = profile_for_family(&family);
             let json_ld_products = extract_json_ld_products(&response.text, 1);
+            let bootstrap_products = extract_bootstrap_products(&response.text, 1);
             let embedded_json_blocks = extract_embedded_json_blocks(&response.text, 5, 2000);
             let api_candidates = extract_api_candidates(&response.text, 20);
             let script_sources = response.xpath("//script/@src").get_all();
@@ -533,7 +698,7 @@ fn make_ecommerce_review_spider(site_family: &str) -> Spider {
                 return vec![Output::Item(
                     Item::new()
                         .set("kind", "jd_review_summary")
-                        .set("site_family", family)
+                        .set("site_family", family.clone())
                         .set("url", response.url.clone())
                         .set(
                             "item_id",
@@ -557,18 +722,44 @@ fn make_ecommerce_review_spider(site_family: &str) -> Spider {
                         .set("video_candidates", video_candidates.clone())
                         .set("excerpt", review_excerpt.clone())
                         .set(
+                            "api_job_templates",
+                            build_api_job_templates(
+                                &response.url,
+                                &family,
+                                &api_candidates,
+                                &[payload
+                                    .get("productId")
+                                    .and_then(|value| value.as_str())
+                                    .map(str::to_string)
+                                    .unwrap_or_else(|| extract_jd_item_id(&response.url, &response.text))],
+                                10,
+                            ),
+                        )
+                        .set(
                             "note",
                             "Public universal ecommerce review extraction with JD review fast path.",
                         ),
                 )];
             }
 
-            if family != "jd" && family != "generic" && !json_ld_products.is_empty() {
-                let product = &json_ld_products[0];
+            let structured_products = if !json_ld_products.is_empty() {
+                json_ld_products.clone()
+            } else {
+                bootstrap_products.clone()
+            };
+            if family != "jd" && !structured_products.is_empty() {
+                let product = &structured_products[0];
                 return vec![Output::Item(
                     Item::new()
-                        .set("kind", format!("{family}_review_summary"))
-                        .set("site_family", family)
+                        .set(
+                            "kind",
+                            if family == "generic" {
+                                "ecommerce_review_summary".to_string()
+                            } else {
+                                format!("{family}_review_summary")
+                            },
+                        )
+                        .set("site_family", family.clone())
                         .set("url", response.url.clone())
                         .set(
                             "item_id",
@@ -596,20 +787,41 @@ fn make_ecommerce_review_spider(site_family: &str) -> Spider {
                         )
                         .set("brand", product.get("brand").cloned().unwrap_or(Value::Null))
                         .set("category", product.get("category").cloned().unwrap_or(Value::Null))
-                        .set("embedded_json_blocks", embedded_json_blocks)
-                        .set("api_candidates", api_candidates)
-                        .set("script_sources", script_sources)
-                        .set("json_ld_products", json_ld_products)
-                        .set("video_candidates", video_candidates)
-                        .set("excerpt", review_excerpt)
-                        .set("note", "Public ecommerce review fast path via JSON-LD aggregate rating extraction."),
+                        .set("shop", product.get("shop").cloned().unwrap_or(Value::Null))
+                        .set("embedded_json_blocks", embedded_json_blocks.clone())
+                        .set("api_candidates", api_candidates.clone())
+                        .set("script_sources", script_sources.clone())
+                        .set("json_ld_products", json_ld_products.clone())
+                        .set("bootstrap_products", bootstrap_products.clone())
+                        .set("video_candidates", video_candidates.clone())
+                        .set("excerpt", review_excerpt.clone())
+                        .set(
+                            "api_job_templates",
+                            build_api_job_templates(
+                                &response.url,
+                                &family,
+                                &api_candidates,
+                                &[fallback_value(
+                                    product.get("sku").cloned(),
+                                    Value::String(first_match(&response.text, current.item_id_patterns)),
+                                )
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_string()],
+                                10,
+                            ),
+                        )
+                        .set(
+                            "note",
+                            "Public ecommerce review fast path via structured bootstrap/JSON-LD extraction.",
+                        ),
                 )];
             }
 
             vec![Output::Item(
                 Item::new()
                     .set("kind", "ecommerce_review")
-                    .set("site_family", family)
+                    .set("site_family", family.clone())
                     .set("url", response.url.clone())
                     .set("item_id", first_match(&response.text, current.item_id_patterns))
                     .set("rating", first_match(&response.text, current.rating_patterns))
@@ -625,12 +837,23 @@ fn make_ecommerce_review_spider(site_family: &str) -> Spider {
                             10,
                         ),
                     )
-                    .set("embedded_json_blocks", embedded_json_blocks)
-                    .set("api_candidates", api_candidates)
-                    .set("script_sources", script_sources)
-                    .set("json_ld_products", json_ld_products)
-                    .set("video_candidates", video_candidates)
-                    .set("excerpt", review_excerpt)
+                    .set("embedded_json_blocks", embedded_json_blocks.clone())
+                    .set("api_candidates", api_candidates.clone())
+                    .set("script_sources", script_sources.clone())
+                    .set("json_ld_products", json_ld_products.clone())
+                    .set("bootstrap_products", bootstrap_products.clone())
+                    .set("video_candidates", video_candidates.clone())
+                    .set("excerpt", review_excerpt.clone())
+                    .set(
+                        "api_job_templates",
+                        build_api_job_templates(
+                            &response.url,
+                            &family,
+                            &api_candidates,
+                            &[first_match(&response.text, current.item_id_patterns)],
+                            10,
+                        ),
+                    )
                     .set("note", "Public universal ecommerce review extraction."),
             )]
         }),
@@ -645,6 +868,44 @@ fn make_ecommerce_review_spider(site_family: &str) -> Spider {
     .with_start_header("Referer", "https://item.jd.com/100000000000.html")
 }
 
+pub struct EcommerceCrawler {
+    site_family: String,
+    output_dir: String,
+}
+
+impl EcommerceCrawler {
+    pub fn new(site_family: &str) -> Self {
+        Self {
+            site_family: site_family.to_string(),
+            output_dir: "artifacts/exports".to_string(),
+        }
+    }
+
+    pub fn build_spider(&self, mode: &str) -> (Spider, &'static str) {
+        match mode {
+            "detail" => (make_ecommerce_detail_spider(&self.site_family), "detail"),
+            "review" => (make_ecommerce_review_spider(&self.site_family), "review"),
+            _ => (make_ecommerce_catalog_spider(&self.site_family), "catalog"),
+        }
+    }
+
+    pub fn run(&self, mode: &str) -> Result<(usize, String), String> {
+        let (spider, normalized_mode) = self.build_spider(mode);
+        let items = CrawlerProcess::new(spider).run()?;
+        let output_path = format!(
+            "{}/rustspider-{}-{normalized_mode}.json",
+            self.output_dir, self.site_family
+        );
+        let mut exporter = FeedExporter::new("json", output_path.clone());
+        for item in items.iter().cloned() {
+            exporter.export_item(item);
+        }
+        exporter.close()?;
+
+        Ok((items.len(), output_path))
+    }
+}
+
 fn main() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
     let mode = args.get(1).map(String::as_str).unwrap_or("catalog");
@@ -653,21 +914,8 @@ fn main() -> Result<(), String> {
         .map(String::as_str)
         .unwrap_or(DEFAULT_SITE_FAMILY);
 
-    let (spider, normalized_mode) = match mode {
-        "detail" => (make_ecommerce_detail_spider(site_family), "detail"),
-        "review" => (make_ecommerce_review_spider(site_family), "review"),
-        _ => (make_ecommerce_catalog_spider(site_family), "catalog"),
-    };
-
-    let items = CrawlerProcess::new(spider).run()?;
-    let output_path = format!("artifacts/exports/rustspider-{site_family}-{normalized_mode}.json");
-    let mut exporter = FeedExporter::new("json", output_path.clone());
-    for item in items.iter().cloned() {
-        exporter.export_item(item);
-    }
-    exporter.close()?;
-
-    println!("exported {} items to {}", items.len(), output_path);
+    let (count, output_path) = EcommerceCrawler::new(site_family).run(mode)?;
+    println!("exported {count} items to {output_path}");
     Ok(())
 }
 
@@ -720,6 +968,21 @@ fn item_from_detail_map(
         .set(
             "html_excerpt",
             detail.get("html_excerpt").cloned().unwrap_or(Value::Null),
+        )
+        .set(
+            "sku_variants",
+            detail.get("sku_variants").cloned().unwrap_or(Value::Null),
+        )
+        .set(
+            "coupons_promotions",
+            detail
+                .get("coupons_promotions")
+                .cloned()
+                .unwrap_or(Value::Null),
+        )
+        .set(
+            "stock_status",
+            detail.get("stock_status").cloned().unwrap_or(Value::Null),
         )
         .set(
             "script_sources",

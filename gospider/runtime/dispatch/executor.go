@@ -57,7 +57,7 @@ func (e *unsupportedExecutor) Execute(_ context.Context, job core.JobSpec) (*cor
 	result.Metadata["capability"] = "unsupported"
 	result.FinishedAt = time.Now()
 	result.Finalize()
-	return result, fmt.Errorf(result.Error)
+	return result, fmt.Errorf("%s", result.Error)
 }
 
 type mediaExecutor struct {
@@ -96,7 +96,7 @@ func (e *mediaExecutor) Execute(_ context.Context, job core.JobSpec) (*core.JobR
 		result.AddWarning("Use a dedicated media runtime for segmented stream downloads.")
 		result.FinishedAt = time.Now()
 		result.Finalize()
-		return result, fmt.Errorf(result.Error)
+		return result, fmt.Errorf("%s", result.Error)
 	}
 
 	downloader := media.NewMediaDownloader(outputDir)
@@ -116,13 +116,13 @@ func (e *mediaExecutor) Execute(_ context.Context, job core.JobSpec) (*core.JobR
 		result.Error = "media download returned no result"
 		result.FinishedAt = time.Now()
 		result.Finalize()
-		return result, fmt.Errorf(result.Error)
+		return result, fmt.Errorf("%s", result.Error)
 	}
 	if !download.Success {
 		result.Error = download.Error
 		result.FinishedAt = time.Now()
 		result.Finalize()
-		return result, fmt.Errorf(download.Error)
+		return result, fmt.Errorf("%s", download.Error)
 	}
 
 	result.State = core.StateSucceeded
@@ -179,7 +179,7 @@ func (e *aiExecutor) Execute(_ context.Context, job core.JobSpec) (*core.JobResu
 		applyMockEnvelope(result, job.Metadata)
 		result.FinishedAt = time.Now()
 		result.Finalize()
-		return result, fmt.Errorf(result.Error)
+		return result, fmt.Errorf("%s", result.Error)
 	}
 
 	config := gai.DefaultAIConfig()
@@ -208,7 +208,7 @@ func (e *aiExecutor) Execute(_ context.Context, job core.JobSpec) (*core.JobResu
 		applyMockEnvelope(result, job.Metadata)
 		result.FinishedAt = time.Now()
 		result.Finalize()
-		return result, fmt.Errorf(result.Error)
+		return result, fmt.Errorf("%s", result.Error)
 	}
 
 	instructions := "Extract the requested fields from the supplied content."

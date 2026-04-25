@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/antchfx/htmlquery"
 	"github.com/PuerkitoBio/goquery"
+	"github.com/antchfx/htmlquery"
 	"github.com/tidwall/gjson"
 	"golang.org/x/net/html"
 )
@@ -38,8 +38,14 @@ func NewHTMLParser(html string) *HTMLParser {
 // CSS 使用 CSS 选择器提取
 func (p *HTMLParser) CSS(selector string) []string {
 	results := make([]string, 0)
-	p.doc.Find(selector).Each(func(i int, s *goquery.Selection) {
-		results = append(results, strings.TrimSpace(s.Text()))
+	query, mode, attr := normalizeCSSSelector(selector)
+	if p == nil || p.doc == nil || query == "" {
+		return results
+	}
+	p.doc.Find(query).Each(func(i int, s *goquery.Selection) {
+		if value := selectionValue(s, mode, attr); value != "" {
+			results = append(results, value)
+		}
 	})
 	return results
 }
@@ -56,9 +62,16 @@ func (p *HTMLParser) CSSFirst(selector string) string {
 // CSSAttr 获取属性
 func (p *HTMLParser) CSSAttr(selector, attr string) []string {
 	results := make([]string, 0)
-	p.doc.Find(selector).Each(func(i int, s *goquery.Selection) {
-		if val, exists := s.Attr(attr); exists {
-			results = append(results, val)
+	query, _, pseudoAttr := normalizeCSSSelector(selector)
+	if pseudoAttr != "" {
+		attr = pseudoAttr
+	}
+	if p == nil || p.doc == nil || query == "" || strings.TrimSpace(attr) == "" {
+		return results
+	}
+	p.doc.Find(query).Each(func(i int, s *goquery.Selection) {
+		if val, exists := s.Attr(attr); exists && strings.TrimSpace(val) != "" {
+			results = append(results, strings.TrimSpace(val))
 		}
 	})
 	return results
@@ -99,25 +112,43 @@ func (p *HTMLParser) XPathFirst(xpath string) string {
 	return result
 }
 
-// XPathFirstStrict runs a full XPath query against the parsed HTML document.
-func (p *HTMLParser) XPathFirstStrict(xpath string) (string, error) {
+// XPath returns every value matched by a full XPath expression.
+func (p *HTMLParser) XPath(xpath string) []string {
+	values, _ := p.XPathStrict(xpath)
+	return values
+}
+
+// XPathStrict returns every value matched by a full XPath expression.
+func (p *HTMLParser) XPathStrict(xpath string) ([]string, error) {
 	if p == nil || p.node == nil {
-		return "", fmt.Errorf("html parser is not initialized")
+		return nil, fmt.Errorf("html parser is not initialized")
 	}
 	if strings.TrimSpace(xpath) == "" {
-		return "", fmt.Errorf("xpath expression is empty")
+		return nil, fmt.Errorf("xpath expression is empty")
 	}
-	node, err := htmlquery.Query(p.node, xpath)
+	nodes, err := htmlquery.QueryAll(p.node, xpath)
 	if err != nil {
-		return "", fmt.Errorf("xpath evaluation error: %w", err)
+		return nil, fmt.Errorf("xpath evaluation error: %w", err)
 	}
-	if node == nil {
+	values := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if value := xpathNodeValue(node); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values, nil
+}
+
+// XPathFirstStrict runs a full XPath query against the parsed HTML document.
+func (p *HTMLParser) XPathFirstStrict(xpath string) (string, error) {
+	values, err := p.XPathStrict(xpath)
+	if err != nil {
+		return "", err
+	}
+	if len(values) == 0 {
 		return "", nil
 	}
-	if value := strings.TrimSpace(htmlquery.InnerText(node)); value != "" {
-		return value, nil
-	}
-	return strings.TrimSpace(htmlquery.SelectAttr(node, "href")), nil
+	return values[0], nil
 }
 
 // MustCompileRegex compiles a regex pattern and returns nil on failure.
@@ -129,6 +160,56 @@ func MustCompileRegex(expr string) *regexp.Regexp {
 	return compiled
 }
 
+func normalizeCSSSelector(selector string) (query string, mode string, attr string) {
+	query = strings.TrimSpace(selector)
+	mode = "text"
+	lower := strings.ToLower(query)
+	if strings.HasSuffix(lower, "::text") {
+		return strings.TrimSpace(query[:len(query)-len("::text")]), "text", ""
+	}
+	if strings.HasSuffix(lower, "::html") {
+		return strings.TrimSpace(query[:len(query)-len("::html")]), "html", ""
+	}
+	attrRe := regexp.MustCompile(`(?i)::attr\(([^)]+)\)\s*$`)
+	if match := attrRe.FindStringSubmatchIndex(query); match != nil {
+		return strings.TrimSpace(query[:match[0]]), "attr", strings.TrimSpace(query[match[2]:match[3]])
+	}
+	return query, mode, attr
+}
+
+func selectionValue(s *goquery.Selection, mode string, attr string) string {
+	switch mode {
+	case "attr":
+		if value, ok := s.Attr(attr); ok {
+			return strings.TrimSpace(value)
+		}
+	case "html":
+		if value, err := s.Html(); err == nil {
+			return strings.TrimSpace(value)
+		}
+	default:
+		return strings.TrimSpace(s.Text())
+	}
+	return ""
+}
+
+func xpathNodeValue(node *html.Node) string {
+	if node == nil {
+		return ""
+	}
+	if value := strings.TrimSpace(htmlquery.InnerText(node)); value != "" {
+		return value
+	}
+	for _, attr := range node.Attr {
+		if strings.TrimSpace(attr.Val) != "" {
+			return strings.TrimSpace(attr.Val)
+		}
+	}
+	if value := strings.TrimSpace(htmlquery.SelectAttr(node, "href")); value != "" {
+		return value
+	}
+	return strings.TrimSpace(node.Data)
+}
 
 // HTML 获取 HTML
 func (p *HTMLParser) HTML() string {

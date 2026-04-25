@@ -11,6 +11,16 @@ type PlaywrightBrowserOptions struct {
 	Timeout   time.Duration
 }
 
+func DefaultPlaywrightOptions() *PlaywrightBrowserOptions {
+	return &PlaywrightBrowserOptions{
+		Headless:  true,
+		Width:     1920,
+		Height:    1080,
+		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		Timeout:   30 * time.Second,
+	}
+}
+
 type BrowserAdapterSupport struct {
 	Supported     bool     `json:"supported"`
 	Mode          string   `json:"mode"`
@@ -19,22 +29,23 @@ type BrowserAdapterSupport struct {
 }
 
 type BrowserCompatibilityMatrix struct {
-	BaseEngine  string                           `json:"base_engine"`
-	BridgeStyle string                           `json:"bridge_style"`
-	Surfaces    map[string]BrowserAdapterSupport `json:"surfaces"`
-	Artifacts   map[string]bool                  `json:"artifacts"`
-	Interaction map[string]string                `json:"interaction,omitempty"`
-	Constraints []string                         `json:"constraints,omitempty"`
+	BaseEngine     string                           `json:"base_engine"`
+	BridgeStyle    string                           `json:"bridge_style"`
+	Surfaces       map[string]BrowserAdapterSupport `json:"surfaces"`
+	Artifacts      map[string]bool                  `json:"artifacts"`
+	Interaction    map[string]string                `json:"interaction,omitempty"`
+	AccessFriction map[string]any                   `json:"access_friction,omitempty"`
+	Constraints    []string                         `json:"constraints,omitempty"`
 }
 
 func DefaultCompatibilityBridge() BrowserAdapterSupport {
 	return BrowserAdapterSupport{
 		Supported:     true,
-		Mode:          "compatibility-bridge",
-		AdapterEngine: "chromedp",
+		Mode:          "native-process",
+		AdapterEngine: "node-playwright",
 		Notes: []string{
-			"reuses the existing chromedp browser runtime",
-			"does not embed a separate native Playwright or Selenium engine",
+			"executes the shared Node Playwright helper",
+			"requires npm package playwright and browser binaries to be installed",
 		},
 	}
 }
@@ -87,7 +98,7 @@ func BrowserPoolShouldRecycle(
 func BrowserCompatibilitySupport() BrowserCompatibilityMatrix {
 	bridge := DefaultCompatibilityBridge()
 	return BrowserCompatibilityMatrix{
-		BaseEngine:  "chromedp+selenium-webdriver",
+		BaseEngine:  "chromedp+selenium-webdriver+node-playwright",
 		BridgeStyle: "native-and-bridge",
 		Surfaces: map[string]BrowserAdapterSupport{
 			"playwright": bridge,
@@ -116,8 +127,13 @@ func BrowserCompatibilitySupport() BrowserCompatibilityMatrix {
 			"shadow_dom":              "open-shadow-root-helpers",
 			"realtime_stream_capture": "cdp-websocket-sse-events",
 		},
+		AccessFriction: map[string]any{
+			"classifier": true,
+			"signals":    []string{"captcha", "rate-limited", "managed-browser-challenge", "auth-required", "waf-vendor"},
+			"actions":    []string{"honor-retry-after", "render-with-browser", "persist-session-state", "pause-for-human-access"},
+		},
 		Constraints: []string{
-			"playwright remains bridged to the chromedp runtime; selenium/webdriver is now available as a native remote protocol surface",
+			"playwright support is a native helper-process adapter; install browsers with `npx playwright install` before live use",
 		},
 	}
 }

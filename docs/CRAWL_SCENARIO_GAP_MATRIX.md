@@ -1,6 +1,6 @@
 # Crawl Scenario Gap Matrix
 
-Updated: 2026-04-21
+Updated: 2026-04-24
 
 This document answers a practical question:
 
@@ -19,6 +19,7 @@ Legend:
 | Logged-in crawl with saved session assets | Good | Good | Good | Good | `scrapy auth-capture` / `auth-validate` style flows are present across the repo |
 | Password + OTP/TOTP login flow assistance | Good | Good | Good | Good | Source contains OTP/TOTP-oriented auth action templates |
 | Turnstile / reCAPTCHA / hCaptcha recovery | Good | Good | Good | Good | Maturest in Rust ultimate / anti-bot paths |
+| Access-friction classification and compliant recovery plan | Good | Good | Good | Good | All four runtimes expose shared friction reports with challenge handoff and capability plans |
 | SPA/XHR/API discovery from browser artifacts | Good | Good | Good | Good | Browser artifacts + reverse tooling give workable coverage |
 | Signed API / JS crypto reconstruction | Good | Good | Good | Good | Strong NodeReverse and encrypted-module coverage |
 | Infinite scroll / dynamic pagination | Good | Good | Good | Good | Browser/workflow layers expose scroll and artifact capture |
@@ -66,9 +67,12 @@ If you want to improve real scenario coverage with the highest payoff:
 3. Add WebSocket/SSE replay workflow surfaces above the raw collectors
 4. Add WebAuthn/passkey-specific login handling
 
+CAPTCHA, login challenge, and risk-control flows are no longer treated as generic retry problems. Use the shared access-friction report to decide whether to slow down, render with a browser, pause for authorized human access, persist session state, or stop.
+
 ## Related Docs
 
 - [`LATEST_SCENARIO_CASES.md`](LATEST_SCENARIO_CASES.md)
+- [`ACCESS_FRICTION_PLAYBOOK.md`](ACCESS_FRICTION_PLAYBOOK.md)
 - [`FRAMEWORK_CAPABILITIES.md`](FRAMEWORK_CAPABILITIES.md)
 - [`CRAWLER_TYPE_PLAYBOOK.md`](CRAWLER_TYPE_PLAYBOOK.md)
 - [`SITE_PRESET_PLAYBOOK.md`](SITE_PRESET_PLAYBOOK.md)

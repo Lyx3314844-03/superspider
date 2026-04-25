@@ -803,14 +803,19 @@ class BilibiliParser:
         patterns = {
             "m3u8_url": r'(https?://[^"\s]+\.m3u8[^"\s]*)',
             "mp4_url": r'(https?://[^"\s]+\.mp4[^"\s]*)',
-            "dash_url": r'"baseUrl"\s*:\s*"(https?://[^"]+)"',
+            "dash_url": r'"(?:baseUrl|base_url)"\s*:\s*"(https?://[^"]+)"',
             "cover_url": r'"(?:cover|pic|thumbnailUrl)"\s*:\s*"([^"]+)"',
             "description": r'"(?:desc|description)"\s*:\s*"([^"]+)"',
         }
         for key, pattern in patterns.items():
             match = re.search(pattern, html)
             if match:
-                data[key] = match.group(1)
+                data[key] = (
+                    match.group(1)
+                    .replace("\\u002F", "/")
+                    .replace("\\u003A", ":")
+                    .replace("\\/", "/")
+                )
 
         duration_match = re.search(r'"duration"\s*:\s*(\d+)', html)
         if duration_match:

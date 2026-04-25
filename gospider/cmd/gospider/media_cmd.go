@@ -787,7 +787,7 @@ func handleTencent(url, outputDir string, download bool) error {
 	downloader := media.NewMediaDownloader(outputDir)
 	result := downloader.DownloadVideo(downloadURL, mediaFilename(info.Title, "tencent_video", ".mp4"))
 	if !result.Success {
-		return fmt.Errorf(result.Error)
+		return fmt.Errorf("%s", result.Error)
 	}
 
 	fmt.Printf("✅ 下载完成：%s\n", result.Path)
@@ -836,7 +836,7 @@ func handleBilibili(url, outputDir string, download bool) error {
 	downloader := media.NewMediaDownloader(outputDir)
 	result := downloader.DownloadVideo(downloadURL, mediaFilename(info.Title, info.BVID, ".mp4"))
 	if !result.Success {
-		return fmt.Errorf(result.Error)
+		return fmt.Errorf("%s", result.Error)
 	}
 
 	fmt.Printf("✅ 下载完成：%s\n", result.Path)

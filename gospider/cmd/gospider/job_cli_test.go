@@ -124,8 +124,11 @@ func TestPrintCapabilitiesIncludesIntegratedRuntimes(t *testing.T) {
 			t.Fatalf("expected browser compatibility surfaces in payload: %#v", payload)
 		}
 		playwright, ok := surfaces["playwright"].(map[string]interface{})
-		if !ok || playwright["adapter_engine"] != "chromedp" {
-			t.Fatalf("expected chromedp-backed playwright compatibility in payload: %#v", payload)
+		if !ok || playwright["adapter_engine"] != "node-playwright" {
+			t.Fatalf("expected node-playwright compatibility in payload: %#v", payload)
+		}
+		if playwright["mode"] != "native-process" {
+			t.Fatalf("expected native-process playwright compatibility in payload: %#v", payload)
 		}
 	} else {
 		t.Fatalf("expected browser_compatibility in payload: %#v", payload)

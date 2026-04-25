@@ -18,6 +18,7 @@ import (
 	"gospider/distributed"
 	"gospider/events"
 	"gospider/graph"
+	"gospider/llm"
 	"gospider/monitor"
 	"gospider/research"
 )
@@ -125,6 +126,8 @@ func (s *Server) setupRoutes() {
 			r.Get("/stats", s.getStats)
 			r.Get("/events", s.listEvents)
 			r.Post("/graph/extract", s.extractGraph)
+			r.Post("/llm/markdown", s.llmMarkdown)
+			r.Post("/llm/markdown/stream", s.llmMarkdownStream)
 			r.Post("/research/run", s.runResearch)
 			r.Post("/research/async", s.runResearchAsync)
 			r.Post("/research/soak", s.runResearchSoak)
@@ -250,6 +253,52 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.jsonResponse(w, result)
+}
+
+type llmMarkdownRequest struct {
+	HTML      string `json:"html"`
+	URL       string `json:"url"`
+	MaxChars  int    `json:"max_chars"`
+	ChunkSize int    `json:"chunk_size"`
+}
+
+func (s *Server) llmMarkdown(w http.ResponseWriter, r *http.Request) {
+	var req llmMarkdownRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.HTML) == "" {
+		s.errorResponse(w, "html is required", http.StatusBadRequest)
+		return
+	}
+	markdown := llm.HTMLToMarkdown(req.HTML, req.URL, req.MaxChars)
+	s.jsonResponse(w, map[string]any{
+		"success":   true,
+		"markdown":  markdown,
+		"truncated": strings.HasSuffix(markdown, "[truncated]"),
+	})
+}
+
+func (s *Server) llmMarkdownStream(w http.ResponseWriter, r *http.Request) {
+	var req llmMarkdownRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.HTML) == "" {
+		s.errorResponse(w, "html is required", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	markdown := llm.HTMLToMarkdown(req.HTML, req.URL, req.MaxChars)
+	for _, event := range llm.SSEMarkdownEvents(markdown, req.ChunkSize) {
+		_, _ = w.Write([]byte(event))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}
 }
 
 // createTask 创建任务
@@ -816,16 +865,16 @@ type createTaskRequest struct {
 }
 
 type researchRequest struct {
-	URL        string                   `json:"url"`
-	URLs       []string                 `json:"urls"`
-	Content    string                   `json:"content"`
-	Contents   []string                 `json:"contents"`
-	Schema     map[string]interface{}   `json:"schema"`
-	SchemaJSON string                   `json:"schema_json"`
-	Output     map[string]interface{}   `json:"output"`
-	Rounds     int                      `json:"rounds"`
-	Concurrency int                     `json:"concurrency"`
-	Policy     map[string]interface{}   `json:"policy"`
+	URL         string                 `json:"url"`
+	URLs        []string               `json:"urls"`
+	Content     string                 `json:"content"`
+	Contents    []string               `json:"contents"`
+	Schema      map[string]interface{} `json:"schema"`
+	SchemaJSON  string                 `json:"schema_json"`
+	Output      map[string]interface{} `json:"output"`
+	Rounds      int                    `json:"rounds"`
+	Concurrency int                    `json:"concurrency"`
+	Policy      map[string]interface{} `json:"policy"`
 }
 
 func (r researchRequest) toJob() (research.ResearchJob, error) {

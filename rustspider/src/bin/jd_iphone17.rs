@@ -120,7 +120,10 @@ impl JDiPhone17Spider {
         let resp = self
             .client
             .get(url)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
             .header("Referer", "https://www.jd.com/")
             .send()
@@ -252,7 +255,11 @@ impl JDiPhone17Spider {
         }
 
         for product in &products {
-            println!("    [价格] {}... ¥{}", truncate_str(&product.name, 30), product.price);
+            println!(
+                "    [价格] {}... ¥{}",
+                truncate_str(&product.name, 30),
+                product.price
+            );
         }
 
         self.products.extend(products);
@@ -309,9 +316,11 @@ impl JDiPhone17Spider {
         println!("============================================================");
         println!("商品总数: {}", self.products.len());
 
-        let prices: Vec<f64> = self.products.iter().filter_map(|p| {
-            if p.price > 0.0 { Some(p.price) } else { None }
-        }).collect();
+        let prices: Vec<f64> = self
+            .products
+            .iter()
+            .filter_map(|p| if p.price > 0.0 { Some(p.price) } else { None })
+            .collect();
 
         if !prices.is_empty() {
             let min = prices.iter().cloned().fold(f64::INFINITY, f64::min);

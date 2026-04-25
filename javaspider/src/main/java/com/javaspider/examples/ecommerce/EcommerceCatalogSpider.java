@@ -33,6 +33,7 @@ public final class EcommerceCatalogSpider extends Spider {
         EcommerceSiteProfiles.Profile current = EcommerceSiteProfiles.profileFor(family);
         List<String> links = response.selector().css("a").attrs("href");
         List<Map<String, Object>> jsonLdProducts = EcommerceSiteProfiles.extractJsonLdProducts(response.getBody(), 5);
+        List<Map<String, Object>> bootstrapProducts = EcommerceSiteProfiles.extractBootstrapProducts(response.getBody(), 5);
         Item summary = new Item()
             .set("kind", "jd".equals(family) ? "jd_catalog_page" : "ecommerce_catalog_page")
             .set("site_family", family)
@@ -49,8 +50,21 @@ public final class EcommerceCatalogSpider extends Spider {
             .set("api_candidates", EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20))
             .set("embedded_json_blocks", EcommerceSiteProfiles.extractEmbeddedJsonBlocks(response.getBody(), 5, 2000))
             .set("json_ld_products", jsonLdProducts)
+            .set("bootstrap_products", bootstrapProducts)
+            .set(
+                "api_job_templates",
+                EcommerceSiteProfiles.buildApiJobTemplates(
+                    response.getUrl(),
+                    family,
+                    EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20),
+                    EcommerceSiteProfiles.collectMatches(response.getBody(), current.itemIdPatterns, 10),
+                    10
+                )
+            )
             .set("page_excerpt", EcommerceSiteProfiles.textExcerpt(response.getBody(), 800))
-            .set("note", "Public universal ecommerce catalog page extraction.");
+            .set("coupons_promotions", EcommerceSiteProfiles.detectCouponsPromotions(response.getBody()))
+            .set("stock_status", EcommerceSiteProfiles.extractStockStatus(response.getBody()))
+            .set("note", "Enhanced universal ecommerce catalog page extraction (v2.0).");
 
         if ("jd".equals(family)) {
             List<Map<String, Object>> products = EcommerceSiteProfiles.extractJDCatalogProducts(response.getBody());
@@ -70,15 +84,14 @@ public final class EcommerceCatalogSpider extends Spider {
             }
         }
 
-        if (!"jd".equals(family) && !"generic".equals(family) && !jsonLdProducts.isEmpty()) {
+        List<Map<String, Object>> structuredProducts = !jsonLdProducts.isEmpty() ? jsonLdProducts : bootstrapProducts;
+        if (!"jd".equals(family) && !structuredProducts.isEmpty()) {
             List<Object> results = new java.util.ArrayList<>();
             results.add(summary);
-            @SuppressWarnings("unchecked")
-            List<String> productLinks = (List<String>) summary.get("product_link_candidates", java.util.List.of());
-            @SuppressWarnings("unchecked")
-            List<String> skuCandidates = (List<String>) summary.get("sku_candidates", java.util.List.of());
-            for (int i = 0; i < jsonLdProducts.size(); i++) {
-                Map<String, Object> product = jsonLdProducts.get(i);
+            List<String> productLinks = stringList(summary.get("product_link_candidates", java.util.List.of()));
+            List<String> skuCandidates = stringList(summary.get("sku_candidates", java.util.List.of()));
+            for (int i = 0; i < structuredProducts.size(); i++) {
+                Map<String, Object> product = structuredProducts.get(i);
                 String url = String.valueOf(product.getOrDefault("url", ""));
                 if (url.isBlank() && i < productLinks.size()) {
                     url = productLinks.get(i);
@@ -88,7 +101,7 @@ public final class EcommerceCatalogSpider extends Spider {
                     sku = skuCandidates.get(0);
                 }
                 results.add(new Item()
-                    .set("kind", family + "_catalog_product")
+                    .set("kind", "generic".equals(family) ? "ecommerce_catalog_product" : family + "_catalog_product")
                     .set("site_family", family)
                     .set("source_url", response.getUrl())
                     .set("product_id", sku)
@@ -100,7 +113,18 @@ public final class EcommerceCatalogSpider extends Spider {
                     .set("price", product.get("price"))
                     .set("currency", product.get("currency"))
                     .set("rating", product.get("rating"))
-                    .set("review_count", product.get("review_count")));
+                    .set("review_count", product.get("review_count"))
+                    .set("shop", product.get("shop"))
+                    .set(
+                        "api_job_templates",
+                        EcommerceSiteProfiles.buildApiJobTemplates(
+                            response.getUrl(),
+                            family,
+                            EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20),
+                            List.of(sku),
+                            10
+                        )
+                    ));
             }
             return results;
         }
@@ -145,6 +169,19 @@ public final class EcommerceCatalogSpider extends Spider {
     private static List<String> merge(List<String> first, List<String> second) {
         List<String> values = new java.util.ArrayList<>(first);
         values.addAll(second);
+        return values;
+    }
+
+    private static List<String> stringList(Object value) {
+        if (!(value instanceof List<?> rawValues)) {
+            return java.util.List.of();
+        }
+        List<String> values = new java.util.ArrayList<>(rawValues.size());
+        for (Object rawValue : rawValues) {
+            if (rawValue != null) {
+                values.add(String.valueOf(rawValue));
+            }
+        }
         return values;
     }
 }

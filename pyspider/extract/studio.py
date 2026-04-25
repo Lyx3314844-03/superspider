@@ -1,6 +1,7 @@
 import json
 import re
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union
 
 from pyspider.parser.parser import HTMLParser, JSONParser
 
@@ -13,6 +14,59 @@ try:
     from lxml import html as lxml_html  # type: ignore
 except ModuleNotFoundError:  # pragma: no cover
     lxml_html = None
+
+
+@dataclass(frozen=True)
+class ExtractionRule:
+    field: str
+    type: str
+    expr: str
+    attr: str = ""
+    all: bool = False
+    required: bool = False
+
+
+class SelectorExtractor:
+    def extract(self, content: str, rules: List[Union[ExtractionRule, Dict[str, Any]]]) -> Dict[str, Any]:
+        html_parser = HTMLParser(content)
+        json_parser = JSONParser(content) if self._looks_like_json(content) else None
+        result: Dict[str, Any] = {}
+        for raw_rule in rules:
+            rule = self._coerce_rule(raw_rule)
+            value = ExtractionStudio()._extract_with_spec(
+                content,
+                html_parser,
+                json_parser,
+                {
+                    "field": rule.field,
+                    "type": rule.type,
+                    "expr": rule.expr,
+                    "attr": rule.attr,
+                    "all": rule.all,
+                    "required": rule.required,
+                },
+            )
+            if value in (None, ""):
+                if rule.required:
+                    raise ValueError(f'required extract field "{rule.field}" could not be resolved')
+                continue
+            result[rule.field] = value
+        return result
+
+    def _coerce_rule(self, rule: Union[ExtractionRule, Dict[str, Any]]) -> ExtractionRule:
+        if isinstance(rule, ExtractionRule):
+            return rule
+        return ExtractionRule(
+            field=str(rule.get("field") or "").strip(),
+            type=str(rule.get("type") or "").strip().lower(),
+            expr=str(rule.get("expr") or rule.get("selector") or "").strip(),
+            attr=str(rule.get("attr") or "").strip(),
+            all=bool(rule.get("all") or rule.get("many")),
+            required=bool(rule.get("required")),
+        )
+
+    def _looks_like_json(self, content: str) -> bool:
+        return ExtractionStudio()._looks_like_json(content)
 
 
 class ExtractionStudio:
@@ -82,11 +136,16 @@ class ExtractionStudio:
 
         if extract_type == "css":
             selector = expr or ("title" if field == "title" else "")
-            return html_parser.css_first(selector) if selector else None
+            if not selector:
+                return None
+            values = html_parser.css(selector)
+            return values if spec.get("all") or spec.get("many") else (values[0] if values else None)
         if extract_type == "css_attr":
-            return html_parser.css_attr_first(expr, attr)
+            values = html_parser.css_attr(expr, attr)
+            return values if spec.get("all") or spec.get("many") else (values[0] if values else None)
         if extract_type == "xpath":
-            return self._xpath_first(content, expr)
+            values = html_parser.xpath(expr)
+            return values if spec.get("all") or spec.get("many") else (values[0] if values else None)
         if extract_type == "json_path":
             return self._json_path_first(json_parser, path)
         if extract_type == "regex":

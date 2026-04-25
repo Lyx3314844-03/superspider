@@ -96,6 +96,34 @@ def apply_predicate(nodes: list[Node], predicate: str | None) -> list[Node]:
             node for node in nodes if node.attrs.get(attr_name) == attr_value
         ]
 
+    attr_exists_match = re.fullmatch(r"@([\w:-]+)", predicate)
+    if attr_exists_match:
+        attr_name = attr_exists_match.group(1)
+        return [node for node in nodes if node.attrs.get(attr_name)]
+
+    contains_match = re.fullmatch(
+        r"contains\(@([\w:-]+),\s*['\"]([^'\"]+)['\"]\)", predicate
+    )
+    if contains_match:
+        attr_name, needle = contains_match.groups()
+        return [node for node in nodes if needle in node.attrs.get(attr_name, "")]
+
+    starts_with_match = re.fullmatch(
+        r"starts-with\(@([\w:-]+),\s*['\"]([^'\"]+)['\"]\)", predicate
+    )
+    if starts_with_match:
+        attr_name, prefix = starts_with_match.groups()
+        return [
+            node for node in nodes if node.attrs.get(attr_name, "").startswith(prefix)
+        ]
+
+    text_match = re.fullmatch(
+        r"(?:text\(\)|normalize-space\(\))\s*=\s*['\"]([^'\"]+)['\"]", predicate
+    )
+    if text_match:
+        expected = text_match.group(1)
+        return [node for node in nodes if node.text_content().strip() == expected]
+
     raise ValueError(f"unsupported xpath predicate: {predicate}")
 
 

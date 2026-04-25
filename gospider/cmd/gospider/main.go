@@ -715,7 +715,7 @@ func validateContractConfig(cfg contractConfig, expectedRuntime string) error {
 		})
 	}
 	if len(errors) > 0 {
-		return fmt.Errorf(strings.Join(errors, "; "))
+		return fmt.Errorf("%s", strings.Join(errors, "; "))
 	}
 	return nil
 }
@@ -1696,7 +1696,7 @@ func injectedJobFailure(job *core.JobSpec) error {
 		if message == "" || message == "<nil>" {
 			message = "injected failure"
 		}
-		return fmt.Errorf(message)
+		return fmt.Errorf("%s", message)
 	}
 	return nil
 }

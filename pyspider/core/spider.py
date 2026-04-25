@@ -374,6 +374,20 @@ class Spider:
                 with self._rate_limit_context():
                     resp = self.downloader.download(req)
                 status_code = resp.status_code
+                access_friction = self._access_friction_report(resp)
+
+                if access_friction.get("blocked"):
+                    if self.stats:
+                        self.stats.failed_requests += 1
+                    return self._finalize_request(
+                        req,
+                        trace_id,
+                        started_at,
+                        success=False,
+                        status_code=status_code,
+                        error=RuntimeError(self._access_friction_error(access_friction)),
+                        response=resp,
+                    )
 
                 if resp.error:
                     last_error = resp.error
@@ -591,6 +605,20 @@ class Spider:
             self._persist_graph_artifact(req, response)
         self._observability.end_trace(trace_id, status="ok" if success else "failed")
         return success
+
+    def _access_friction_report(self, response: Any) -> Dict[str, Any]:
+        meta = getattr(response, "meta", {}) or {}
+        report = meta.get("access_friction")
+        return report if isinstance(report, dict) else {}
+
+    def _access_friction_error(self, report: Dict[str, Any]) -> str:
+        level = str(report.get("level", "unknown"))
+        signals = report.get("signals") or []
+        if isinstance(signals, list):
+            signal_text = ",".join(str(signal) for signal in signals)
+        else:
+            signal_text = str(signals)
+        return f"access friction {level}: {signal_text}".strip()
 
     def _persist_graph_artifact(self, req: Request, response: Any) -> None:
         content_type = str(getattr(response, "headers", {}).get("Content-Type", ""))

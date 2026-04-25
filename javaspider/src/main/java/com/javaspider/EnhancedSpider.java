@@ -25,6 +25,10 @@ import com.javaspider.scrapy.feed.FeedExporter;
 import com.javaspider.scrapy.item.Item;
 import com.javaspider.scrapy.project.ProjectRuntime;
 import com.spider.converter.CurlToJavaConverter;
+import com.superspider.core.ProfileManager;
+import com.superspider.model.StealthProfile;
+import com.superspider.debug.FullStackDebugger;
+import com.superspider.health.FullStackAudit;
 
 import java.io.IOException;
 import java.io.InputStream;

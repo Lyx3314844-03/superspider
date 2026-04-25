@@ -33,11 +33,13 @@ public final class EcommerceDetailSpider extends Spider {
         EcommerceSiteProfiles.Profile current = EcommerceSiteProfiles.profileFor(family);
         List<String> links = response.selector().css("a").attrs("href");
         List<Map<String, Object>> jsonLdProducts = EcommerceSiteProfiles.extractJsonLdProducts(response.getBody(), 1);
+        List<Map<String, Object>> bootstrapProducts = EcommerceSiteProfiles.extractBootstrapProducts(response.getBody(), 1);
         Map<String, Object> universalFields = new LinkedHashMap<>();
         universalFields.put("embedded_json_blocks", EcommerceSiteProfiles.extractEmbeddedJsonBlocks(response.getBody(), 5, 2000));
         universalFields.put("api_candidates", EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20));
         universalFields.put("script_sources", response.selector().css("script").attrs("src"));
         universalFields.put("json_ld_products", jsonLdProducts);
+        universalFields.put("bootstrap_products", bootstrapProducts);
         universalFields.put("video_candidates", EcommerceSiteProfiles.collectVideoLinks(response.getUrl(), merge(response.selector().css("video").attrs("src"), response.selector().css("source").attrs("src")), 10));
         universalFields.put("html_excerpt", EcommerceSiteProfiles.textExcerpt(response.getBody(), 800));
 
@@ -53,7 +55,22 @@ public final class EcommerceDetailSpider extends Spider {
             detail.put("review_count", EcommerceSiteProfiles.firstMatch(response.getBody(), current.reviewCountPatterns));
             detail.put("image_candidates", EcommerceSiteProfiles.collectImageLinks(response.getUrl(), response.selector().css("img").attrs("src"), 10));
             detail.put("review_url", EcommerceSiteProfiles.firstLinkWithKeywords(response.getUrl(), links, current.reviewLinkKeywords));
+            detail.put(
+                "api_job_templates",
+                EcommerceSiteProfiles.buildApiJobTemplates(
+                    response.getUrl(),
+                    family,
+                    EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20),
+                    itemId.isBlank() ? List.of() : List.of(itemId),
+                    10
+                )
+            );
             detail.putAll(universalFields);
+            detail.put("sku_variants", EcommerceSiteProfiles.extractSkuVariants(response.getBody()));
+            detail.put("image_gallery", EcommerceSiteProfiles.extractImageGallery(response.getUrl(), response.selector().css("img").attrs("src")));
+            detail.put("parameter_table", EcommerceSiteProfiles.extractParameterTable(response.getBody()));
+            detail.put("coupons_promotions", EcommerceSiteProfiles.detectCouponsPromotions(response.getBody()));
+            detail.put("stock_status", EcommerceSiteProfiles.extractStockStatus(response.getBody()));
             detail.put("note", "Public universal ecommerce detail extraction with JD price fast path.");
 
             if (!itemId.isBlank()) {
@@ -69,10 +86,11 @@ public final class EcommerceDetailSpider extends Spider {
             return List.of(Item.fromMap(detail));
         }
 
-        if (!"jd".equals(family) && !"generic".equals(family) && !jsonLdProducts.isEmpty()) {
-            Map<String, Object> product = jsonLdProducts.get(0);
+        List<Map<String, Object>> structuredProducts = !jsonLdProducts.isEmpty() ? jsonLdProducts : bootstrapProducts;
+        if (!"jd".equals(family) && !structuredProducts.isEmpty()) {
+            Map<String, Object> product = structuredProducts.get(0);
             return List.of(new Item()
-                .set("kind", family + "_detail_product")
+                .set("kind", "generic".equals(family) ? "ecommerce_detail_product" : family + "_detail_product")
                 .set("site_family", family)
                 .set("title", String.valueOf(product.getOrDefault("name", "")).isBlank() ? EcommerceSiteProfiles.bestTitle(response) : product.get("name"))
                 .set("url", String.valueOf(product.getOrDefault("url", "")).isBlank() ? response.getUrl() : product.get("url"))
@@ -83,16 +101,27 @@ public final class EcommerceDetailSpider extends Spider {
                 .set("category", product.get("category"))
                 .set("rating", String.valueOf(product.getOrDefault("rating", "")).isBlank() ? EcommerceSiteProfiles.firstMatch(response.getBody(), current.ratingPatterns) : product.get("rating"))
                 .set("review_count", String.valueOf(product.getOrDefault("review_count", "")).isBlank() ? EcommerceSiteProfiles.firstMatch(response.getBody(), current.reviewCountPatterns) : product.get("review_count"))
-                .set("shop", EcommerceSiteProfiles.firstMatch(response.getBody(), current.shopPatterns))
+                .set("shop", String.valueOf(product.getOrDefault("shop", "")).isBlank() ? EcommerceSiteProfiles.firstMatch(response.getBody(), current.shopPatterns) : product.get("shop"))
                 .set("review_url", EcommerceSiteProfiles.firstLinkWithKeywords(response.getUrl(), links, current.reviewLinkKeywords))
                 .set("embedded_json_blocks", universalFields.get("embedded_json_blocks"))
                 .set("api_candidates", universalFields.get("api_candidates"))
                 .set("script_sources", universalFields.get("script_sources"))
                 .set("json_ld_products", universalFields.get("json_ld_products"))
+                .set("bootstrap_products", universalFields.get("bootstrap_products"))
                 .set("video_candidates", universalFields.get("video_candidates"))
                 .set("html_excerpt", universalFields.get("html_excerpt"))
                 .set("image_candidates", EcommerceSiteProfiles.collectImageLinks(response.getUrl(), response.selector().css("img").attrs("src"), 10))
-                .set("note", "Public ecommerce detail fast path via JSON-LD product extraction."));
+                .set(
+                    "api_job_templates",
+                    EcommerceSiteProfiles.buildApiJobTemplates(
+                        response.getUrl(),
+                        family,
+                        EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20),
+                        List.of(String.valueOf(product.getOrDefault("sku", "")).isBlank() ? EcommerceSiteProfiles.firstMatch(response.getBody(), current.itemIdPatterns) : String.valueOf(product.get("sku"))),
+                        10
+                    )
+                )
+                .set("note", "Public ecommerce detail fast path via structured bootstrap/JSON-LD extraction."));
         }
 
         return List.of(new Item()
@@ -110,8 +139,19 @@ public final class EcommerceDetailSpider extends Spider {
             .set("api_candidates", universalFields.get("api_candidates"))
             .set("script_sources", universalFields.get("script_sources"))
             .set("json_ld_products", universalFields.get("json_ld_products"))
+            .set("bootstrap_products", universalFields.get("bootstrap_products"))
             .set("video_candidates", universalFields.get("video_candidates"))
             .set("html_excerpt", universalFields.get("html_excerpt"))
+            .set(
+                "api_job_templates",
+                EcommerceSiteProfiles.buildApiJobTemplates(
+                    response.getUrl(),
+                    family,
+                    EcommerceSiteProfiles.extractApiCandidates(response.getBody(), 20),
+                    List.of(EcommerceSiteProfiles.firstMatch(response.getBody(), current.itemIdPatterns)),
+                    10
+                )
+            )
             .set("note", "Public universal ecommerce detail extraction."));
     }
 

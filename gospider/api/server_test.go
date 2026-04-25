@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -218,6 +219,61 @@ func TestAPIListsMemoryEvents(t *testing.T) {
 	}
 	if len(payload) == 0 {
 		t.Fatal("expected at least one event")
+	}
+}
+
+func TestAPILLMMarkdownEndpoint(t *testing.T) {
+	server := NewServerWithJobService(&Config{Host: "127.0.0.1", Port: 8080}, core.NewJobService())
+	body, err := json.Marshal(map[string]any{
+		"url":  "https://example.com/catalog",
+		"html": "<html><head><title>Go LLM</title><style>.ad{}</style></head><body><h1>商品</h1><p>详情</p><script>ignored()</script></body></html>",
+	})
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/llm/markdown", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unexpected unmarshal error: %v", err)
+	}
+	markdown := payload["markdown"].(string)
+	if !strings.Contains(markdown, "# Go LLM") || !strings.Contains(markdown, "## 商品") {
+		t.Fatalf("expected compact markdown, got %s", markdown)
+	}
+	if strings.Contains(markdown, "ignored") {
+		t.Fatalf("expected script removed, got %s", markdown)
+	}
+}
+
+func TestAPILLMMarkdownStreamEndpoint(t *testing.T) {
+	server := NewServerWithJobService(&Config{Host: "127.0.0.1", Port: 8080}, core.NewJobService())
+	body, err := json.Marshal(map[string]any{
+		"html":       "<html><body><p>商品详情</p></body></html>",
+		"chunk_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/llm/markdown/stream", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("expected sse content type, got %q", contentType)
+	}
+	if !strings.Contains(rec.Body.String(), "event: markdown") || !strings.Contains(rec.Body.String(), "event: done") {
+		t.Fatalf("expected sse body, got %s", rec.Body.String())
 	}
 }
 

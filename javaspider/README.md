@@ -2,12 +2,17 @@
 
 JavaSpider is the SuperSpider runtime for Java. It ships as more than a Maven crawler library: the codebase already includes browser orchestration, workflow replay, research runtime surfaces, API/Web control planes, and cross-runtime contracts that were previously only implicit in source.
 
+## Current Verification
+
+As of 2026-04-25, `mvn -q compile` and `mvn -q "-Dtest=com.javaspider.browser.BrowserCompatibilityTest" test` pass. `mvn -q clean compile` can still fail on Windows when `target/` is locked by another process; retry after closing Java/Maven handles.
+
 ## Core Functions
 
 - Maven / JAR packaging
 - browser workflows and enterprise Java integration
 - scrapy-style compatibility and normalized JobSpec execution
 - audit, connector, session, anti-bot, media, and workflow replay
+- class-based ecommerce crawlers plus Selenium browser capture companions
 - API, Web, research, and reverse-engineering runtime surfaces
 
 ## Public Runtime Surface
@@ -23,8 +28,18 @@ JavaSpider is the SuperSpider runtime for Java. It ships as more than a Maven cr
 ### Workflow and Replay
 
 - Workflow steps support `GOTO`, `CLICK`, `TYPE`, `SELECT`, `HOVER`, `SCROLL`, `EVAL`, `LISTEN_NETWORK`, `EXTRACT`, `DOWNLOAD`, and `SCREENSHOT`.
-- Selenium workflow execution includes built-in captcha element discovery and recovery hooks.
+- Selenium workflow execution includes built-in captcha element discovery, access-friction reporting, and authorized recovery hooks.
+- Playwright support is exposed through `com.javaspider.browser.PlaywrightBrowserManager`, backed by the shared Node helper at `../tools/playwright_fetch.mjs`.
+- Live Playwright runs require Node.js, the npm `playwright` package, and installed browser binaries (`npx playwright install`).
+- Override the helper with `JAVASPIDER_PLAYWRIGHT_NODE_HELPER` or `SPIDER_PLAYWRIGHT_NODE_HELPER`; override Node with `JAVASPIDER_NODE` or `SPIDER_NODE`.
 - Workflow replay can rebuild audit traces and graph artifacts from stored runs.
+
+### Access Friction and Anti-Bot
+
+- Access-friction reporting is exposed through `com.javaspider.antibot.AccessFrictionAnalyzer`, returning `level`, `signals`, `recommended_actions`, `challenge_handoff`, and `capability_plan`.
+- The HTTP downloader attaches the same report to `Page.getField("access_friction")`.
+- High-friction targets use a compliant plan: single-concurrency throttling, browser-render upgrade, artifact capture, authorized human handoff for CAPTCHA/login/risk-control, persisted session state after validation, and explicit stop conditions.
+- JavaSpider does not promise automated CAPTCHA cracking or forced risk-control bypass.
 
 ### Runtime Contracts and Resilience
 
@@ -37,6 +52,7 @@ JavaSpider is the SuperSpider runtime for Java. It ships as more than a Maven cr
 - API and Web launcher surfaces are included for remote control and operator-facing workflows.
 - Research runtime modules provide site profiling, async research, experiment tracking, and structured extraction.
 - Shared starter assets now include crawler-type templates, site-family presets, and reusable class kits under the repo-level `examples/` tree.
+- The ecommerce runtime exposes a reusable `EcommerceCrawler` wrapper and an `EcommerceSeleniumCrawler` browser companion under `com.javaspider.examples.ecommerce`.
 - Graph extraction is available through `GraphBuilder`, and artifacts can be written through connectors and JSONL sinks.
 
 ### Reverse, Distributed, and Media
@@ -45,12 +61,29 @@ JavaSpider is the SuperSpider runtime for Java. It ships as more than a Maven cr
 - Scheduler implementations include Redis and queue-backed modes.
 - Reverse tooling includes NodeReverse integration and a Crawlee bridge client.
 - Media support includes HLS, DASH, batch download, FFmpeg processing, DRM inspection, and platform parsers for YouTube, Bilibili, IQIYI, Tencent Video, Youku, Douyin, and generic pages.
+- Source-level video download facade: `com.javaspider.media.VideoDownloader` accepts `VideoDownloadRequest` and returns `VideoDownloadResult`, choosing HLS, DASH, or direct file download from parser results or browser artifacts.
+
+```java
+VideoDownloadResult result = new VideoDownloader("downloads")
+    .download(new VideoDownloadRequest("https://example.com/watch/demo")
+        .setHtml(renderedHtml)
+        .setPrefer("auto"));
+```
+- Source-level crawler selection facade: `com.javaspider.research.CrawlerSelector` turns a URL plus optional HTML into a scenario decision with `recommendedRunner`, `runnerOrder`, capabilities, fallback plan, stop conditions, confidence, and reason codes.
+
+```java
+CrawlerSelection selection = new CrawlerSelector().select(
+    "https://shop.example.com/search?q=phone",
+    renderedHtml
+);
+```
 
 ## Known Gaps
 
 - `com.javaspider.AntiBot` is only a lightweight proxy/UA helper; the richer anti-bot implementation lives under the `antibot/` package and should not be conflated with it.
 - `CaptchaSolver` mixes `null` returns and exceptions across failure paths, so callers must treat solver failures defensively.
 - Some ultimate browser-simulation paths are reverse-assisted emulation rather than full browser session execution.
+- Access-friction handling stops on robots disallow, explicit access denial, or missing site permission; it is not a bypass guarantee.
 
 ## Concrete Media Coverage
 
@@ -118,6 +151,10 @@ For source-based examples, see:
 
 - `src/main/java/com/javaspider/examples/DistributedExample.java`
 - `src/main/java/com/javaspider/examples/ScrapyStyleDemo.java`
+- `src/main/java/com/javaspider/examples/ecommerce/EcommerceCrawler.java`
+- `src/main/java/com/javaspider/examples/ecommerce/EcommerceSeleniumCrawler.java`
+- `src/main/java/com/javaspider/examples/ecommerce/UniversalEcommerceDetector.java`
+- `src/main/java/com/javaspider/examples/ecommerce/EcommerceSiteProfiles.java`
 - `YOUTUBE_SPIDER_GUIDE.md`
 
 ## Verification

@@ -45,6 +45,11 @@ pub fn browser_compatibility_matrix() -> serde_json::Value {
             "shadow_dom": "open-shadow-root-helper",
             "realtime_stream_capture": "in-page-websocket-eventsource-hook"
         },
+        "access_friction": {
+            "classifier": true,
+            "signals": ["captcha", "rate-limited", "managed-browser-challenge", "auth-required", "waf-vendor"],
+            "actions": ["honor-retry-after", "render-with-browser", "persist-session-state", "pause-for-human-access"]
+        },
         "constraints": [
             "playwright support is provided through a native node/playwright helper process; webdriver remains the embedded Rust browser engine"
         ]
@@ -98,8 +103,136 @@ pub struct BrowserManager {
 pub type SeleniumConfig = BrowserConfig;
 
 #[cfg(feature = "browser")]
+#[derive(Debug, Clone)]
+pub struct PlaywrightConfig {
+    pub headless: bool,
+    pub timeout: Duration,
+    pub user_agent: Option<String>,
+    pub node_command: String,
+    pub helper_script: std::path::PathBuf,
+}
+
+#[cfg(feature = "browser")]
+impl Default for PlaywrightConfig {
+    fn default() -> Self {
+        Self {
+            headless: true,
+            timeout: Duration::from_secs(30),
+            user_agent: None,
+            node_command: std::env::var("RUSTSPIDER_NODE")
+                .or_else(|_| std::env::var("SPIDER_NODE"))
+                .unwrap_or_else(|_| "node".to_string()),
+            helper_script: resolve_playwright_helper_script(),
+        }
+    }
+}
+
+#[cfg(feature = "browser")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaywrightFetchResult {
+    pub title: String,
+    pub url: String,
+    pub html_path: String,
+    pub screenshot_path: String,
+}
+
+#[cfg(feature = "browser")]
+pub struct PlaywrightBrowser {
+    config: PlaywrightConfig,
+}
+
+#[cfg(feature = "browser")]
 pub struct SeleniumBrowser {
     inner: BrowserManager,
+}
+
+#[cfg(feature = "browser")]
+impl PlaywrightBrowser {
+    pub fn new(config: PlaywrightConfig) -> Self {
+        Self { config }
+    }
+
+    pub fn default_headless() -> Self {
+        Self::new(PlaywrightConfig::default())
+    }
+
+    pub fn fetch(
+        &self,
+        url: &str,
+        screenshot_path: &str,
+        html_path: &str,
+    ) -> Result<PlaywrightFetchResult, BrowserError> {
+        if url.trim().is_empty() {
+            return Err(BrowserError::NavigationFailed(
+                "playwright fetch url cannot be empty".to_string(),
+            ));
+        }
+        let args = self.fetch_args(url, screenshot_path, html_path);
+        let output = std::process::Command::new(&self.config.node_command)
+            .args(&args)
+            .output()
+            .map_err(|e| BrowserError::ConnectionFailed(e.to_string()))?;
+        if !output.status.success() {
+            return Err(BrowserError::NavigationFailed(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ));
+        }
+        let payload: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .map_err(|e| BrowserError::ContentFetchFailed(e.to_string()))?;
+        Ok(PlaywrightFetchResult {
+            title: payload
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            url: payload
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or(url)
+                .to_string(),
+            html_path: payload
+                .get("html_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            screenshot_path: payload
+                .get("screenshot_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        })
+    }
+
+    pub fn fetch_args(&self, url: &str, screenshot_path: &str, html_path: &str) -> Vec<String> {
+        let mut args = vec![
+            self.config.helper_script.to_string_lossy().to_string(),
+            "--url".to_string(),
+            url.to_string(),
+            "--timeout-seconds".to_string(),
+            self.config.timeout.as_secs().max(1).to_string(),
+        ];
+        if self.config.headless {
+            args.push("--headless".to_string());
+        }
+        if let Some(user_agent) = self
+            .config
+            .user_agent
+            .as_ref()
+            .filter(|value| !value.is_empty())
+        {
+            args.push("--user-agent".to_string());
+            args.push(user_agent.clone());
+        }
+        if !screenshot_path.is_empty() {
+            args.push("--screenshot".to_string());
+            args.push(screenshot_path.to_string());
+        }
+        if !html_path.is_empty() {
+            args.push("--html".to_string());
+            args.push(html_path.to_string());
+        }
+        args
+    }
 }
 
 #[cfg(feature = "browser")]
@@ -115,33 +248,22 @@ impl BrowserManager {
         let mut chrome_opts = serde_json::map::Map::new();
 
         // 无头模式
+        let mut args = Vec::new();
         if config.headless {
-            let mut args = vec!["--headless".to_string()];
-            if let Some(ua) = &config.user_agent {
-                args.push(format!("--user-agent={}", ua));
-            }
-            if let Some(proxy) = &config.proxy {
-                args.push(format!("--proxy-server={}", proxy));
-            }
+            args.push("--headless=new".to_string());
+        }
+        if let Some(ua) = &config.user_agent {
+            args.push(format!("--user-agent={}", ua));
+        }
+        if let Some(proxy) = &config.proxy {
+            args.push(format!("--proxy-server={}", proxy));
+        }
+        args.extend(config.args.iter().cloned());
+        if !args.is_empty() {
             chrome_opts.insert(
                 "args".to_string(),
                 Value::Array(args.into_iter().map(Value::String).collect()),
             );
-        } else {
-            // 有头模式也设置用户代理
-            let mut args = vec![];
-            if let Some(ua) = &config.user_agent {
-                args.push(format!("--user-agent={}", ua));
-            }
-            if let Some(proxy) = &config.proxy {
-                args.push(format!("--proxy-server={}", proxy));
-            }
-            if !args.is_empty() {
-                chrome_opts.insert(
-                    "args".to_string(),
-                    Value::Array(args.into_iter().map(Value::String).collect()),
-                );
-            }
         }
 
         // 添加扩展
@@ -259,6 +381,67 @@ impl BrowserManager {
             .map_err(|e| BrowserError::InteractionFailed(e.to_string()))
     }
 
+    pub async fn analyze_locators(
+        &self,
+        target: crate::parser::LocatorTarget,
+    ) -> Result<crate::parser::LocatorPlan, BrowserError> {
+        let html = self.get_html().await?;
+        Ok(crate::parser::LocatorAnalyzer.analyze(&html, &target))
+    }
+
+    pub async fn analyze_devtools(&self) -> Result<crate::parser::DevToolsReport, BrowserError> {
+        let html = self.get_html().await?;
+        let network = self
+            .get_network_requests()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|entry| crate::parser::DevToolsNetworkArtifact {
+                url: entry
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                method: "GET".to_string(),
+                status: 0,
+                resource_type: entry
+                    .get("type")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+            })
+            .collect::<Vec<_>>();
+        Ok(crate::parser::DevToolsAnalyzer.analyze(&html, &network, &[]))
+    }
+
+    pub async fn devtools_analyze(&self) -> Result<crate::parser::DevToolsReport, BrowserError> {
+        self.analyze_devtools().await
+    }
+
+    pub async fn auto_click(
+        &self,
+        target: crate::parser::LocatorTarget,
+    ) -> Result<crate::parser::LocatorCandidate, BrowserError> {
+        self.behavior_pause("click").await;
+        let plan = self.analyze_locators(target).await?;
+        let mut last_error = None;
+        for candidate in plan.candidates {
+            match self.find_candidate(&candidate).await {
+                Ok(element) => {
+                    element
+                        .click()
+                        .await
+                        .map_err(|e| BrowserError::InteractionFailed(e.to_string()))?;
+                    return Ok(candidate);
+                }
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| {
+            BrowserError::ElementNotFound("auto locator".to_string(), "no candidates".to_string())
+        }))
+    }
+
     /// 输入文本
     pub async fn fill(&self, selector: &str, text: &str) -> Result<(), BrowserError> {
         use fantoccini::Locator;
@@ -275,6 +458,48 @@ impl BrowserManager {
             .send_keys(text)
             .await
             .map_err(|e| BrowserError::InteractionFailed(e.to_string()))
+    }
+
+    pub async fn auto_fill(
+        &self,
+        target: crate::parser::LocatorTarget,
+        text: &str,
+    ) -> Result<crate::parser::LocatorCandidate, BrowserError> {
+        self.behavior_pause("type").await;
+        let plan = self.analyze_locators(target).await?;
+        let mut last_error = None;
+        for candidate in plan.candidates {
+            match self.find_candidate(&candidate).await {
+                Ok(element) => {
+                    element
+                        .send_keys(text)
+                        .await
+                        .map_err(|e| BrowserError::InteractionFailed(e.to_string()))?;
+                    return Ok(candidate);
+                }
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| {
+            BrowserError::ElementNotFound("auto locator".to_string(), "no candidates".to_string())
+        }))
+    }
+
+    async fn find_candidate(
+        &self,
+        candidate: &crate::parser::LocatorCandidate,
+    ) -> Result<fantoccini::elements::Element, BrowserError> {
+        use fantoccini::Locator;
+        let locator = if candidate.kind == "xpath" {
+            Locator::XPath(&candidate.expr)
+        } else {
+            Locator::Css(&candidate.expr)
+        };
+        self.webdriver
+            .wait()
+            .for_element(locator)
+            .await
+            .map_err(|e| BrowserError::ElementNotFound(candidate.expr.clone(), e.to_string()))
     }
 
     /// 上传文件到 <input type="file">
@@ -355,9 +580,12 @@ impl BrowserManager {
             .map_err(|e| BrowserError::ElementNotFound(selector.to_string(), e.to_string()))?;
 
         // 使用 JavaScript 选择选项
+        let selector_json = serde_json::to_string(selector)
+            .map_err(|e| BrowserError::ScriptExecutionFailed(e.to_string()))?;
+        let value_json = serde_json::to_string(value)
+            .map_err(|e| BrowserError::ScriptExecutionFailed(e.to_string()))?;
         let script = format!(
-            "var select = document.querySelector('{}'); if(select) select.value = '{}';",
-            selector, value
+            "var select = document.querySelector({selector_json}); if(select) {{ select.value = {value_json}; select.dispatchEvent(new Event('change', {{bubbles: true}})); }}"
         );
         self.webdriver
             .execute(&script, vec![])
@@ -382,9 +610,12 @@ impl BrowserManager {
             .map_err(|e| BrowserError::ElementNotFound(selector.to_string(), e.to_string()))?;
 
         // 使用 JavaScript 选择选项
+        let selector_json = serde_json::to_string(selector)
+            .map_err(|e| BrowserError::ScriptExecutionFailed(e.to_string()))?;
+        let value_json = serde_json::to_string(value)
+            .map_err(|e| BrowserError::ScriptExecutionFailed(e.to_string()))?;
         let script = format!(
-            "var select = document.querySelector('{}'); if(select) select.value = '{}';",
-            selector, value
+            "var select = document.querySelector({selector_json}); if(select) {{ select.value = {value_json}; select.dispatchEvent(new Event('change', {{bubbles: true}})); }}"
         );
         self.webdriver
             .execute(&script, vec![])
@@ -397,10 +628,13 @@ impl BrowserManager {
     pub async fn hover(&self, selector: &str) -> Result<(), BrowserError> {
         self.behavior_pause("hover").await;
         // fantoccini 0.21 不支持 hover，使用 JavaScript 替代
+        let selector_json = serde_json::to_string(selector)
+            .map_err(|e| BrowserError::ScriptExecutionFailed(e.to_string()))?;
         let script = format!(
             r#"
-            var element = document.querySelector('{}');
+            var element = document.querySelector({selector_json});
             if (element) {{
+                element.scrollIntoView({{block: 'center', inline: 'center'}});
                 var event = new MouseEvent('mouseover', {{
                     'view': window,
                     'bubbles': true,
@@ -408,8 +642,7 @@ impl BrowserManager {
                 }});
                 element.dispatchEvent(event);
             }}
-        "#,
-            selector
+        "#
         );
 
         self.webdriver
@@ -433,6 +666,12 @@ impl BrowserManager {
         use std::io::Write;
 
         let data = self.screenshot().await?;
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| BrowserError::FileOperationFailed(e.to_string()))?;
+            }
+        }
         let mut file =
             File::create(path).map_err(|e| BrowserError::FileOperationFailed(e.to_string()))?;
         file.write_all(&data)
@@ -543,9 +782,10 @@ impl BrowserManager {
     /// 滚动到元素
     pub async fn scroll_to_element(&self, selector: &str) -> Result<(), BrowserError> {
         self.behavior_pause("scroll").await;
+        let selector_json = serde_json::to_string(selector)
+            .map_err(|e| BrowserError::ScriptExecutionFailed(e.to_string()))?;
         let script = format!(
-            "var el = document.querySelector('{}'); if(el) el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});",
-            selector
+            "var el = document.querySelector({selector_json}); if(el) el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});"
         );
         self.webdriver
             .execute(&script, vec![])
@@ -915,13 +1155,18 @@ impl BrowserManager {
     /// 切换到标签页
     pub async fn switch_to_window(&self, handle: &str) -> Result<(), BrowserError> {
         // 使用字符串匹配来切换窗口
-        let handles = self.get_window_handles().await?;
+        let handles = self
+            .webdriver
+            .windows()
+            .await
+            .map_err(|e| BrowserError::WindowOperationFailed(e.to_string()))?;
 
         for h in handles {
-            if h == handle {
-                // 使用 JavaScript 切换到指定窗口（通过名称或句柄）
-                let script = format!("window.name = '{}';", handle);
-                self.webdriver.execute(&script, vec![]).await.ok();
+            if format!("{:?}", h) == handle {
+                self.webdriver
+                    .switch_to_window(h)
+                    .await
+                    .map_err(|e| BrowserError::WindowOperationFailed(e.to_string()))?;
                 return Ok(());
             }
         }
@@ -934,17 +1179,15 @@ impl BrowserManager {
 
     /// 创建新标签页
     pub async fn new_tab(&self) -> Result<(), BrowserError> {
-        // 使用 JavaScript 打开新标签页
-        self.webdriver
-            .execute("window.open('', '_blank');", vec![])
+        let response = self
+            .webdriver
+            .new_window(true)
             .await
-            .map_err(|e| BrowserError::ScriptExecutionFailed(e.to_string()))?;
-
-        // 切换到新标签页
-        let handles = self.get_window_handles().await?;
-        if let Some(last) = handles.last() {
-            self.switch_to_window(last).await?;
-        }
+            .map_err(|e| BrowserError::WindowOperationFailed(e.to_string()))?;
+        self.webdriver
+            .switch_to_window(response.handle)
+            .await
+            .map_err(|e| BrowserError::WindowOperationFailed(e.to_string()))?;
 
         Ok(())
     }
@@ -1114,6 +1357,35 @@ fn normalize_shadow_path<'a>(selector_path: &'a [&'a str]) -> Result<Vec<&'a str
         ));
     }
     Ok(path)
+}
+
+#[cfg(feature = "browser")]
+fn resolve_playwright_helper_script() -> std::path::PathBuf {
+    for env_name in [
+        "RUSTSPIDER_PLAYWRIGHT_NODE_HELPER",
+        "SPIDER_PLAYWRIGHT_NODE_HELPER",
+    ] {
+        if let Ok(path) = std::env::var(env_name) {
+            if !path.trim().is_empty() {
+                return std::path::PathBuf::from(path);
+            }
+        }
+    }
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let candidates = [
+        manifest_dir
+            .parent()
+            .map(|root| root.join("tools").join("playwright_fetch.mjs")),
+        Some(manifest_dir.join("tools").join("playwright_fetch.mjs")),
+    ];
+    for candidate in candidates.into_iter().flatten() {
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    std::path::PathBuf::from("..")
+        .join("tools")
+        .join("playwright_fetch.mjs")
 }
 
 #[cfg(feature = "browser")]
@@ -1328,5 +1600,58 @@ mod tests {
 
         assert_eq!(builder.config.timeout, Duration::from_secs(60));
         assert_eq!(builder.config.user_agent, Some("Mozilla/5.0".to_string()));
+    }
+
+    #[test]
+    #[cfg(feature = "browser")]
+    fn test_shadow_traversal_script_uses_json_selectors() {
+        let script = super::build_shadow_traversal_script(
+            &["app-shell", "button[data-name=\"primary\"]"],
+            "target.textContent || ''",
+        )
+        .expect("script");
+
+        assert!(script.contains("button[data-name=\\\"primary\\\"]"));
+        assert!(script.contains("open shadowRoot not found"));
+        assert!(script.contains("target.textContent"));
+    }
+
+    #[test]
+    fn test_browser_compatibility_matrix_reports_native_browser_surfaces() {
+        let matrix = super::browser_compatibility_matrix();
+        assert_eq!(
+            matrix["surfaces"]["selenium"]["adapter_engine"],
+            "fantoccini-webdriver"
+        );
+        assert_eq!(matrix["interaction"]["file_upload"], true);
+        assert_eq!(
+            matrix["interaction"]["realtime_stream_capture"],
+            "in-page-websocket-eventsource-hook"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "browser")]
+    fn test_playwright_browser_builds_node_helper_command() {
+        let browser = super::PlaywrightBrowser::new(super::PlaywrightConfig {
+            headless: true,
+            timeout: Duration::from_secs(12),
+            user_agent: Some("FixtureBrowser/1.0".to_string()),
+            node_command: "node".to_string(),
+            helper_script: "tools/playwright_fetch.mjs".into(),
+        });
+        let args = browser.fetch_args("https://example.com", "page.png", "page.html");
+        let joined = args.join(" ");
+        for expected in [
+            "tools/playwright_fetch.mjs",
+            "--url https://example.com",
+            "--timeout-seconds 12",
+            "--headless",
+            "--user-agent FixtureBrowser/1.0",
+            "--screenshot page.png",
+            "--html page.html",
+        ] {
+            assert!(joined.contains(expected), "missing {expected}: {args:?}");
+        }
     }
 }

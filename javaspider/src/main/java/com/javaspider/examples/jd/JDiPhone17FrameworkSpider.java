@@ -4,7 +4,9 @@ import com.javaspider.core.Request;
 import com.javaspider.core.Page;
 import com.javaspider.core.Site;
 import com.javaspider.core.Spider;
+import com.javaspider.core.ResultItems;
 import com.javaspider.pipeline.Pipeline;
+import com.javaspider.processor.PageProcessor;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -28,12 +30,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 京东 iPhone 17 价格爬虫 - JavaSpider 框架版本
+ * 京东 iPhone 17 价格爬虫 - JavaSpider 框架版本 (修复版 V2)
  *
- * 编译: javac -cp "../target/classes:lib/*" -encoding UTF-8 -d ../target/examples JDiPhone17FrameworkSpider.java
- * 运行: java -cp "../target/examples:../target/classes:lib/*" com.javaspider.examples.jd.JDiPhone17FrameworkSpider --pages 5 --delay 3000
+ * 编译: javac -cp "target/classes;lib/*" -encoding UTF-8 -d target/classes src/main/java/com/javaspider/examples/jd/JDiPhone17FrameworkSpider.java
+ * 运行: java -cp "target/classes;lib/*" com.javaspider.examples.jd.JDiPhone17FrameworkSpider --pages 5 --delay 3000
  */
-public class JDiPhone17FrameworkSpider extends Spider {
+public class JDiPhone17FrameworkSpider implements PageProcessor {
 
     private static final String[] KEYWORDS = {"iPhone 17", "苹果17"};
     private static final String SEARCH_URL = "https://search.jd.com/Search";
@@ -43,6 +45,7 @@ public class JDiPhone17FrameworkSpider extends Spider {
     private final ConcurrentLinkedQueue<Product> allProducts = new ConcurrentLinkedQueue<>();
     private final Set<String> seenIds = Collections.synchronizedSet(new HashSet<>());
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    private final Site site;
     private int maxPages = 5;
     private long delayMs = 3000;
 
@@ -68,39 +71,24 @@ public class JDiPhone17FrameworkSpider extends Spider {
     }
 
     public JDiPhone17FrameworkSpider() {
-        super();
-        this.spiderName = "JDiPhone17FrameworkSpider";
-        this.threadCount = 1; // 京东反爬严格，单线程
-
         // 配置站点
         this.site = new Site()
             .setUserAgent(USER_AGENT)
-            .setSleepTime(3000)
+            .downloadDelay(3000)
             .setRetryTimes(3)
-            .setTimeOut(30000)
+            .setTimeout(30000)
             .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .addHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
             .addHeader("Referer", "https://www.jd.com/");
 
-        // 添加管道用于保存结果
-        this.addPipeline(new Pipeline() {
-            @Override
-            public void process(Map<String, Object> result) {
-                if (result != null && result.containsKey("product")) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> productData = (Map<String, Object>) result.get("product");
-                    System.out.println("  [管道] 收到商品: " + productData.get("name"));
-                }
-            }
-        });
+        System.out.println("============================================================");
+        System.out.println("JavaSpider - 京东 iPhone 17 价格爬虫 (PageProcessor)");
+        System.out.println("============================================================");
+    }
 
-        System.out.println("============================================================");
-        System.out.println("JavaSpider - 京东 iPhone 17 价格爬虫");
-        System.out.println("============================================================");
-        System.out.println("爬取页数: " + maxPages);
-        System.out.println("请求延迟: " + delayMs + "ms");
-        System.out.println("线程数: " + this.threadCount);
-        System.out.println("============================================================");
+    @Override
+    public Site getSite() {
+        return site;
     }
 
     public JDiPhone17FrameworkSpider setMaxPages(int pages) {
@@ -110,7 +98,7 @@ public class JDiPhone17FrameworkSpider extends Spider {
 
     public JDiPhone17FrameworkSpider setDelayMs(long delayMs) {
         this.delayMs = delayMs;
-        this.site.setSleepTime((int) delayMs);
+        this.site.downloadDelay((int) delayMs);
         return this;
     }
 
@@ -120,37 +108,15 @@ public class JDiPhone17FrameworkSpider extends Spider {
         return this;
     }
 
-    /**
-     * 开始爬取
-     */
-    public void startCrawl() {
-        for (String keyword : KEYWORDS) {
-            System.out.println("\n[搜索] 关键词: " + keyword);
-            for (int page = 1; page <= maxPages; page++) {
-                int skip = (page - 1) * 30;
-                String url = buildSearchUrl(keyword, skip);
-                System.out.println("  [页面 " + page + "/" + maxPages + "] " + url);
-
-                this.addRequest(new Request(url)
-                    .putExtra("keyword", keyword)
-                    .putExtra("page", page));
-
-                if (page < maxPages) {
-                    sleep(delayMs);
-                }
-            }
-        }
-    }
-
     @Override
     public void process(Page page) {
         String url = page.getRequest().getUrl();
-        Integer currentPage = page.getRequest().getExtra("page") != null ?
-            (Integer) page.getRequest().getExtra("page") : 1;
+        Integer currentPage = page.getRequest().getMeta().get("page") != null ?
+            (Integer) page.getRequest().getMeta().get("page") : 1;
 
         System.out.println("  解析第 " + currentPage + " 页...");
 
-        String html = page.getHtml();
+        String html = page.getHtml().getDocumentHtml();
         if (html == null || html.isEmpty()) {
             System.out.println("  页面内容为空");
             return;
@@ -289,9 +255,8 @@ public class JDiPhone17FrameworkSpider extends Spider {
             .ignoreContentType(true)
             .timeout(20000);
 
-        // 检查是否有代理
-        if (this.site.getProxyHost() != null && !this.site.getProxyHost().isEmpty()) {
-            conn = conn.proxy(this.site.getProxyHost(), this.site.getProxyPort());
+        if (site.getProxyHost() != null && !site.getProxyHost().isEmpty()) {
+            conn = conn.proxy(site.getProxyHost(), site.getProxyPort());
         }
 
         return conn.execute().body();
@@ -379,6 +344,7 @@ public class JDiPhone17FrameworkSpider extends Spider {
     }
 
     private String truncate(String s, int maxLen) {
+        if (s == null) return "";
         if (s.length() <= maxLen) return s;
         return s.substring(0, maxLen) + "...";
     }
@@ -395,7 +361,7 @@ public class JDiPhone17FrameworkSpider extends Spider {
      * 主函数
      */
     public static void main(String[] args) {
-        int pages = 5;
+        int pages = 2;
         long delay = 3000;
         String proxy = null;
         int proxyPort = 0;
@@ -420,31 +386,42 @@ public class JDiPhone17FrameworkSpider extends Spider {
             }
         }
 
-        JDiPhone17FrameworkSpider spider = new JDiPhone17FrameworkSpider()
+        JDiPhone17FrameworkSpider processor = new JDiPhone17FrameworkSpider()
             .setMaxPages(pages)
             .setDelayMs(delay);
 
         if (proxy != null) {
-            spider.setProxy(proxy, proxyPort);
+            processor.setProxy(proxy, proxyPort);
         }
 
-        // 启动爬取
-        spider.startCrawl();
+        Spider spider = Spider.create(processor)
+            .name("JDiPhone17FrameworkSpider")
+            .thread(1);
 
-        // 运行Spider处理队列
-        Thread spiderThread = new Thread(spider);
-        spiderThread.start();
+        // 启动爬取 - 添加初始请求
+        for (String keyword : KEYWORDS) {
+            for (int page = 1; page <= pages; page++) {
+                int skip = (page - 1) * 30;
+                String url = processor.buildSearchUrl(keyword, skip);
+                spider.addRequest(new Request(url).meta("keyword", keyword).meta("page", page));
+            }
+        }
 
-        // 等待队列处理完成
+        // 运行
+        spider.start();
+
+        // 等待完成
         try {
-            spiderThread.join(60000); // 最多等待60秒
+            spider.await(120000); // 等待2分钟
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
 
+        spider.stop();
+
         // 保存结果
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        String outputDir = ".." + File.separator + "output";
+        String outputDir = "artifacts" + File.separator + "exports";
         try {
             Files.createDirectories(Paths.get(outputDir));
         } catch (IOException e) {
@@ -455,12 +432,12 @@ public class JDiPhone17FrameworkSpider extends Spider {
         String csvPath = outputDir + File.separator + "javaspider_jd_iphone17_" + timestamp + ".csv";
 
         try {
-            spider.saveAsJson(jsonPath);
-            spider.saveAsCsv(csvPath);
+            processor.saveAsJson(jsonPath);
+            processor.saveAsCsv(csvPath);
         } catch (IOException e) {
             System.err.println("保存结果失败: " + e.getMessage());
         }
 
-        spider.printStats();
+        processor.printStats();
     }
 }

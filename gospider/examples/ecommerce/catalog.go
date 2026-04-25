@@ -54,7 +54,15 @@ func newEcommerceCatalogSpider(siteFamily string) *scrapy.Spider {
 		current := profileForFamily(family)
 		links := response.XPath("//a/@href").GetAll()
 		jsonLDProducts := extractJSONLDProducts(response.Text, 5)
+		bootstrapProducts := extractBootstrapProducts(response.Text, 5)
+		networkArtifact := networkArtifactFromResponse(response)
+		networkEntries := normalizeNetworkEntries(networkArtifact, 50)
+		networkAPICandidates := extractNetworkAPICandidates(networkEntries, 20)
+		apiCandidates := appendUniqueStrings(20, extractAPICandidates(response.Text, 20), networkAPICandidates)
+		networkReplayTemplates := buildNetworkReplayJobTemplates(response.URL, family, networkEntries, 10)
 		summary := scrapy.NewItem().
+			Set("coupons_promotions", DetectCouponsPromotions(response.Text)).
+			Set("stock_status", ExtractStockStatus(response.Text)).
 			Set("kind", map[bool]string{true: "jd_catalog_page", false: "ecommerce_catalog_page"}[family == "jd"]).
 			Set("site_family", family).
 			Set("runner", current.Runner).
@@ -67,11 +75,29 @@ func newEcommerceCatalogSpider(siteFamily string) *scrapy.Spider {
 			Set("image_candidates", collectImageLinks(response.URL, response.XPath("//img/@src").GetAll(), 10)).
 			Set("video_candidates", collectVideoLinks(response.URL, append(response.XPath("//video/@src").GetAll(), response.XPath("//source/@src").GetAll()...), 10)).
 			Set("script_sources", response.XPath("//script/@src").GetAll()).
-			Set("api_candidates", extractAPICandidates(response.Text, 20)).
+			Set("api_candidates", apiCandidates).
+			Set("network_entries", networkEntries).
+			Set("network_api_candidates", networkAPICandidates).
+			Set("network_replay_job_templates", networkReplayTemplates).
 			Set("embedded_json_blocks", extractEmbeddedJSONBlocks(response.Text, 5, 2000)).
 			Set("json_ld_products", jsonLDProducts).
+			Set("bootstrap_products", bootstrapProducts).
 			Set("page_excerpt", excerpt(response.Text, 800)).
 			Set("note", "Public universal ecommerce catalog page extraction.")
+		summary = summary.Set(
+			"api_job_templates",
+			mergeAPIJobTemplates(
+				20,
+				buildAPIJobTemplates(
+					response.URL,
+					family,
+					apiCandidates,
+					collectRegexMatches(response.Text, current.ItemIDPatterns, 10),
+					10,
+				),
+				networkReplayTemplates,
+			),
+		)
 
 		if family == "jd" {
 			products := extractJDCatalogProducts(response.Text)
@@ -86,11 +112,15 @@ func newEcommerceCatalogSpider(siteFamily string) *scrapy.Spider {
 			}
 		}
 
-		if family != "jd" && family != "generic" && len(jsonLDProducts) > 0 {
+		structuredProducts := jsonLDProducts
+		if len(structuredProducts) == 0 {
+			structuredProducts = bootstrapProducts
+		}
+		if family != "jd" && len(structuredProducts) > 0 {
 			results := []any{summary}
 			productLinks, _ := summary["product_link_candidates"].([]string)
 			skuCandidates, _ := summary["sku_candidates"].([]string)
-			for index, product := range jsonLDProducts {
+			for index, product := range structuredProducts {
 				productID := strings.TrimSpace(fmt.Sprint(product["sku"]))
 				if productID == "" && len(skuCandidates) > 0 {
 					productID = skuCandidates[0]
@@ -100,7 +130,7 @@ func newEcommerceCatalogSpider(siteFamily string) *scrapy.Spider {
 					productURL = productLinks[index]
 				}
 				results = append(results, scrapy.NewItem().
-					Set("kind", fmt.Sprintf("%s_catalog_product", family)).
+					Set("kind", map[bool]string{true: "ecommerce_catalog_product", false: fmt.Sprintf("%s_catalog_product", family)}[family == "generic"]).
 					Set("site_family", family).
 					Set("source_url", response.URL).
 					Set("product_id", productID).
@@ -112,7 +142,25 @@ func newEcommerceCatalogSpider(siteFamily string) *scrapy.Spider {
 					Set("price", product["price"]).
 					Set("currency", product["currency"]).
 					Set("rating", product["rating"]).
-					Set("review_count", product["review_count"]))
+					Set("review_count", product["review_count"]).
+					Set("shop", product["shop"]).
+					Set("network_entries", networkEntries).
+					Set("network_api_candidates", networkAPICandidates).
+					Set("network_replay_job_templates", networkReplayTemplates).
+					Set(
+						"api_job_templates",
+						mergeAPIJobTemplates(
+							20,
+							buildAPIJobTemplates(
+								response.URL,
+								family,
+								apiCandidates,
+								[]string{productID},
+								10,
+							),
+							networkReplayTemplates,
+						),
+					))
 			}
 			return results, nil
 		}

@@ -12,8 +12,8 @@ public final class BrowserCompatibility {
         Map<String, Object> surfaces = new LinkedHashMap<>();
         surfaces.put("playwright", Map.of(
             "supported", true,
-            "mode", "compatibility-bridge",
-            "adapter_engine", "playwright-helper"
+            "mode", "native-process",
+            "adapter_engine", "node-playwright"
         ));
         surfaces.put("selenium", Map.of(
             "supported", true,
@@ -33,12 +33,19 @@ public final class BrowserCompatibility {
         artifacts.put("trace", true);
         artifacts.put("pdf", true);
 
+        Map<String, Object> accessFriction = new LinkedHashMap<>();
+        accessFriction.put("classifier", true);
+        accessFriction.put("signals", List.of("captcha", "rate-limited", "managed-browser-challenge", "auth-required", "waf-vendor"));
+        accessFriction.put("actions", List.of("honor-retry-after", "render-with-browser", "persist-session-state", "pause-for-human-access"));
+
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("base_engine", "selenium-webdriver");
-        payload.put("bridge_style", "webdriver-and-helper");
+        payload.put("base_engine", "selenium-webdriver+node-playwright");
+        payload.put("bridge_style", "webdriver-and-native-playwright-helper");
         payload.put("surfaces", surfaces);
         payload.put("artifacts", artifacts);
+        payload.put("access_friction", accessFriction);
         payload.put("constraints", List.of(
+            "Playwright live runs require Node.js plus the npm playwright package and browser binaries",
             "pdf/har support depends on Chromium-backed driver paths; Firefox is not equivalent for that surface"
         ));
         return payload;

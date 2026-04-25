@@ -7,10 +7,12 @@ This guide covers how to publish SuperSpider to GitHub from Windows, Linux, or m
 | Tool | Required for |
 | --- | --- |
 | Git | all runtimes |
-| Python 3.8+ | PySpider |
-| Go 1.20+ | GoSpider |
+| Python 3.10+ recommended | PySpider |
+| Go 1.24+ | GoSpider |
 | Rust 1.70+ + Cargo | RustSpider |
-| Java 17+ + Maven | JavaSpider |
+| Java 17 target + Maven 3.8+ | JavaSpider |
+
+Supported installer hosts are Windows 10/11 or Windows Server 2022+, Ubuntu/Debian/RHEL-compatible Linux, and macOS 13+. The current Windows publish verification host is Microsoft Windows 11 Pro 10.0.28000, 64-bit.
 
 ## Quick Start: Manual Publish
 
@@ -34,7 +36,18 @@ git push -u origin main
 
 ## Install Scripts
 
-Every runtime has dedicated install scripts for all three operating systems.
+Every runtime has dedicated install scripts for all three operating systems. Use the aggregate script when you want to install/build all four runtimes in one pass.
+
+### Aggregate installers
+
+```bat
+scripts\windows\install-superspider.bat
+```
+
+```bash
+bash scripts/linux/install-superspider.sh
+bash scripts/macos/install-superspider.sh
+```
 
 ### Windows
 
@@ -73,6 +86,37 @@ bash scripts/macos/install-javaspider.sh
 | JavaSpider | `javaspider/target` Maven artifacts |
 
 ## Verifying Installs
+
+Before publishing, run the stable verification gate for your platform.
+
+### Stable Verification Gate
+
+```bat
+scripts\windows\verify-superspider.bat
+```
+
+```bash
+bash scripts/linux/verify-superspider.sh
+bash scripts/macos/verify-superspider.sh
+```
+
+For a fast crawler-selection contract smoke test:
+
+```bat
+scripts\windows\verify-superspider.bat -Mode contract
+```
+
+```bash
+bash scripts/linux/verify-superspider.sh contract
+bash scripts/macos/verify-superspider.sh contract
+```
+
+The Linux/macOS shell gates use `python3`, `python`, or `py -3` if that interpreter can import `pytest`. Override tool paths when needed:
+
+```bash
+PYTHON=/path/to/python GO=/path/to/go CARGO=/path/to/cargo MAVEN=/path/to/mvn \
+  bash scripts/linux/verify-superspider.sh
+```
 
 ### PySpider
 

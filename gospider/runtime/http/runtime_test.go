@@ -142,6 +142,65 @@ func TestHTTPRuntimeRetriesRetryableStatuses(t *testing.T) {
 	}
 }
 
+func TestHTTPRuntimeDoesNotRetryHumanAccessChallenge(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte("hcaptcha security check"))
+	}))
+	defer server.Close()
+
+	runtime := NewRuntime()
+	job := core.JobSpec{
+		Name:    "human-challenge",
+		Runtime: core.RuntimeHTTP,
+		Target:  core.TargetSpec{URL: server.URL, Method: http.MethodGet},
+		Resources: core.ResourceSpec{
+			Retries: 3,
+		},
+	}
+
+	result, err := runtime.Execute(context.Background(), job)
+	if err == nil {
+		t.Fatalf("expected access friction error")
+	}
+	if result == nil || result.State != core.StateFailed {
+		t.Fatalf("expected failed result, got %#v", result)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("expected one attempt for human challenge, got %d", hits.Load())
+	}
+}
+
+func TestHTTPRuntimeFailsBlockedAccessFriction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("CF-Ray", "demo")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<html><body>hcaptcha security check</body></html>`))
+	}))
+	defer server.Close()
+
+	runtime := NewRuntime()
+	job := core.JobSpec{
+		Name:    "blocked-job",
+		Runtime: core.RuntimeHTTP,
+		Target:  core.TargetSpec{URL: server.URL, Method: http.MethodGet},
+	}
+
+	result, err := runtime.Execute(context.Background(), job)
+	if err == nil {
+		t.Fatalf("expected access friction error")
+	}
+	if result == nil || result.State != core.StateFailed {
+		t.Fatalf("expected failed result, got %#v", result)
+	}
+	if _, ok := result.Metadata["access_friction"]; !ok {
+		t.Fatalf("expected access friction metadata")
+	}
+}
+
 func TestHTTPRuntimeExtractsStructuredFields(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

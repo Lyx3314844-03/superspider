@@ -83,6 +83,18 @@ func (r *Runtime) Execute(_ context.Context, job core.JobSpec) (*core.JobResult,
 		state = core.StateFailed
 		errText = resp.Error.Error()
 	}
+	if resp.Error == nil && resp.StatusCode >= 400 {
+		state = core.StateFailed
+		errText = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	if resp.AccessFriction != nil && resp.AccessFriction.Blocked {
+		state = core.StateFailed
+		errText = fmt.Sprintf(
+			"access friction %s: %s",
+			resp.AccessFriction.Level,
+			strings.Join(resp.AccessFriction.Signals, ","),
+		)
+	}
 
 	result := &core.JobResult{
 		JobName:    job.Name,
@@ -99,6 +111,17 @@ func (r *Runtime) Execute(_ context.Context, job core.JobSpec) (*core.JobResult,
 		Error:      errText,
 	}
 	result.EnsureEnvelope()
+	if resp.AccessFriction != nil {
+		result.Metadata["access_friction"] = resp.AccessFriction
+		if resp.AccessFriction.RequiresHumanAccess {
+			result.AddWarning("access friction requires authorized human handoff")
+		}
+	}
+	if result.State == core.StateFailed {
+		result.FinishedAt = time.Now()
+		result.Finalize()
+		return result, fmt.Errorf("%s", result.Error)
+	}
 	extracted, extractErr := extractPayload(job, result.Text)
 	if extractErr != nil {
 		result.State = core.StateFailed
@@ -234,6 +257,14 @@ func shouldRetry(resp *downloader.Response, attempt, maxAttempts int) bool {
 	if resp == nil || attempt >= maxAttempts-1 {
 		return false
 	}
+	if resp.AccessFriction != nil {
+		if resp.AccessFriction.RequiresHumanAccess {
+			return false
+		}
+		if retryBudget := accessFrictionRetryBudget(resp); attempt >= retryBudget {
+			return false
+		}
+	}
 	if resp.Error != nil {
 		return true
 	}
@@ -242,6 +273,26 @@ func shouldRetry(resp *downloader.Response, attempt, maxAttempts int) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func accessFrictionRetryBudget(resp *downloader.Response) int {
+	if resp == nil || resp.AccessFriction == nil {
+		return 1<<31 - 1
+	}
+	raw, ok := resp.AccessFriction.CapabilityPlan["retry_budget"]
+	if !ok {
+		return 1<<31 - 1
+	}
+	switch value := raw.(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	default:
+		return 1<<31 - 1
 	}
 }
 

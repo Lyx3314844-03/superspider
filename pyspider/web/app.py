@@ -330,7 +330,8 @@ def build_graph_payload(html):
         }
     graph = GraphBuilder().build(html).to_dict()
     return {
-        "root_id": graph.get("root") or "document",
+        "root_id": "document",
+        "graph_root_id": graph.get("root") or "document",
         "nodes": graph.get("nodes", {}),
         "edges": graph.get("edges", {}),
         "stats": graph.get("stats", {}),

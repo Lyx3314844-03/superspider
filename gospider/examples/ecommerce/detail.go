@@ -31,6 +31,10 @@ func newEcommerceDetailSpider(siteFamily string) *scrapy.Spider {
 			Set("review_count", detail["review_count"]).
 			Set("image_candidates", detail["image_candidates"]).
 			Set("review_url", detail["review_url"]).
+			Set("api_job_templates", detail["api_job_templates"]).
+			Set("network_entries", detail["network_entries"]).
+			Set("network_api_candidates", detail["network_api_candidates"]).
+			Set("network_replay_job_templates", detail["network_replay_job_templates"]).
 			Set("html_excerpt", detail["html_excerpt"]).
 			Set("note", detail["note"])}, nil
 	}
@@ -40,14 +44,29 @@ func newEcommerceDetailSpider(siteFamily string) *scrapy.Spider {
 		current := profileForFamily(family)
 		links := response.XPath("//a/@href").GetAll()
 		jsonLDProducts := extractJSONLDProducts(response.Text, 1)
+		bootstrapProducts := extractBootstrapProducts(response.Text, 1)
+		networkArtifact := networkArtifactFromResponse(response)
+		networkEntries := normalizeNetworkEntries(networkArtifact, 50)
+		networkAPICandidates := extractNetworkAPICandidates(networkEntries, 20)
+		apiCandidates := appendUniqueStrings(20, extractAPICandidates(response.Text, 20), networkAPICandidates)
+		networkReplayTemplates := buildNetworkReplayJobTemplates(response.URL, family, networkEntries, 10)
 		universalFields := map[string]any{
-			"embedded_json_blocks": extractEmbeddedJSONBlocks(response.Text, 5, 2000),
-			"api_candidates":       extractAPICandidates(response.Text, 20),
-			"script_sources":       response.XPath("//script/@src").GetAll(),
-			"json_ld_products":     jsonLDProducts,
-			"image_candidates":     collectImageLinks(response.URL, response.XPath("//img/@src").GetAll(), 10),
-			"video_candidates":     collectVideoLinks(response.URL, append(response.XPath("//video/@src").GetAll(), response.XPath("//source/@src").GetAll()...), 10),
-			"html_excerpt":         excerpt(response.Text, 800),
+			"sku_variants":                 ExtractSKUVariants(response.Text),
+			"image_gallery":                ExtractImageGallery(response.URL, response.XPath("//img/@src").GetAll()),
+			"parameter_table":              ExtractParameterTable(response.Text),
+			"coupons_promotions":           DetectCouponsPromotions(response.Text),
+			"stock_status":                 ExtractStockStatus(response.Text),
+			"embedded_json_blocks":         extractEmbeddedJSONBlocks(response.Text, 5, 2000),
+			"api_candidates":               apiCandidates,
+			"network_entries":              networkEntries,
+			"network_api_candidates":       networkAPICandidates,
+			"network_replay_job_templates": networkReplayTemplates,
+			"script_sources":               response.XPath("//script/@src").GetAll(),
+			"json_ld_products":             jsonLDProducts,
+			"bootstrap_products":           bootstrapProducts,
+			"image_candidates":             collectImageLinks(response.URL, response.XPath("//img/@src").GetAll(), 10),
+			"video_candidates":             collectVideoLinks(response.URL, append(response.XPath("//video/@src").GetAll(), response.XPath("//source/@src").GetAll()...), 10),
+			"html_excerpt":                 excerpt(response.Text, 800),
 		}
 
 		if family == "jd" {
@@ -61,7 +80,18 @@ func newEcommerceDetailSpider(siteFamily string) *scrapy.Spider {
 				"shop":         firstRegexMatch(response.Text, current.ShopPatterns),
 				"review_count": firstRegexMatch(response.Text, current.ReviewCountPatterns),
 				"review_url":   firstLinkWithKeywords(response.URL, links, current.ReviewLinkKeywords),
-				"note":         "Public universal ecommerce detail extraction with JD price fast path.",
+				"api_job_templates": mergeAPIJobTemplates(
+					20,
+					buildAPIJobTemplates(
+						response.URL,
+						family,
+						apiCandidates,
+						[]string{itemID},
+						10,
+					),
+					networkReplayTemplates,
+				),
+				"note": "Public universal ecommerce detail extraction with JD price fast path.",
 			}
 			for key, value := range universalFields {
 				detail[key] = value
@@ -83,14 +113,22 @@ func newEcommerceDetailSpider(siteFamily string) *scrapy.Spider {
 				Set("review_count", detail["review_count"]).
 				Set("image_candidates", detail["image_candidates"]).
 				Set("review_url", detail["review_url"]).
+				Set("api_job_templates", detail["api_job_templates"]).
+				Set("network_entries", detail["network_entries"]).
+				Set("network_api_candidates", detail["network_api_candidates"]).
+				Set("network_replay_job_templates", detail["network_replay_job_templates"]).
 				Set("html_excerpt", detail["html_excerpt"]).
 				Set("note", detail["note"])}, nil
 		}
 
-		if family != "jd" && family != "generic" && len(jsonLDProducts) > 0 {
-			product := jsonLDProducts[0]
+		structuredProducts := jsonLDProducts
+		if len(structuredProducts) == 0 {
+			structuredProducts = bootstrapProducts
+		}
+		if family != "jd" && len(structuredProducts) > 0 {
+			product := structuredProducts[0]
 			return []any{scrapy.NewItem().
-				Set("kind", fmt.Sprintf("%s_detail_product", family)).
+				Set("kind", map[bool]string{true: "ecommerce_detail_product", false: fmt.Sprintf("%s_detail_product", family)}[family == "generic"]).
 				Set("site_family", family).
 				Set("title", fallbackString(product["name"], bestTitle(response))).
 				Set("url", fallbackString(product["url"], response.URL)).
@@ -101,16 +139,34 @@ func newEcommerceDetailSpider(siteFamily string) *scrapy.Spider {
 				Set("category", product["category"]).
 				Set("rating", fallbackString(product["rating"], firstRegexMatch(response.Text, current.RatingPatterns))).
 				Set("review_count", fallbackString(product["review_count"], firstRegexMatch(response.Text, current.ReviewCountPatterns))).
-				Set("shop", firstRegexMatch(response.Text, current.ShopPatterns)).
+				Set("shop", fallbackString(product["shop"], firstRegexMatch(response.Text, current.ShopPatterns))).
 				Set("review_url", firstLinkWithKeywords(response.URL, links, current.ReviewLinkKeywords)).
 				Set("embedded_json_blocks", universalFields["embedded_json_blocks"]).
 				Set("api_candidates", universalFields["api_candidates"]).
+				Set("network_entries", universalFields["network_entries"]).
+				Set("network_api_candidates", universalFields["network_api_candidates"]).
+				Set("network_replay_job_templates", universalFields["network_replay_job_templates"]).
 				Set("script_sources", universalFields["script_sources"]).
 				Set("json_ld_products", universalFields["json_ld_products"]).
+				Set("bootstrap_products", universalFields["bootstrap_products"]).
 				Set("image_candidates", universalFields["image_candidates"]).
 				Set("video_candidates", universalFields["video_candidates"]).
 				Set("html_excerpt", universalFields["html_excerpt"]).
-				Set("note", "Public ecommerce detail fast path via JSON-LD product extraction.")}, nil
+				Set(
+					"api_job_templates",
+					mergeAPIJobTemplates(
+						20,
+						buildAPIJobTemplates(
+							response.URL,
+							family,
+							apiCandidates,
+							[]string{fallbackString(product["sku"], firstRegexMatch(response.Text, current.ItemIDPatterns))},
+							10,
+						),
+						networkReplayTemplates,
+					),
+				).
+				Set("note", "Public ecommerce detail fast path via structured bootstrap/JSON-LD extraction.")}, nil
 		}
 
 		return []any{
@@ -126,11 +182,29 @@ func newEcommerceDetailSpider(siteFamily string) *scrapy.Spider {
 				Set("review_url", firstLinkWithKeywords(response.URL, links, current.ReviewLinkKeywords)).
 				Set("embedded_json_blocks", universalFields["embedded_json_blocks"]).
 				Set("api_candidates", universalFields["api_candidates"]).
+				Set("network_entries", universalFields["network_entries"]).
+				Set("network_api_candidates", universalFields["network_api_candidates"]).
+				Set("network_replay_job_templates", universalFields["network_replay_job_templates"]).
 				Set("script_sources", universalFields["script_sources"]).
 				Set("json_ld_products", universalFields["json_ld_products"]).
+				Set("bootstrap_products", universalFields["bootstrap_products"]).
 				Set("image_candidates", universalFields["image_candidates"]).
 				Set("video_candidates", universalFields["video_candidates"]).
 				Set("html_excerpt", universalFields["html_excerpt"]).
+				Set(
+					"api_job_templates",
+					mergeAPIJobTemplates(
+						20,
+						buildAPIJobTemplates(
+							response.URL,
+							family,
+							apiCandidates,
+							[]string{firstRegexMatch(response.Text, current.ItemIDPatterns)},
+							10,
+						),
+						networkReplayTemplates,
+					),
+				).
 				Set("note", "Public universal ecommerce detail extraction."),
 		}, nil
 	}).

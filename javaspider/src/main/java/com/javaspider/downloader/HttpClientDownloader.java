@@ -1,6 +1,7 @@
 package com.javaspider.downloader;
 
 import com.javaspider.antibot.UrlValidator;
+import com.javaspider.antibot.AccessFrictionAnalyzer;
 import com.javaspider.core.Request;
 import com.javaspider.core.Site;
 import com.javaspider.core.Page;
@@ -100,6 +101,7 @@ public class HttpClientDownloader implements Downloader {
                     page.setError("robots.txt forbids " + request.getUrl());
                     page.setSkip(true);
                     page.setDownloadDuration(System.currentTimeMillis() - startedAt);
+                    attachAccessFriction(page, 403, Map.of(), "", request.getUrl());
                     return page;
                 }
                 double crawlDelay = robotsChecker.getCrawlDelay(request.getUrl());
@@ -120,11 +122,20 @@ public class HttpClientDownloader implements Downloader {
                     HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
                     page.setStatusCode(response.statusCode());
                     page.setRawText(response.body());
-                    page.setHeaders(flattenHeaders(response.headers()));
+                    Map<String, String> flattenedHeaders = flattenHeaders(response.headers());
+                    page.setHeaders(flattenedHeaders);
                     page.setSkip(false);
                     page.setDownloadDuration(System.currentTimeMillis() - startedAt);
+                    AccessFrictionAnalyzer.AccessFrictionReport frictionReport = attachAccessFriction(
+                            page,
+                            response.statusCode(),
+                            flattenedHeaders,
+                            response.body(),
+                            request.getUrl()
+                    );
 
-                    if (RETRYABLE_STATUSES.contains(response.statusCode()) && attempt < maxAttempts - 1) {
+                    if (RETRYABLE_STATUSES.contains(response.statusCode())
+                            && shouldRetryWithFriction(frictionReport, attempt, maxAttempts)) {
                         Thread.sleep(computeRetryDelayMs(retryBaseMs, attempt, response.headers()));
                         continue;
                     }
@@ -141,18 +152,56 @@ public class HttpClientDownloader implements Downloader {
             page.setSkip(true);
             page.setError(lastError != null ? lastError.getMessage() : "request failed");
             page.setDownloadDuration(System.currentTimeMillis() - startedAt);
+            attachAccessFriction(page, 0, Map.of(), "", request.getUrl());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             page.setSkip(true);
             page.setError("request interrupted");
             page.setDownloadDuration(System.currentTimeMillis() - startedAt);
+            attachAccessFriction(page, 0, Map.of(), "", request.getUrl());
         } catch (Exception e) {
             page.setSkip(true);
             page.setError(e.getMessage());
             page.setDownloadDuration(System.currentTimeMillis() - startedAt);
+            attachAccessFriction(page, 0, Map.of(), "", request.getUrl());
         }
 
         return page;
+    }
+
+    private AccessFrictionAnalyzer.AccessFrictionReport attachAccessFriction(
+            Page page,
+            int statusCode,
+            Map<String, String> headers,
+            String body,
+            String url
+    ) {
+        AccessFrictionAnalyzer.AccessFrictionReport report = AccessFrictionAnalyzer.analyze(
+                statusCode,
+                headers,
+                body,
+                url
+        );
+        page.putField("access_friction", report.toMap());
+        return report;
+    }
+
+    private boolean shouldRetryWithFriction(
+            AccessFrictionAnalyzer.AccessFrictionReport report,
+            int attempt,
+            int maxAttempts
+    ) {
+        if (attempt >= maxAttempts - 1) {
+            return false;
+        }
+        if (report != null && report.requiresHumanAccess()) {
+            return false;
+        }
+        int retryBudget = maxAttempts - 1;
+        if (report != null && report.capabilityPlan().get("retry_budget") instanceof Number budget) {
+            retryBudget = budget.intValue();
+        }
+        return attempt < Math.min(maxAttempts - 1, retryBudget);
     }
 
     private HttpRequest buildRequest(Request request, Site site, String method, String userAgent) {

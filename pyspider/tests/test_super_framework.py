@@ -177,7 +177,7 @@ class SuperFrameworkTest(unittest.TestCase):
             <script type="application/ld+json">
             {"@context":"https://schema.org","@type":"Product","name":"Demo Phone","sku":"SKU-1","url":"https://shop.example.com/item/sku-1","image":["https://cdn.example.com/p1.jpg"],"offers":{"price":"6999","priceCurrency":"CNY"}}
             </script>
-            <script>window.__NEXT_DATA__={"props":{"pageProps":{"api":"/api/item/detail?id=1"}}};</script>
+            <script>window.__NEXT_DATA__={"props":{"pageProps":{"api":"/api/item/detail?id=1","detailApi":"api/item/detail?id=1"}}};</script>
           </head>
           <body>
             <video src="https://cdn.example.com/demo.mp4"></video>
@@ -189,10 +189,89 @@ class SuperFrameworkTest(unittest.TestCase):
         self.assertTrue(products)
         self.assertEqual(products[0]["url"], "https://shop.example.com/item/sku-1")
         self.assertEqual(products[0]["image"], "https://cdn.example.com/p1.jpg")
-        self.assertTrue(module.extract_api_candidates(html))
+        api_candidates = module.extract_api_candidates(html)
+        self.assertTrue(api_candidates)
+        self.assertIn("api/item/detail?id=1", api_candidates)
+        api_jobs = module.build_api_job_templates(
+            "https://shop.example.com/item/sku-1",
+            "generic",
+            api_candidates,
+            item_ids=["SKU-1"],
+        )
+        self.assertTrue(api_jobs)
+        self.assertEqual(api_jobs[0]["runtime"], "http")
+        self.assertIn("source_url", api_jobs[0]["metadata"])
         self.assertTrue(module.extract_embedded_json_blocks(html))
         self.assertTrue(module.collect_video_links("https://shop.example.com", ["https://cdn.example.com/demo.mp4"]))
+        bootstrap_products = module.extract_bootstrap_products(html)
+        self.assertTrue(bootstrap_products)
+        self.assertEqual(bootstrap_products[0]["sku"], "SKU-1")
+        self.assertEqual(bootstrap_products[0]["price"], "6999")
         self.assertEqual(module.get_profile("unknown-shop")["family"], "generic")
+        self.assertEqual(module.get_profile("xiaohongshu")["family"], "xiaohongshu")
+        self.assertEqual(module.get_profile("douyin-shop")["family"], "douyin-shop")
+
+    def test_pyspider_ecommerce_helper_builds_network_replay_templates(self):
+        root = Path(__file__).resolve().parents[2]
+        module_path = root / "pyspider" / "examples" / "ecommerce_site_profile.py"
+        spec = importlib.util.spec_from_file_location("ecommerce_site_profile", module_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+
+        artifact = {
+            "network_events": [
+                {
+                    "url": "https://shop.example.com/_next/static/app.js",
+                    "method": "GET",
+                    "status": 200,
+                    "resource_type": "script",
+                },
+                {
+                    "url": "https://shop.example.com/api/item/detail?id=1",
+                    "method": "POST",
+                    "status": 200,
+                    "resource_type": "fetch",
+                    "request_headers": {
+                        "Content-Type": "application/json",
+                        "Cookie": "session=secret",
+                    },
+                    "post_data": "{\"sku\":\"SKU-1\"}",
+                    "response_headers": {"content-type": "application/json"},
+                },
+            ]
+        }
+
+        entries = module.normalize_network_entries(artifact)
+        self.assertEqual(len(entries), 2)
+        candidates = module.extract_network_api_candidates(artifact)
+        self.assertEqual(candidates, ["https://shop.example.com/api/item/detail?id=1"])
+        jobs = module.build_network_replay_job_templates(
+            "https://shop.example.com/item/sku-1",
+            "generic",
+            artifact,
+        )
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["target"]["method"], "POST")
+        self.assertEqual(jobs[0]["target"]["body"], "{\"sku\":\"SKU-1\"}")
+        self.assertNotIn("Cookie", jobs[0]["target"]["headers"])
+
+    def test_universal_ecommerce_detector_identifies_marketplace_and_jsonld(self):
+        root = Path(__file__).resolve().parents[2]
+        module_path = root / "pyspider" / "examples" / "universal_ecommerce_detector.py"
+        spec = importlib.util.spec_from_file_location("universal_ecommerce_detector", module_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+
+        result = module.detect_ecommerce_site(
+            "https://www.amazon.com/dp/B0TEST",
+            '<script type="application/ld+json">{"@type":"Product","name":"Demo","offers":{"price":"9.99","priceCurrency":"USD"}}</script><button>Add to cart</button>',
+        )
+
+        self.assertTrue(result.is_ecommerce)
+        self.assertEqual(result.site_family, "amazon")
+        self.assertTrue(result.has_jsonld)
 
     def test_extraction_studio_extracts_schema_fields(self):
         studio = ExtractionStudio()
@@ -202,6 +281,34 @@ class SuperFrameworkTest(unittest.TestCase):
         )
         self.assertEqual(result["title"], "Demo")
         self.assertEqual(result["price"], "42")
+
+    def test_selector_extractor_supports_complex_css_and_xpath_specs(self):
+        from pyspider.extract import SelectorExtractor
+
+        html = """
+        <html>
+          <body>
+            <article class="product" data-sku="A1">
+              <h2><span>Alpha</span></h2><a class="buy" href="/alpha">Buy</a>
+            </article>
+            <article class="product featured" data-sku="B2">
+              <h2><span>Beta</span></h2><a class="buy" href="/beta">Buy</a>
+            </article>
+          </body>
+        </html>
+        """
+        result = SelectorExtractor().extract(
+            html,
+            [
+                {"field": "names", "type": "css", "expr": "article.product > h2 span::text", "all": True},
+                {"field": "featured_sku", "type": "xpath", "expr": "//article[contains(@class, 'featured')]/@data-sku"},
+                {"field": "links", "type": "css", "expr": "article.product a.buy::attr(href)", "all": True},
+            ],
+        )
+
+        self.assertEqual(result["names"], ["Alpha", "Beta"])
+        self.assertEqual(result["featured_sku"], "B2")
+        self.assertEqual(result["links"], ["/alpha", "/beta"])
 
     def test_dataset_writer_writes_jsonl(self):
         writer = DatasetWriter()

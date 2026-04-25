@@ -25,7 +25,7 @@ class NodeReverseClientTest {
         server.start();
 
         try {
-            NodeReverseClient client = new NodeReverseClient("http://localhost:" + server.getAddress().getPort());
+            NodeReverseClient client = new NodeReverseClient(baseUrl(server));
             JsonNode response = client.profileAntiBot(
                 "<title>Just a moment...</title>",
                 "eval(function(p,a,c,k,e,d){return p;});",
@@ -52,7 +52,7 @@ class NodeReverseClientTest {
         server.start();
 
         try {
-            NodeReverseClient client = new NodeReverseClient("http://localhost:" + server.getAddress().getPort());
+            NodeReverseClient client = new NodeReverseClient(baseUrl(server));
             JsonNode response = client.detectAntiBot(
                 "",
                 "",
@@ -78,7 +78,7 @@ class NodeReverseClientTest {
         server.start();
 
         try {
-            NodeReverseClient client = new NodeReverseClient("http://localhost:" + server.getAddress().getPort());
+            NodeReverseClient client = new NodeReverseClient(baseUrl(server));
             JsonNode response = client.spoofFingerprint("chrome", "windows");
 
             assertTrue(response.get("success").asBoolean());
@@ -98,7 +98,7 @@ class NodeReverseClientTest {
         server.start();
 
         try {
-            NodeReverseClient client = new NodeReverseClient("http://localhost:" + server.getAddress().getPort());
+            NodeReverseClient client = new NodeReverseClient(baseUrl(server));
             JsonNode response = client.generateTlsFingerprint("chrome", "120");
 
             assertTrue(response.get("success").asBoolean());
@@ -118,7 +118,7 @@ class NodeReverseClientTest {
         server.start();
 
         try {
-            NodeReverseClient client = new NodeReverseClient("http://localhost:" + server.getAddress().getPort());
+            NodeReverseClient client = new NodeReverseClient(baseUrl(server));
             JsonNode response = client.simulateBrowser(
                 "navigator.userAgent",
                 Map.of("userAgent", "mock", "language", "zh-CN", "platform", "Win32")
@@ -140,7 +140,7 @@ class NodeReverseClientTest {
         server.start();
 
         try {
-            NodeReverseClient client = new NodeReverseClient("http://localhost:" + server.getAddress().getPort());
+            NodeReverseClient client = new NodeReverseClient(baseUrl(server));
             JsonNode response = client.callFunction(
                 "sign",
                 java.util.List.of("left", "right"),
@@ -163,7 +163,7 @@ class NodeReverseClientTest {
         server.start();
 
         try {
-            NodeReverseClient client = new NodeReverseClient("http://localhost:" + server.getAddress().getPort());
+            NodeReverseClient client = new NodeReverseClient(baseUrl(server));
             JsonNode response = client.canvasFingerprint();
 
             assertTrue(response.get("success").asBoolean());
@@ -182,7 +182,7 @@ class NodeReverseClientTest {
         server.start();
 
         try {
-            NodeReverseClient client = new NodeReverseClient("http://localhost:" + server.getAddress().getPort());
+            NodeReverseClient client = new NodeReverseClient(baseUrl(server));
             JsonNode response = client.reverseSignature("function sign(v){return v;}", "left", "left");
 
             assertTrue(response.get("success").asBoolean());
@@ -196,13 +196,14 @@ class NodeReverseClientTest {
     void analyzeCryptoFallsBackToLocalMultiAlgorithmHeuristics() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/api/crypto/analyze", exchange -> {
+            drainRequest(exchange);
             exchange.sendResponseHeaders(500, -1);
             exchange.close();
         });
         server.start();
 
         try {
-            NodeReverseClient client = new NodeReverseClient("http://localhost:" + server.getAddress().getPort());
+            NodeReverseClient client = new NodeReverseClient(baseUrl(server));
             JsonNode response = client.analyzeCrypto("""
                 const key = "secret-key-1234";
                 const iv = "nonce-001";
@@ -239,11 +240,20 @@ class NodeReverseClientTest {
     }
 
     private static void respond(HttpExchange exchange, String body) throws IOException {
+        drainRequest(exchange);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.sendResponseHeaders(200, bytes.length);
         try (OutputStream outputStream = exchange.getResponseBody()) {
             outputStream.write(bytes);
         }
+    }
+
+    private static String baseUrl(HttpServer server) {
+        return "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
+    private static void drainRequest(HttpExchange exchange) throws IOException {
+        exchange.getRequestBody().transferTo(OutputStream.nullOutputStream());
     }
 }

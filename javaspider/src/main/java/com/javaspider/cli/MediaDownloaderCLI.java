@@ -328,7 +328,11 @@ public class MediaDownloaderCLI {
     }
 
     private static String fallbackVideoTitle(String url, String currentTitle) {
-        if (currentTitle != null && !currentTitle.isBlank() && !"null".equalsIgnoreCase(currentTitle)) {
+        if (currentTitle != null
+                && !currentTitle.isBlank()
+                && !"null".equalsIgnoreCase(currentTitle)
+                && !"unknown".equalsIgnoreCase(currentTitle)
+                && !"youtube".equalsIgnoreCase(currentTitle)) {
             return currentTitle;
         }
 

@@ -4,6 +4,7 @@
 
 pub mod antibot;
 pub mod enhanced;
+pub mod friction;
 pub mod night_mode;
 
 use rand::Rng;

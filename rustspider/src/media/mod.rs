@@ -3,6 +3,9 @@ use std::error::Error;
 
 pub mod video_parser;
 pub use video_parser::{UniversalParser, VideoData};
+pub mod hls_downloader;
+pub mod video_downloader;
+pub use video_downloader::{VideoDownloadRequest, VideoDownloadResult, VideoDownloader};
 
 /// 媒体下载器
 pub struct MediaDownloader {

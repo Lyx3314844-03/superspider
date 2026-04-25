@@ -7,16 +7,27 @@ from pyspider.spider.spider import CrawlerProcess, FeedExporter, Item, Request, 
 from ecommerce_site_profile import (
     DEFAULT_SITE_FAMILY,
     build_jd_review_api_url,
+    build_api_job_templates,
+    build_network_replay_job_templates,
     collect_matches,
     collect_video_links,
+    extract_bootstrap_products,
     extract_jd_item_id,
     extract_api_candidates,
     extract_embedded_json_blocks,
     extract_json_ld_products,
+    extract_network_api_candidates,
+    extract_sku_variants,
+    detect_coupons_promotions,
+    extract_stock_status,
     first_match,
     get_profile,
+    get_response_network_artifact,
+    merge_api_job_templates,
+    normalize_network_entries,
     safe_json_loads,
     text_excerpt,
+    append_unique_strings,
 )
 
 
@@ -49,16 +60,32 @@ class EcommerceReviewSpider(Spider):
         profile = get_profile(family)
         html = page.response.text
         selector = page.response.selector
+        network_artifact = get_response_network_artifact(page.response)
+        network_entries = normalize_network_entries(network_artifact)
+        network_api_candidates = extract_network_api_candidates(network_entries)
+        api_candidates = append_unique_strings(extract_api_candidates(html), network_api_candidates)
+        network_replay_templates = build_network_replay_job_templates(
+            page.response.url,
+            family,
+            network_entries,
+        )
         universal_fields = {
             "embedded_json_blocks": extract_embedded_json_blocks(html),
             "json_ld_products": extract_json_ld_products(html),
-            "api_candidates": extract_api_candidates(html),
+            "bootstrap_products": extract_bootstrap_products(html),
+            "api_candidates": api_candidates,
+            "network_entries": network_entries,
+            "network_api_candidates": network_api_candidates,
+            "network_replay_job_templates": network_replay_templates,
             "script_sources": selector.css_attr("script", "src"),
             "video_candidates": collect_video_links(
                 page.response.url,
                 selector.css_attr("video", "src") + selector.css_attr("source", "src"),
             ),
             "excerpt": text_excerpt(html),
+            "sku_variants": extract_sku_variants(html),
+            "coupons_promotions": detect_coupons_promotions(html),
+            "stock_status": extract_stock_status(html),
         }
 
         if family == "jd":
@@ -112,14 +139,24 @@ class EcommerceReviewSpider(Spider):
                 max_page=max_page,
                 comments_preview=comments_preview,
                 **universal_fields,
+                api_job_templates=merge_api_job_templates(
+                    build_api_job_templates(
+                        page.response.url,
+                        family,
+                        universal_fields["api_candidates"],
+                        item_ids=[product_id] if product_id else [],
+                    ),
+                    network_replay_templates,
+                ),
                 note="Public universal ecommerce review extraction with JD review fast path.",
             )
             return
 
-        if family in self.FAST_PATH_FAMILIES and universal_fields["json_ld_products"]:
-            product = universal_fields["json_ld_products"][0]
+        structured_products = universal_fields["json_ld_products"] or universal_fields["bootstrap_products"]
+        if family != "jd" and structured_products:
+            product = structured_products[0]
             yield Item(
-                kind=f"{family}_review_summary",
+                kind=f"{family}_review_summary" if family != "generic" else "ecommerce_review_summary",
                 site_family=family,
                 url=page.response.url,
                 item_id=product.get("sku", "") or first_match(html, profile["item_id_patterns"]),
@@ -127,8 +164,18 @@ class EcommerceReviewSpider(Spider):
                 review_count=product.get("review_count", "") or first_match(html, profile["review_count_patterns"]),
                 brand=product.get("brand", ""),
                 category=product.get("category", ""),
+                shop=product.get("shop", ""),
                 **universal_fields,
-                note="Public ecommerce review fast path via JSON-LD aggregate rating extraction.",
+                api_job_templates=merge_api_job_templates(
+                    build_api_job_templates(
+                        page.response.url,
+                        family,
+                        universal_fields["api_candidates"],
+                        item_ids=[product.get("sku", "") or first_match(html, profile["item_id_patterns"])],
+                    ),
+                    network_replay_templates,
+                ),
+                note="Public ecommerce review fast path via structured bootstrap/JSON-LD extraction.",
             )
             return
 
@@ -141,6 +188,15 @@ class EcommerceReviewSpider(Spider):
             review_count=first_match(html, profile["review_count_patterns"]),
             review_id_candidates=collect_matches(html, [r"(?:commentId|reviewId|id)[\"'=:\\s]+([A-Za-z0-9_-]+)"]),
             **universal_fields,
+            api_job_templates=merge_api_job_templates(
+                build_api_job_templates(
+                    page.response.url,
+                    family,
+                    universal_fields["api_candidates"],
+                    item_ids=[first_match(html, profile["item_id_patterns"])],
+                ),
+                network_replay_templates,
+            ),
             note="Public universal ecommerce review extraction.",
         )
 

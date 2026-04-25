@@ -10,7 +10,7 @@ readme = "README.md"
 
 [dependencies]
 # HTTP
-reqwest = { version = "0.11", features = ["blocking", "json", "stream"] }
+reqwest = { version = "0.11", features = ["blocking", "json", "stream", "rustls-tls"] }
 postgres = "0.19.9"
 mysql = "25.0.1"
 mongodb = { version = "2.8.2", default-features = false, features = ["sync"] }
@@ -67,11 +67,25 @@ actix-web = { version = "4.4", optional = true }
 actix-rt = { version = "2.9", optional = true }
 # 工具
 which = { version = "4.4", optional = true }
-tempfile = { version = "3.8" }
+tempfile = "3.8"
+# JavaScript运行时（使用稳定版本）
+deno_core = "0.268"
 
 [[bin]]
 name = "jd_iphone17"
 path = "src/bin/jd_iphone17.rs"
+
+[[bin]]
+name = "ace_downloader"
+path = "ace_downloader.rs"
+
+[[bin]]
+name = "bilibili_spider_class"
+path = "bilibili_spider_class.rs"
+
+[[bin]]
+name = "spider_taobao_iphone17"
+path = "spider_taobao_iphone17.rs"
 
 [features]
 default = ["browser"]

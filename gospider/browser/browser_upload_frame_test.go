@@ -114,3 +114,37 @@ func TestRealtimeEntriesAreCopied(t *testing.T) {
 		t.Fatal("expected realtime entries to be copied")
 	}
 }
+
+func TestCookieParamFromMapPreservesAutomationSessionFields(t *testing.T) {
+	param, err := cookieParamFromMap(map[string]interface{}{
+		"name":     "sessionid",
+		"value":    "abc",
+		"domain":   ".example.com",
+		"path":     "/",
+		"secure":   true,
+		"httpOnly": true,
+		"sameSite": "Lax",
+		"expires":  float64(1893456000),
+	})
+	if err != nil {
+		t.Fatalf("cookie param: %v", err)
+	}
+	if param.Name != "sessionid" || param.Value != "abc" {
+		t.Fatalf("unexpected cookie identity: %#v", param)
+	}
+	if param.Domain != ".example.com" || param.Path != "/" {
+		t.Fatalf("unexpected cookie scope: %#v", param)
+	}
+	if !param.Secure || !param.HTTPOnly || param.SameSite.String() != "Lax" {
+		t.Fatalf("unexpected cookie flags: %#v", param)
+	}
+	if param.Expires == nil {
+		t.Fatal("expected persistent cookie expiry")
+	}
+}
+
+func TestCookieParamFromMapRejectsMissingName(t *testing.T) {
+	if _, err := cookieParamFromMap(map[string]interface{}{"value": "abc"}); err == nil {
+		t.Fatal("expected missing cookie name to fail")
+	}
+}
